@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 50" width="150" height="50">
+  <!-- Tulip Logo - Mother and Baby forming T shape -->
+
+  <!-- Mother figure (purple) -->
+  <ellipse cx="15" cy="12" rx="10" ry="10" fill="#7B4B94"/>
+  <ellipse cx="15" cy="34" rx="12" ry="16" fill="#7B4B94"/>
+
+  <!-- Baby figure (pink/coral) -->
+  <ellipse cx="33" cy="20" rx="7" ry="7" fill="#E84A8A"/>
+  <ellipse cx="35" cy="36" rx="9" ry="12" fill="#E84A8A"/>
+
+  <!-- LIP text -->
+  <text x="52" y="40" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="bold" fill="#7B4B94">LIP</text>
+</svg>

@@ -1,0 +1,855 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  TextField,
+  MenuItem,
+  Grid,
+  Chip,
+  IconButton,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Tabs,
+  Tab,
+  Divider,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
+import {
+  ArrowBack as ArrowBackIcon,
+  ExpandMore as ExpandMoreIcon,
+  Save as SaveIcon,
+  Add as AddIcon,
+} from '@mui/icons-material';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { format } from 'date-fns';
+import { toast } from 'react-toastify';
+import { useAuthStore } from '../stores/authStore';
+import { leadService } from '../services/leadService';
+import {
+  Lead,
+  LeadUpdateRequest,
+  CallEntry,
+  Comment,
+  AuditLogEntry,
+  LEAD_STATUS_OPTIONS,
+  LEAD_SOURCE_OPTIONS,
+  STAGE_OPTIONS,
+  LOOKING_FOR_OPTIONS,
+  SERVICE_ENROLLED_OPTIONS,
+} from '../types/lead.types';
+import { brandColors } from '../theme';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div role="tabpanel" hidden={value !== index} {...other}>
+      {value === index && <Box sx={{ py: 2 }}>{children}</Box>}
+    </div>
+  );
+}
+
+const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
+  'New': 'info',
+  'Not Interested': 'error',
+  'Interested': 'success',
+  'Lead Closed - No Response': 'default',
+  'No Response': 'warning',
+  'FollowUp Required': 'primary',
+};
+
+export default function LeadDetailPage() {
+  const { leadId } = useParams<{ leadId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const [lead, setLead] = useState<Lead | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const [auditTrail, setAuditTrail] = useState<AuditLogEntry[]>([]);
+
+  // Form state for editable fields
+  const [formData, setFormData] = useState<Partial<LeadUpdateRequest>>({});
+  const [newComment, setNewComment] = useState('');
+  const [addingComment, setAddingComment] = useState(false);
+
+  // Expanded accordions
+  const [expandedSections, setExpandedSections] = useState<string[]>([
+    'user-details',
+    'location',
+    'lead-info',
+    'service-details',
+  ]);
+
+  useEffect(() => {
+    if (leadId) {
+      fetchLead();
+    }
+  }, [leadId]);
+
+  const fetchLead = async () => {
+    if (!leadId) return;
+    setLoading(true);
+    try {
+      const data = await leadService.getLead(leadId);
+      setLead(data);
+      setFormData({
+        lead_source: data.lead_source || undefined,
+        lead_creation_date: data.lead_creation_date || undefined,
+        status: data.status,
+        number_of_calls: data.number_of_calls,
+        calls: data.calls,
+        follow_up_date: data.follow_up_date || undefined,
+        name: data.name,
+        email: data.email || undefined,
+        phone_number: data.phone_number,
+        employee_id: data.employee_id || undefined,
+        uhid: data.uhid || undefined,
+        user_facility: data.user_facility || undefined,
+        city: data.city || undefined,
+        pin_code: data.pin_code || undefined,
+        address: data.address || undefined,
+        stage: data.stage || undefined,
+        looking_for: data.looking_for || undefined,
+        package_requested: data.package_requested || undefined,
+        service_enrolled: data.service_enrolled || undefined,
+        package_name_enrolled: data.package_name_enrolled || undefined,
+        provider_name: data.provider_name || undefined,
+        provider_location: data.provider_location || undefined,
+        hclhc_spoc: data.hclhc_spoc || undefined,
+        doctor_name: data.doctor_name || undefined,
+        consult_date: data.consult_date || undefined,
+        assigned_to: data.assigned_to || undefined,
+        assigned_to_name: data.assigned_to_name || undefined,
+      });
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch lead:', err);
+      setError('Failed to load lead details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAuditTrail = async () => {
+    if (!leadId || !isAdmin) return;
+    try {
+      const data = await leadService.getAuditTrail(leadId);
+      setAuditTrail(data.audit_trail);
+    } catch (err) {
+      console.error('Failed to fetch audit trail:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (tabValue === 3 && isAdmin && leadId) {
+      fetchAuditTrail();
+    }
+  }, [tabValue, isAdmin, leadId]);
+
+  const handleAccordionChange = (panel: string) => (_: React.SyntheticEvent, isExpanded: boolean) => {
+    setExpandedSections((prev) =>
+      isExpanded ? [...prev, panel] : prev.filter((p) => p !== panel)
+    );
+  };
+
+  const handleInputChange = (field: keyof LeadUpdateRequest, value: unknown) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!leadId) return;
+    setSaving(true);
+    try {
+      await leadService.updateLead(leadId, formData);
+      toast.success('Lead updated successfully');
+      fetchLead();
+    } catch (err) {
+      console.error('Failed to update lead:', err);
+      toast.error('Failed to update lead');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!leadId || !newComment.trim()) return;
+    setAddingComment(true);
+    try {
+      await leadService.addComment(leadId, { text: newComment });
+      toast.success('Comment added');
+      setNewComment('');
+      fetchLead();
+    } catch (err) {
+      console.error('Failed to add comment:', err);
+      toast.error('Failed to add comment');
+    } finally {
+      setAddingComment(false);
+    }
+  };
+
+  const handleAddCall = () => {
+    const currentCalls = formData.calls || [];
+    const newCallNumber = currentCalls.length + 1;
+    const newCall: CallEntry = {
+      call_number: newCallNumber,
+      date_time: new Date().toISOString(),
+      summary: '',
+    };
+    handleInputChange('calls', [...currentCalls, newCall]);
+    handleInputChange('number_of_calls', newCallNumber);
+  };
+
+  const handleCallChange = (index: number, field: keyof CallEntry, value: unknown) => {
+    const updatedCalls = [...(formData.calls || [])];
+    updatedCalls[index] = { ...updatedCalls[index], [field]: value };
+    handleInputChange('calls', updatedCalls);
+  };
+
+  const canEdit = (field: string): boolean => {
+    if (isAdmin) return true;
+    const agentEditableFields = [
+      // Basic fields
+      'lead_source',
+      'lead_creation_date',
+      'status',
+      'number_of_calls',
+      'calls',
+      'follow_up_date',
+      // Location fields
+      'user_facility',
+      'city',
+      'pin_code',
+      'address',
+      // Healthcare fields
+      'stage',
+      'looking_for',
+      'package_requested',
+      'service_enrolled',
+      'package_name_enrolled',
+      'provider_name',
+      'provider_location',
+      'doctor_name',
+      'consult_date',
+      'hclhc_spoc',
+    ];
+    return agentEditableFields.includes(field);
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error || !lead) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error || 'Lead not found'}</Alert>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/leads')} sx={{ mt: 2 }}>
+          Back to Leads
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDateFns}>
+      <Box>
+        {/* Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <IconButton onClick={() => navigate('/leads')} sx={{ mr: 2 }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h5" sx={{ fontWeight: 600 }}>
+            Lead Details
+          </Typography>
+        </Box>
+
+        {/* Lead Header Card */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" color="text.secondary">
+                Lead ID
+              </Typography>
+              <Typography variant="h6" sx={{ fontWeight: 600, color: brandColors.navyBlue }}>
+                {lead.lead_id}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" color="text.secondary">
+                Name
+              </Typography>
+              <Typography variant="h6">{lead.name}</Typography>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" color="text.secondary">
+                Status
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>
+                {canEdit('status') ? (
+                  <TextField
+                    select
+                    size="small"
+                    fullWidth
+                    value={formData.status || ''}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                  >
+                    {LEAD_STATUS_OPTIONS.map((status) => (
+                      <MenuItem key={status} value={status}>
+                        {status}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
+                  <Chip
+                    label={lead.status}
+                    color={statusColors[lead.status] || 'default'}
+                    size="small"
+                  />
+                )}
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <Typography variant="caption" color="text.secondary">
+                Created
+              </Typography>
+              <Typography variant="body1">
+                {format(new Date(lead.created_at), 'dd MMM yyyy, hh:mm a')}
+              </Typography>
+            </Grid>
+          </Grid>
+        </Paper>
+
+        {/* Collapsible Sections */}
+        <Box sx={{ mb: 3 }}>
+          {/* User Details */}
+          <Accordion
+            expanded={expandedSections.includes('user-details')}
+            onChange={handleAccordionChange('user-details')}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>User Details</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Name"
+                    size="small"
+                    value={formData.name || ''}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    disabled={!canEdit('name')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Email"
+                    size="small"
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    disabled={!canEdit('email')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Phone Number"
+                    size="small"
+                    value={formData.phone_number || ''}
+                    onChange={(e) => handleInputChange('phone_number', e.target.value)}
+                    disabled={!canEdit('phone_number')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Employee ID"
+                    size="small"
+                    value={formData.employee_id || ''}
+                    onChange={(e) => handleInputChange('employee_id', e.target.value)}
+                    disabled={!canEdit('employee_id')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="UHID"
+                    size="small"
+                    value={formData.uhid || ''}
+                    onChange={(e) => handleInputChange('uhid', e.target.value)}
+                    disabled={!canEdit('uhid')}
+                  />
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Location */}
+          <Accordion
+            expanded={expandedSections.includes('location')}
+            onChange={handleAccordionChange('location')}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>Location</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="User Facility"
+                    size="small"
+                    value={formData.user_facility || ''}
+                    onChange={(e) => handleInputChange('user_facility', e.target.value)}
+                    disabled={!canEdit('user_facility')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="City"
+                    size="small"
+                    value={formData.city || ''}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    disabled={!canEdit('city')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Pin Code"
+                    size="small"
+                    value={formData.pin_code || ''}
+                    onChange={(e) => handleInputChange('pin_code', e.target.value)}
+                    disabled={!canEdit('pin_code')}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Address"
+                    size="small"
+                    multiline
+                    rows={2}
+                    value={formData.address || ''}
+                    onChange={(e) => handleInputChange('address', e.target.value)}
+                    disabled={!canEdit('address')}
+                  />
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Lead Information */}
+          <Accordion
+            expanded={expandedSections.includes('lead-info')}
+            onChange={handleAccordionChange('lead-info')}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>Lead Information</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Lead Source"
+                    size="small"
+                    value={formData.lead_source || ''}
+                    onChange={(e) => handleInputChange('lead_source', e.target.value)}
+                    disabled={!canEdit('lead_source')}
+                  >
+                    {LEAD_SOURCE_OPTIONS.map((source) => (
+                      <MenuItem key={source} value={source}>
+                        {source}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <DatePicker
+                    label="Lead Creation Date"
+                    value={formData.lead_creation_date ? new Date(formData.lead_creation_date) : null}
+                    onChange={(date) =>
+                      handleInputChange('lead_creation_date', date ? format(date, 'yyyy-MM-dd') : null)
+                    }
+                    disabled={!canEdit('lead_creation_date')}
+                    slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Stage"
+                    size="small"
+                    value={formData.stage || ''}
+                    onChange={(e) => handleInputChange('stage', e.target.value)}
+                    disabled={!canEdit('stage')}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {STAGE_OPTIONS.map((stage) => (
+                      <MenuItem key={stage} value={stage}>
+                        {stage}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Looking For"
+                    size="small"
+                    value={formData.looking_for || ''}
+                    onChange={(e) => handleInputChange('looking_for', e.target.value)}
+                    disabled={!canEdit('looking_for')}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {LOOKING_FOR_OPTIONS.map((opt) => (
+                      <MenuItem key={opt} value={opt}>
+                        {opt}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Package Requested"
+                    size="small"
+                    value={formData.package_requested || ''}
+                    onChange={(e) => handleInputChange('package_requested', e.target.value)}
+                    disabled={!canEdit('package_requested')}
+                  />
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Service Details */}
+          <Accordion
+            expanded={expandedSections.includes('service-details')}
+            onChange={handleAccordionChange('service-details')}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>Service Details</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Service Enrolled"
+                    size="small"
+                    value={formData.service_enrolled || ''}
+                    onChange={(e) => handleInputChange('service_enrolled', e.target.value)}
+                    disabled={!canEdit('service_enrolled')}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {SERVICE_ENROLLED_OPTIONS.map((service) => (
+                      <MenuItem key={service} value={service}>
+                        {service}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Package Name Enrolled"
+                    size="small"
+                    value={formData.package_name_enrolled || ''}
+                    onChange={(e) => handleInputChange('package_name_enrolled', e.target.value)}
+                    disabled={!canEdit('package_name_enrolled')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Provider Name"
+                    size="small"
+                    value={formData.provider_name || ''}
+                    onChange={(e) => handleInputChange('provider_name', e.target.value)}
+                    disabled={!canEdit('provider_name')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Provider Location"
+                    size="small"
+                    value={formData.provider_location || ''}
+                    onChange={(e) => handleInputChange('provider_location', e.target.value)}
+                    disabled={!canEdit('provider_location')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="HCLHC SPOC"
+                    size="small"
+                    value={formData.hclhc_spoc || ''}
+                    onChange={(e) => handleInputChange('hclhc_spoc', e.target.value)}
+                    disabled={!canEdit('hclhc_spoc')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Doctor Name"
+                    size="small"
+                    value={formData.doctor_name || ''}
+                    onChange={(e) => handleInputChange('doctor_name', e.target.value)}
+                    disabled={!canEdit('doctor_name')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <DatePicker
+                    label="Consult Date"
+                    value={formData.consult_date ? new Date(formData.consult_date) : null}
+                    onChange={(date) =>
+                      handleInputChange('consult_date', date ? format(date, 'yyyy-MM-dd') : null)
+                    }
+                    disabled={!canEdit('consult_date')}
+                    slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                  />
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+        </Box>
+
+        {/* Tabs Section */}
+        <Paper sx={{ mb: 3 }}>
+          <Tabs
+            value={tabValue}
+            onChange={(_, newValue) => setTabValue(newValue)}
+            sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}
+          >
+            <Tab label="Calls" />
+            <Tab label="Comments" />
+            <Tab label="Summary" />
+            {isAdmin && <Tab label="Audit Trail" />}
+          </Tabs>
+
+          <Box sx={{ p: 2 }}>
+            {/* Calls Tab */}
+            <TabPanel value={tabValue} index={0}>
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <TextField
+                  label="Number of Calls"
+                  type="number"
+                  size="small"
+                  value={formData.number_of_calls || 0}
+                  onChange={(e) => handleInputChange('number_of_calls', parseInt(e.target.value) || 0)}
+                  disabled={!canEdit('number_of_calls')}
+                  sx={{ width: 150 }}
+                />
+                <DateTimePicker
+                  label="Follow Up Date"
+                  value={formData.follow_up_date ? new Date(formData.follow_up_date) : null}
+                  onChange={(date) => handleInputChange('follow_up_date', date?.toISOString() || null)}
+                  disabled={!canEdit('follow_up_date')}
+                  slotProps={{ textField: { size: 'small' } }}
+                />
+                {canEdit('calls') && (
+                  <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddCall}>
+                    Add Call
+                  </Button>
+                )}
+              </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              {(formData.calls || []).map((call, index) => (
+                <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                  <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={1}>
+                      <Typography variant="subtitle2" color="primary">
+                        Call {call.call_number}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <DateTimePicker
+                        label="Date & Time"
+                        value={call.date_time ? new Date(call.date_time) : null}
+                        onChange={(date) =>
+                          handleCallChange(index, 'date_time', date?.toISOString() || null)
+                        }
+                        disabled={!canEdit('calls')}
+                        slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={7}>
+                      <TextField
+                        fullWidth
+                        label="Summary"
+                        size="small"
+                        multiline
+                        rows={2}
+                        value={call.summary || ''}
+                        onChange={(e) => handleCallChange(index, 'summary', e.target.value)}
+                        disabled={!canEdit('calls')}
+                      />
+                    </Grid>
+                  </Grid>
+                </Paper>
+              ))}
+
+              {(!formData.calls || formData.calls.length === 0) && (
+                <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                  No calls recorded yet
+                </Typography>
+              )}
+            </TabPanel>
+
+            {/* Comments Tab */}
+            <TabPanel value={tabValue} index={1}>
+              <Box sx={{ mb: 3 }}>
+                <TextField
+                  fullWidth
+                  label="Add a comment"
+                  multiline
+                  rows={3}
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Type your comment here..."
+                />
+                <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    onClick={handleAddComment}
+                    disabled={!newComment.trim() || addingComment}
+                  >
+                    {addingComment ? 'Adding...' : 'Add Comment'}
+                  </Button>
+                </Box>
+              </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              {lead.comments && lead.comments.length > 0 ? (
+                [...lead.comments].reverse().map((comment: Comment, index: number) => (
+                  <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="subtitle2" color="primary">
+                        {comment.created_by_name || 'Unknown'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {comment.created_at
+                          ? format(new Date(comment.created_at), 'dd MMM yyyy, hh:mm a')
+                          : ''}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2">{comment.text}</Typography>
+                  </Paper>
+                ))
+              ) : (
+                <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                  No comments yet
+                </Typography>
+              )}
+            </TabPanel>
+
+            {/* Summary Tab */}
+            <TabPanel value={tabValue} index={2}>
+              <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                AI-generated summary will appear here
+              </Typography>
+            </TabPanel>
+
+            {/* Audit Trail Tab (Admin only) */}
+            {isAdmin && (
+              <TabPanel value={tabValue} index={3}>
+                {auditTrail.length > 0 ? (
+                  auditTrail.map((log, index) => (
+                    <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                        <Box>
+                          <Typography variant="subtitle2" color="primary">
+                            {log.user_name || log.user_email}
+                          </Typography>
+                          <Chip
+                            label={log.action}
+                            size="small"
+                            color={
+                              log.action === 'CREATED'
+                                ? 'success'
+                                : log.action === 'DELETED'
+                                ? 'error'
+                                : 'info'
+                            }
+                            sx={{ mt: 0.5 }}
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">
+                          {format(new Date(log.timestamp), 'dd MMM yyyy, hh:mm a')}
+                        </Typography>
+                      </Box>
+                      {log.changes && log.changes.length > 0 && (
+                        <Box sx={{ mt: 1 }}>
+                          {log.changes.map((change, idx) => (
+                            <Typography key={idx} variant="body2" color="text.secondary">
+                              <strong>{change.field}:</strong>{' '}
+                              {String(change.old_value || 'null')} &rarr;{' '}
+                              {String(change.new_value || 'null')}
+                            </Typography>
+                          ))}
+                        </Box>
+                      )}
+                    </Paper>
+                  ))
+                ) : (
+                  <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                    No audit trail available
+                  </Typography>
+                )}
+              </TabPanel>
+            )}
+          </Box>
+        </Paper>
+
+        {/* Action Buttons */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Button variant="outlined" onClick={() => navigate('/leads')}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </Button>
+        </Box>
+      </Box>
+    </LocalizationProvider>
+  );
+}

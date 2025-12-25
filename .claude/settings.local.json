@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python migrate_users.py:*)",
+      "Bash(python:*)",
+      "Bash(copy \"C:\\\\Users\\\\RichaJain.AzureAD\\\\OneDrive - HCL Healthcare\\\\Microsoft Teams Chat Files\\\\HCL Healthcare Logo 1\\\\HCL Healthcare Logo\\\\White Logo\\\\PNG_HCL Healthcare Logos_White Logo.png\" \"C:\\\\Users\\\\RichaJain.AzureAD\\\\Documents\\\\MyProjects\\\\CRM\\\\frontend\\\\public\\\\hcl-healthcare-white-logo.png\")",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
