@@ -145,7 +145,7 @@ export default function CRMHomePage() {
               letterSpacing: '-0.5px',
             }}
           >
-            CRM Lead Management System
+            CRM - Lead Management System
           </Typography>
           <Typography
             variant="h6"

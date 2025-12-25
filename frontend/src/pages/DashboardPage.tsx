@@ -284,9 +284,20 @@ Keep it concise - this is for a dashboard quick view.`;
           </Button>
         </Box>
         {aiSummary ? (
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: 'text.secondary', mt: 1 }}>
-            {aiSummary}
-          </Typography>
+          <Box
+            component="div"
+            sx={{
+              mt: 1,
+              lineHeight: 1.6,
+              color: 'text.secondary',
+              '& strong': { fontWeight: 700, color: 'text.primary' },
+            }}
+            dangerouslySetInnerHTML={{
+              __html: aiSummary
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br />')
+            }}
+          />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             Click "Generate AI Summary" to get an AI-powered overview of your dashboard metrics.
