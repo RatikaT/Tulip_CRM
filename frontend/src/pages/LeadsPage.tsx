@@ -16,12 +16,20 @@ import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DownloadIcon from '@mui/icons-material/Download';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { leadService } from '../services/leadService';
 import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '../types/lead.types';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
+import api from '../services/api';
+
+interface UserOption {
+  id: string;
+  full_name: string;
+  role: string;
+}
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
   'New': 'info',
@@ -72,9 +80,27 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [agentFilter, setAgentFilter] = useState('');
+  const [agents, setAgents] = useState<UserOption[]>([]);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
+
+  // Fetch agents/users for filter
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const response = await api.get<{ users: UserOption[] }>('/users');
+        setAgents(response.data.users || []);
+      } catch (error) {
+        console.error('Failed to fetch agents:', error);
+      }
+    };
+    fetchAgents();
+  }, []);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -85,6 +111,7 @@ export default function LeadsPage() {
         search: search || undefined,
         status: statusFilter || undefined,
         lead_source: sourceFilter || undefined,
+        assigned_to: agentFilter || undefined,
       });
       setLeads(response.leads);
       setTotalCount(response.total);
@@ -94,20 +121,57 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, search, statusFilter, sourceFilter]);
+  }, [paginationModel, search, statusFilter, sourceFilter, agentFilter]);
 
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
 
   const handleViewLead = (lead: Lead) => {
-    navigate(`/leads/${lead.lead_id}`);
+    navigate(`/tulip/leads/${lead.lead_id}`);
   };
 
   const handleCreateSuccess = () => {
     setCreateModalOpen(false);
     fetchLeads();
     toast.success('Lead created successfully');
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const response = await api.get('/leads/export/excel', {
+        responseType: 'blob',
+      });
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Get filename from header or generate one
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `leads_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=(.+)/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Export downloaded successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export leads');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const columns: GridColDef[] = [
@@ -277,14 +341,25 @@ export default function LeadsPage() {
             </IconButton>
           </Tooltip>
           {isAdmin && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setCreateModalOpen(true)}
-              size="small"
-            >
-              Add Lead
-            </Button>
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                onClick={handleExport}
+                disabled={exporting}
+                size="small"
+              >
+                {exporting ? 'Exporting...' : 'Export'}
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateModalOpen(true)}
+                size="small"
+              >
+                Add Lead
+              </Button>
+            </>
           )}
         </Box>
       </Box>
@@ -292,7 +367,7 @@ export default function LeadsPage() {
       {/* Filters */}
       <Paper sx={{ p: 1.5, mb: 2 }}>
         <Grid container spacing={1.5} alignItems="center">
-          <Grid item xs={12} sm={4}>
+          <Grid item xs={12} sm={3}>
             <TextField
               fullWidth
               size="small"
@@ -302,7 +377,7 @@ export default function LeadsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2}>
             <TextField
               fullWidth
               size="small"
@@ -319,7 +394,7 @@ export default function LeadsPage() {
               ))}
             </TextField>
           </Grid>
-          <Grid item xs={6} sm={3}>
+          <Grid item xs={6} sm={2}>
             <TextField
               fullWidth
               size="small"
@@ -336,7 +411,24 @@ export default function LeadsPage() {
               ))}
             </TextField>
           </Grid>
-          <Grid item xs={12} sm={2}>
+          <Grid item xs={6} sm={2}>
+            <TextField
+              fullWidth
+              size="small"
+              select
+              label="Agent"
+              value={agentFilter}
+              onChange={(e) => setAgentFilter(e.target.value)}
+            >
+              <MenuItem value="">All Agents</MenuItem>
+              {agents.map((agent) => (
+                <MenuItem key={agent.id} value={agent.id}>
+                  {agent.full_name}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid item xs={6} sm={3}>
             <Button
               fullWidth
               variant="outlined"
@@ -345,9 +437,10 @@ export default function LeadsPage() {
                 setSearch('');
                 setStatusFilter('');
                 setSourceFilter('');
+                setAgentFilter('');
               }}
             >
-              Clear
+              Clear Filters
             </Button>
           </Grid>
         </Grid>

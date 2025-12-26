@@ -115,6 +115,10 @@ class Lead(Document):
     assigned_to: Optional[str] = None  # User ID
     assigned_to_name: Optional[str] = None
 
+    # Reassignment (both admin and agent can edit)
+    reassign_to: Optional[str] = None  # User ID - defaults to assigned_to
+    reassign_to_name: Optional[str] = None
+
     # Comments (agent can add, sorted by latest)
     comments: List[Dict[str, Any]] = Field(default_factory=list)
 

@@ -2,10 +2,13 @@
 Lead Management Routes
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from typing import Optional, List
 from datetime import datetime, date
 import csv
 import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from app.schemas.lead import (
     LeadCreateRequest,
     LeadUpdateRequest,
@@ -347,6 +350,247 @@ async def get_leads(
         "per_page": per_page,
         "pages": pages
     }
+
+
+@router.get("/export/excel")
+async def export_leads_excel(
+    current_user: dict = Depends(get_current_admin)
+):
+    """
+    Export all leads with audit trail to Excel (Admin only)
+    """
+    # Create workbook
+    wb = Workbook()
+
+    # Styles
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # ===== Sheet 1: Leads =====
+    ws_leads = wb.active
+    ws_leads.title = "Leads"
+
+    # Lead headers
+    lead_headers = [
+        "Lead ID", "Name", "Email", "Phone Number", "Employee ID", "UHID",
+        "Status", "Lead Source", "Lead Creation Date", "Stage", "Looking For",
+        "User Facility", "City", "Pin Code", "Address",
+        "Package Requested", "Service Enrolled", "Package Name Enrolled",
+        "Provider Name", "Provider Location", "HCLHC SPOC",
+        "Doctor Name", "Consult Date",
+        "Number of Calls", "Follow Up Date",
+        "Assigned To", "Reassign To",
+        "Created At", "Updated At", "Created By"
+    ]
+
+    # Write headers
+    for col, header in enumerate(lead_headers, 1):
+        cell = ws_leads.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    # Fetch all leads
+    leads = await Lead.find(Lead.is_deleted == False).sort("-created_at").to_list()
+
+    # Write lead data
+    for row_num, lead in enumerate(leads, 2):
+        row_data = [
+            lead.lead_id,
+            lead.name,
+            lead.email,
+            lead.phone_number,
+            lead.employee_id,
+            lead.uhid,
+            lead.status.value if lead.status else None,
+            lead.lead_source.value if lead.lead_source else None,
+            str(lead.lead_creation_date) if lead.lead_creation_date else None,
+            lead.stage.value if lead.stage else None,
+            lead.looking_for.value if lead.looking_for else None,
+            lead.user_facility,
+            lead.city,
+            lead.pin_code,
+            lead.address,
+            lead.package_requested,
+            lead.service_enrolled.value if lead.service_enrolled else None,
+            lead.package_name_enrolled,
+            lead.provider_name,
+            lead.provider_location,
+            lead.hclhc_spoc,
+            lead.doctor_name,
+            str(lead.consult_date) if lead.consult_date else None,
+            lead.number_of_calls,
+            lead.follow_up_date.strftime("%Y-%m-%d %H:%M") if lead.follow_up_date else None,
+            lead.assigned_to_name,
+            getattr(lead, 'reassign_to_name', None),
+            lead.created_at.strftime("%Y-%m-%d %H:%M") if lead.created_at else None,
+            lead.updated_at.strftime("%Y-%m-%d %H:%M") if lead.updated_at else None,
+            lead.created_by
+        ]
+
+        for col, value in enumerate(row_data, 1):
+            cell = ws_leads.cell(row=row_num, column=col, value=value)
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center")
+
+    # Auto-adjust column widths for leads sheet
+    for col in ws_leads.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws_leads.column_dimensions[column].width = adjusted_width
+
+    # ===== Sheet 2: Calls =====
+    ws_calls = wb.create_sheet("Calls")
+
+    call_headers = ["Lead ID", "Name", "Call Number", "Date & Time", "Summary"]
+    for col, header in enumerate(call_headers, 1):
+        cell = ws_calls.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    call_row = 2
+    for lead in leads:
+        if lead.calls:
+            for call in lead.calls:
+                ws_calls.cell(row=call_row, column=1, value=lead.lead_id).border = thin_border
+                ws_calls.cell(row=call_row, column=2, value=lead.name).border = thin_border
+                ws_calls.cell(row=call_row, column=3, value=call.get('call_number', '')).border = thin_border
+                ws_calls.cell(row=call_row, column=4, value=call.get('date_time', '')).border = thin_border
+                ws_calls.cell(row=call_row, column=5, value=call.get('summary', '')).border = thin_border
+                call_row += 1
+
+    # Auto-adjust column widths for calls sheet
+    for col in ws_calls.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 60)
+        ws_calls.column_dimensions[column].width = adjusted_width
+
+    # ===== Sheet 3: Comments =====
+    ws_comments = wb.create_sheet("Comments")
+
+    comment_headers = ["Lead ID", "Name", "Comment", "Created By", "Created At"]
+    for col, header in enumerate(comment_headers, 1):
+        cell = ws_comments.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    comment_row = 2
+    for lead in leads:
+        if lead.comments:
+            for comment in lead.comments:
+                ws_comments.cell(row=comment_row, column=1, value=lead.lead_id).border = thin_border
+                ws_comments.cell(row=comment_row, column=2, value=lead.name).border = thin_border
+                ws_comments.cell(row=comment_row, column=3, value=comment.get('text', '')).border = thin_border
+                ws_comments.cell(row=comment_row, column=4, value=comment.get('created_by_name', '')).border = thin_border
+                created_at = comment.get('created_at')
+                if created_at:
+                    if isinstance(created_at, datetime):
+                        created_at = created_at.strftime("%Y-%m-%d %H:%M")
+                ws_comments.cell(row=comment_row, column=5, value=created_at).border = thin_border
+                comment_row += 1
+
+    # Auto-adjust column widths for comments sheet
+    for col in ws_comments.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 60)
+        ws_comments.column_dimensions[column].width = adjusted_width
+
+    # ===== Sheet 4: Audit Trail =====
+    ws_audit = wb.create_sheet("Audit Trail")
+
+    audit_headers = ["Lead ID", "User", "Email", "Action", "Field", "Old Value", "New Value", "Timestamp"]
+    for col, header in enumerate(audit_headers, 1):
+        cell = ws_audit.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    # Fetch all audit logs
+    audit_logs = await AuditLog.find().sort("-timestamp").to_list()
+
+    audit_row = 2
+    for log in audit_logs:
+        if log.changes:
+            for change in log.changes:
+                ws_audit.cell(row=audit_row, column=1, value=log.lead_id).border = thin_border
+                ws_audit.cell(row=audit_row, column=2, value=log.user_name).border = thin_border
+                ws_audit.cell(row=audit_row, column=3, value=log.user_email).border = thin_border
+                ws_audit.cell(row=audit_row, column=4, value=log.action.value if hasattr(log.action, 'value') else str(log.action)).border = thin_border
+                ws_audit.cell(row=audit_row, column=5, value=change.get('field', '')).border = thin_border
+                ws_audit.cell(row=audit_row, column=6, value=str(change.get('old_value', ''))).border = thin_border
+                ws_audit.cell(row=audit_row, column=7, value=str(change.get('new_value', ''))).border = thin_border
+                ws_audit.cell(row=audit_row, column=8, value=log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else None).border = thin_border
+                audit_row += 1
+        else:
+            ws_audit.cell(row=audit_row, column=1, value=log.lead_id).border = thin_border
+            ws_audit.cell(row=audit_row, column=2, value=log.user_name).border = thin_border
+            ws_audit.cell(row=audit_row, column=3, value=log.user_email).border = thin_border
+            ws_audit.cell(row=audit_row, column=4, value=log.action.value if hasattr(log.action, 'value') else str(log.action)).border = thin_border
+            ws_audit.cell(row=audit_row, column=8, value=log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else None).border = thin_border
+            audit_row += 1
+
+    # Auto-adjust column widths for audit sheet
+    for col in ws_audit.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws_audit.column_dimensions[column].width = adjusted_width
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # Generate filename with timestamp
+    filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    logger.info(f"Excel export generated by {current_user['email']}: {len(leads)} leads, {len(audit_logs)} audit entries")
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)

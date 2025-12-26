@@ -93,6 +93,10 @@ export interface Lead {
   assigned_to: string | null;
   assigned_to_name: string | null;
 
+  // Reassignment (editable by both admin and agent)
+  reassign_to: string | null;
+  reassign_to_name: string | null;
+
   // Comments
   comments: Comment[];
 
@@ -168,6 +172,8 @@ export interface LeadUpdateRequest {
   consult_date?: string;
   assigned_to?: string;
   assigned_to_name?: string;
+  reassign_to?: string;
+  reassign_to_name?: string;
 }
 
 export interface CommentCreateRequest {

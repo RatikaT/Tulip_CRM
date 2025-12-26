@@ -1,0 +1,37 @@
+Field Name,Display Label,Field Type,Dropdown Values,Who Can Edit,Mandatory for Create,Auto-Generated,Notes
+lead_id,Lead ID,Text (Auto-generated),,System,No,Yes,"Auto-generated format: Tulip_DDMMYYYY_XXX (e.g., Tulip_25122025_001)"
+created_at,Created At,DateTime,,System,No,Yes,Automatically set when lead is created
+updated_at,Updated At,DateTime,,System,No,Yes,Automatically updated on any change
+lead_source,Lead Source,Dropdown,"Mail, Website, WA, Call, SMS, EMR, Other",Both (Admin & Agent),Yes,No,Source from where lead originated
+lead_creation_date,Lead Date,Date (Calendar),,Both (Admin & Agent),No,No,Manual date selection for when lead was received
+status,Status,Dropdown,"New, Not Interested, Interested, Lead Closed - No Response, No Response, FollowUp Required",Both (Admin & Agent),No,No,Default: New. Current status of the lead
+name,Name,Text,,Admin Only,Yes,No,Full name of the lead/customer
+email,Email,Email,,Admin Only,No,No,Email address of the lead
+phone_number,Phone Number,Text,,Admin Only,Yes,No,Contact phone number
+employee_id,Employee ID,Text,,Admin Only,No,No,Employee ID if lead is an employee
+uhid,UHID,Text,,Admin Only,No,No,Unique Health ID
+user_facility,User Facility,Text,,Admin Only,No,No,Facility associated with the user
+city,City,Text,,Admin Only,No,No,City of residence
+pin_code,Pin Code,Text,,Admin Only,No,No,Postal/PIN code
+address,Address,Text (Multiline),,Admin Only,No,No,Full address
+stage,Stage,Dropdown,"Pregnant - 1st, Pregnant - 2nd, Pregnant - 3rd, PlanningForPregnancy, NewMom, Exploring",Both (Admin & Agent),No,No,Current stage of the customer
+looking_for,Looking For,Dropdown,"Self, Family Member",Both (Admin & Agent),No,No,Who is the service for
+package_requested,Package Requested,Text,,Both (Admin & Agent),No,No,Package the customer inquired about
+service_enrolled,Service Enrolled,Dropdown,"PreConception, Antenatal, MaternityWellness",Both (Admin & Agent),No,No,Service the customer enrolled in
+package_name_enrolled,Package Name Enrolled,Text,,Both (Admin & Agent),No,No,Specific package name enrolled
+provider_name,Provider Name,Text,,Both (Admin & Agent),No,No,Healthcare provider name
+provider_location,Provider Location,Text,,Both (Admin & Agent),No,No,Location of the provider
+hclhc_spoc,HCLHC SPOC,Text,,Both (Admin & Agent),No,No,HCL Healthcare Single Point of Contact
+doctor_name,Doctor Name,Text,,Both (Admin & Agent),No,No,Name of the doctor
+consult_date,Consult Date,Date (Calendar),,Both (Admin & Agent),No,No,Date of consultation
+number_of_calls,Number of Calls,Number (Read-only),,System (Auto-update),No,No,"Auto-increments when Add Call is clicked. Default: 1. Not manually editable."
+calls,Calls,Array of Objects,"Each call has: call_number (number), date_time (datetime), summary (text)",Both (Admin & Agent),No,No,List of call entries with date/time and summary
+follow_up_date,Follow-up Date,DateTime,,Both (Admin & Agent),No,No,Scheduled follow-up date and time
+assigned_to,Assigned To,Dropdown (User List),"Fetched from Users API (id, full_name, role)",Admin Only,No,No,User ID of assigned agent
+assigned_to_name,Assigned To Name,Text (Auto-set),,System,No,No,Name of assigned agent (auto-populated from assigned_to)
+reassign_to,Reassign To,Dropdown (User List),"Fetched from Users API (id, full_name, role)",Both (Admin & Agent),No,No,"Reassignment request. Defaults to assigned_to value."
+reassign_to_name,Reassign To Name,Text (Auto-set),,System,No,No,Name for reassignment (auto-populated from reassign_to)
+comments,Comments,Array of Objects,"Each comment has: text (string), created_at (datetime), created_by (user_id), created_by_name (string)",Both (Admin & Agent),No,No,"Comments added by users. Sorted by latest first. Each user can only delete their own comments."
+created_by,Created By,Text,,System,No,Yes,User ID of who created the lead
+last_modified_by,Last Modified By,Text,,System,No,Yes,User ID of who last modified the lead
+is_deleted,Is Deleted,Boolean,,System,No,No,"Soft delete flag. Default: false"

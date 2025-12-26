@@ -17,7 +17,6 @@ import {
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { authService } from '../services/authService';
@@ -83,24 +82,40 @@ export default function LoginPage() {
         padding: { xs: '48px 24px', md: '96px 24px' },
       }}
     >
-      {/* Logo */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 6 }}>
-        <LocalFloristIcon sx={{ fontSize: 48, color: brandColors.tulipPink, mr: 1.5 }} />
-        <Box>
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 700,
-              color: brandColors.navyBlue,
-              lineHeight: 1.2,
-            }}
-          >
-            CRM
-          </Typography>
-          <Typography variant="body2" sx={{ color: designTheme.colors.textSecondary }}>
-            Lead Management System
-          </Typography>
-        </Box>
+      {/* HCL Healthcare Logo */}
+      <Box sx={{ mb: 3 }}>
+        <img
+          src="/hcl-healthcare-logo.png"
+          alt="HCL Healthcare"
+          style={{ height: '50px', objectFit: 'contain' }}
+        />
+      </Box>
+
+      {/* CRM Title */}
+      <Box sx={{ textAlign: 'center', mb: 5 }}>
+        <Typography
+          variant="h3"
+          sx={{
+            fontWeight: 700,
+            color: brandColors.navyBlue,
+            lineHeight: 1.2,
+            letterSpacing: '-0.5px',
+          }}
+        >
+          CRM
+        </Typography>
+        <Typography
+          variant="subtitle1"
+          sx={{
+            color: designTheme.colors.textSecondary,
+            fontWeight: 500,
+            mt: 1,
+            letterSpacing: '1px',
+            fontSize: '0.95rem',
+          }}
+        >
+          Lead Management System
+        </Typography>
       </Box>
 
       {/* Login Card */}

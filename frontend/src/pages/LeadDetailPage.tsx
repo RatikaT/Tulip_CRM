@@ -46,6 +46,13 @@ import {
   SERVICE_ENROLLED_OPTIONS,
 } from '../types/lead.types';
 import { brandColors } from '../theme';
+import api from '../services/api';
+
+interface UserOption {
+  id: string;
+  full_name: string;
+  role: string;
+}
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -97,6 +104,22 @@ export default function LeadDetailPage() {
     'service-details',
   ]);
 
+  // Users list for Assigned To dropdown
+  const [users, setUsers] = useState<UserOption[]>([]);
+
+  // Fetch users for Assigned To and Reassign dropdowns
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await api.get<{ users: UserOption[] }>('/users');
+        setUsers(response.data.users || []);
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+      }
+    };
+    fetchUsers();
+  }, []);
+
   useEffect(() => {
     if (leadId) {
       fetchLead();
@@ -137,6 +160,8 @@ export default function LeadDetailPage() {
         consult_date: data.consult_date || undefined,
         assigned_to: data.assigned_to || undefined,
         assigned_to_name: data.assigned_to_name || undefined,
+        reassign_to: data.reassign_to || data.assigned_to || undefined,
+        reassign_to_name: data.reassign_to_name || data.assigned_to_name || undefined,
       });
       setError(null);
     } catch (err) {
@@ -229,7 +254,6 @@ export default function LeadDetailPage() {
       'lead_source',
       'lead_creation_date',
       'status',
-      'number_of_calls',
       'calls',
       'follow_up_date',
       // Location fields
@@ -248,6 +272,7 @@ export default function LeadDetailPage() {
       'doctor_name',
       'consult_date',
       'hclhc_spoc',
+      'reassign_to',
     ];
     return agentEditableFields.includes(field);
   };
@@ -264,7 +289,7 @@ export default function LeadDetailPage() {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error">{error || 'Lead not found'}</Alert>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/leads')} sx={{ mt: 2 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/tulip/leads')} sx={{ mt: 2 }}>
           Back to Leads
         </Button>
       </Box>
@@ -276,7 +301,7 @@ export default function LeadDetailPage() {
       <Box>
         {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <IconButton onClick={() => navigate('/leads')} sx={{ mr: 2 }}>
+          <IconButton onClick={() => navigate('/tulip/leads')} sx={{ mr: 2 }}>
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -547,6 +572,51 @@ export default function LeadDetailPage() {
                     disabled={!canEdit('package_requested')}
                   />
                 </Grid>
+                {isAdmin && (
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      fullWidth
+                      select
+                      label="Assigned To"
+                      size="small"
+                      value={formData.assigned_to || ''}
+                      onChange={(e) => {
+                        const selectedUser = users.find(u => u.id === e.target.value);
+                        handleInputChange('assigned_to', e.target.value);
+                        handleInputChange('assigned_to_name', selectedUser?.full_name || '');
+                      }}
+                    >
+                      <MenuItem value="">Unassigned</MenuItem>
+                      {users.map((user) => (
+                        <MenuItem key={user.id} value={user.id}>
+                          {user.full_name} ({user.role})
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                )}
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Reassign To"
+                    size="small"
+                    value={formData.reassign_to || ''}
+                    onChange={(e) => {
+                      const selectedUser = users.find(u => u.id === e.target.value);
+                      handleInputChange('reassign_to', e.target.value);
+                      handleInputChange('reassign_to_name', selectedUser?.full_name || '');
+                    }}
+                    disabled={!canEdit('reassign_to')}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {users.map((user) => (
+                      <MenuItem key={user.id} value={user.id}>
+                        {user.full_name} ({user.role})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
               </Grid>
             </AccordionDetails>
           </Accordion>
@@ -667,9 +737,9 @@ export default function LeadDetailPage() {
                   type="number"
                   size="small"
                   value={formData.number_of_calls || 0}
-                  onChange={(e) => handleInputChange('number_of_calls', parseInt(e.target.value) || 0)}
-                  disabled={!canEdit('number_of_calls')}
-                  sx={{ width: 150 }}
+                  disabled
+                  helperText="Auto-updates on Add Call"
+                  sx={{ width: 180 }}
                 />
                 <DateTimePicker
                   label="Follow Up Date"
@@ -837,7 +907,7 @@ export default function LeadDetailPage() {
 
         {/* Action Buttons */}
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-          <Button variant="outlined" onClick={() => navigate('/leads')}>
+          <Button variant="outlined" onClick={() => navigate('/tulip/leads')}>
             Cancel
           </Button>
           <Button

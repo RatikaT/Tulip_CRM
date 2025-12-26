@@ -6,7 +6,28 @@
       "Bash(copy \"C:\\\\Users\\\\RichaJain.AzureAD\\\\OneDrive - HCL Healthcare\\\\Microsoft Teams Chat Files\\\\HCL Healthcare Logo 1\\\\HCL Healthcare Logo\\\\White Logo\\\\PNG_HCL Healthcare Logos_White Logo.png\" \"C:\\\\Users\\\\RichaJain.AzureAD\\\\Documents\\\\MyProjects\\\\CRM\\\\frontend\\\\public\\\\hcl-healthcare-white-logo.png\")",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(mongodump:*)",
+      "Bash(where:*)",
+      "Bash(dir /s /b \"C:\\\\Program Files\\\\MongoDB\\\\*mongodump.exe\")",
+      "Bash(dir /s /b \"C:\\\\Program Files \\(x86\\)\\\\MongoDB\\\\*mongodump.exe\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\RichaJain.AzureAD\\\\AppData\\\\Local\\\\Programs\\\\*mongo*.exe\")",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(pip --version:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version)",
+      "Bash(pip install:*)",
+      "Bash(npm install)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(dir:*)",
+      "Bash(timeout:*)"
     ]
   }
 }
