@@ -30,7 +30,6 @@ import {
   Person as PersonIcon,
   Logout as LogoutIcon,
   Settings as SettingsIcon,
-  AdminPanelSettings as AdminIcon,
   MenuBook as KnowledgeBaseIcon,
   Home as HomeIcon,
 } from '@mui/icons-material';
@@ -54,8 +53,7 @@ const navItems: NavItem[] = [
   { title: 'Bulk Upload', path: '/tulip/bulk-upload', icon: <UploadIcon />, adminOnly: true },
   { title: 'Summaries', path: '/tulip/summaries', icon: <SummaryIcon /> },
   { title: 'Knowledge Base', path: '/tulip/knowledge-base', icon: <KnowledgeBaseIcon /> },
-  { title: 'Users', path: '/tulip/users', icon: <AdminIcon />, adminOnly: true },
-  { title: 'Settings', path: '/tulip/settings', icon: <SettingsIcon />, adminOnly: true },
+  { title: 'Configurations', path: '/tulip/configurations', icon: <SettingsIcon />, adminOnly: true },
 ];
 
 export default function AppLayout() {
