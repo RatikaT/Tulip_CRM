@@ -20,6 +20,7 @@ import { toast } from 'react-toastify';
 import { format, subDays } from 'date-fns';
 import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
+import AgentDailySummary from '../components/summaries/AgentDailySummary';
 
 interface User {
   id: string;
@@ -85,6 +86,7 @@ export default function SummariesPage() {
   }, [isAdmin, fetchStoredSummaries]);
 
   const buildSummaryPrompt = (type: string, data: Record<string, unknown>) => {
+    const dateRange = data.date_range as { from?: string; to?: string } | undefined;
     const basePrompt = `You are a CRM analytics assistant for Tulip Healthcare (a maternity care program). Generate a concise, professional summary in bullet points.
 
 Data:
@@ -92,7 +94,7 @@ Data:
 - Status Distribution: ${JSON.stringify(data.status_distribution)}
 - Source Distribution: ${JSON.stringify(data.source_distribution)}
 - Service Distribution: ${JSON.stringify(data.service_distribution)}
-- Date Range: ${data.date_range?.from || 'All time'} to ${data.date_range?.to || 'Today'}
+- Date Range: ${dateRange?.from || 'All time'} to ${dateRange?.to || 'Today'}
 `;
 
     if (type === 'agent' && data.agent_name) {
@@ -223,6 +225,11 @@ Generate an overall summary including:
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
         AI Summaries
       </Typography>
+
+      {/* Agent Daily Activity Summary */}
+      <Box sx={{ mb: 3 }}>
+        <AgentDailySummary />
+      </Box>
 
       {/* Generate Summary Section */}
       <Paper sx={{ p: 3, mb: 3 }}>

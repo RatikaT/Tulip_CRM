@@ -29,7 +29,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
 import { leadService } from '../../services/leadService';
-import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TRIMESTER_OPTIONS } from '../../types/lead.types';
+import { Lead, LeadSource, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, STAGE_OPTIONS } from '../../types/lead.types';
 
 interface LocalCallEntry {
   call_number: number;
@@ -75,18 +75,15 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
     employee_id: lead.employee_id || '',
     name: lead.name,
     email: lead.email || '',
-    cug: lead.cug || '',
-    facility: lead.facility || '',
+    user_facility: lead.user_facility || '',
     phone_number: lead.phone_number,
     address: lead.address || '',
     pin_code: lead.pin_code || '',
     city: lead.city || '',
-    trimester: lead.trimester || '',
+    stage: lead.stage || '',
     lead_source: lead.lead_source || '',
     doctor_name: lead.doctor_name || '',
-    package_required: lead.package_required || '',
-    service_partner: lead.service_partner || '',
-    partner_centre_selected: lead.partner_centre_selected || '',
+    package_requested: lead.package_requested || '',
     status: lead.status,
     follow_up_date: lead.follow_up_date ? new Date(lead.follow_up_date) : null,
   });
@@ -149,6 +146,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
     try {
       const updateData = {
         ...formData,
+        lead_source: formData.lead_source ? (formData.lead_source as LeadSource) : undefined,
         follow_up_date: formData.follow_up_date instanceof Date ? formData.follow_up_date.toISOString() : null,
         number_of_calls: calls.length,
         calls: calls.map((c) => ({
@@ -310,9 +308,9 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Facility"
-                  value={formData.facility}
-                  onChange={(e) => handleFieldChange('facility', e.target.value)}
+                  label="User Facility"
+                  value={formData.user_facility}
+                  onChange={(e) => handleFieldChange('user_facility', e.target.value)}
                   disabled={!isAdmin}
                 />
               </Grid>
@@ -331,15 +329,15 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                 <TextField
                   fullWidth
                   select
-                  label="Trimester"
-                  value={formData.trimester}
-                  onChange={(e) => handleFieldChange('trimester', e.target.value)}
+                  label="Stage"
+                  value={formData.stage}
+                  onChange={(e) => handleFieldChange('stage', e.target.value)}
                   disabled={!isAdmin}
                 >
                   <MenuItem value="">None</MenuItem>
-                  {TRIMESTER_OPTIONS.map((t) => (
-                    <MenuItem key={t} value={t}>
-                      {t}
+                  {STAGE_OPTIONS.map((s: string) => (
+                    <MenuItem key={s} value={s}>
+                      {s}
                     </MenuItem>
                   ))}
                 </TextField>
@@ -348,9 +346,9 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Package Required"
-                  value={formData.package_required}
-                  onChange={(e) => handleFieldChange('package_required', e.target.value)}
+                  label="Package Requested"
+                  value={formData.package_requested}
+                  onChange={(e) => handleFieldChange('package_requested', e.target.value)}
                   disabled={!isAdmin}
                 />
               </Grid>

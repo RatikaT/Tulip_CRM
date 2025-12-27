@@ -10,7 +10,7 @@ LOCAL_DB = "tulip_crm"
 
 # Atlas MongoDB
 ATLAS_URI = "mongodb+srv://richajain:MongoDb%40123@cluster0.bnsgl9v.mongodb.net/"
-ATLAS_DB = "crm_db"
+ATLAS_DB = "tulip_crm"
 
 def migrate():
     print("Connecting to local MongoDB...")

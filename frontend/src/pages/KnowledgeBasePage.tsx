@@ -34,7 +34,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import DescriptionIcon from '@mui/icons-material/Description';
 import DownloadIcon from '@mui/icons-material/Download';
-import SummarizeIcon from '@mui/icons-material/Summarize';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';

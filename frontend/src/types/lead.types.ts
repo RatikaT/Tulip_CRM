@@ -229,3 +229,6 @@ export const SERVICE_ENROLLED_OPTIONS: ServiceEnrolled[] = [
   'Antenatal',
   'MaternityWellness',
 ];
+
+// Alias for backward compatibility
+export const TRIMESTER_OPTIONS = STAGE_OPTIONS;
