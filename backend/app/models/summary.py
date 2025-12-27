@@ -27,6 +27,10 @@ class Summary(Document):
     # For daily summaries
     summary_date: Optional[str] = None  # YYYY-MM-DD format
 
+    # For daily agent activity summaries
+    activity_metrics: Optional[dict] = None  # Aggregate metrics (calls_made, followups_due, etc.)
+    lead_details: Optional[dict] = None  # Lead-level breakdown
+
     # Metadata
     total_leads: int = 0
     status_distribution: dict = Field(default_factory=dict)

@@ -8,8 +8,10 @@ from typing import Optional, List
 from app.models.lead import Lead, LeadStatus
 from app.models.user import User
 from app.models.summary import Summary, SummaryType
+from app.models.audit_log import AuditLog, AuditAction
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
+from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,9 @@ class SummaryCreateRequest(BaseModel):
     status_distribution: dict = {}
     source_distribution: dict = {}
     service_distribution: dict = {}
+    # For daily agent activity summaries
+    activity_metrics: Optional[dict] = None
+    lead_details: Optional[dict] = None
 
 
 @router.get("/metrics")
@@ -177,6 +182,44 @@ async def get_agent_dashboard(
     status_result = await get_database().leads.aggregate(status_pipeline).to_list(100)
     leads_by_status = {item["_id"]: item["count"] for item in status_result if item["_id"]}
 
+    # Leads by source
+    source_pipeline = [
+        {"$match": base_query},
+        {"$group": {"_id": "$lead_source", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
+    leads_by_source = {item["_id"]: item["count"] for item in source_result if item["_id"]}
+
+    # Leads by service enrolled
+    service_pipeline = [
+        {"$match": {**base_query, "service_enrolled": {"$ne": None}}},
+        {"$group": {"_id": "$service_enrolled", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
+    leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
+
+    # Daily leads trend (last 7 days) - for agent's assigned leads
+    seven_days_ago = today - timedelta(days=6)
+    daily_pipeline = [
+        {"$match": {**base_query, "created_at": {"$gte": seven_days_ago}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"_id": 1}}
+    ]
+    daily_result = await get_database().leads.aggregate(daily_pipeline).to_list(100)
+    daily_trends = [{"date": item["_id"], "count": item["count"]} for item in daily_result]
+
+    # Fill missing days
+    date_counts = {item["date"]: item["count"] for item in daily_trends}
+    filled_trends = []
+    for i in range(7):
+        date = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
+        filled_trends.append({"date": date, "count": date_counts.get(date, 0)})
+
     return {
         "total_leads": total_leads,
         "unique_users": 0,
@@ -184,9 +227,9 @@ async def get_agent_dashboard(
         "connected_leads": 0,
         "follow_ups_today": follow_ups_today,
         "leads_by_status": leads_by_status,
-        "leads_by_source": {},
-        "leads_by_service": {},
-        "daily_trends": []
+        "leads_by_source": leads_by_source,
+        "leads_by_service": leads_by_service,
+        "daily_trends": filled_trends
     }
 
 
@@ -272,6 +315,8 @@ async def save_summary(
         status_distribution=request.status_distribution,
         source_distribution=request.source_distribution,
         service_distribution=request.service_distribution,
+        activity_metrics=request.activity_metrics,
+        lead_details=request.lead_details,
         created_by=current_user["user_id"],
         created_by_name=current_user["full_name"]
     )
@@ -289,12 +334,32 @@ async def save_summary(
 @router.get("/summaries")
 async def get_summaries(
     limit: int = 20,
+    agent_id: Optional[str] = None,
+    summary_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get stored summaries, sorted by latest date
+    Get stored summaries, sorted by latest date.
+    Agents can only see their own summaries.
+    Admins can see all summaries or filter by agent_id.
     """
-    summaries = await Summary.find().sort("-created_at").limit(limit).to_list()
+    is_admin = current_user.get("role") in ["admin", "super_admin"]
+
+    # Build query
+    query = {}
+
+    # Access control: agents can only see their own summaries
+    if not is_admin:
+        query["agent_id"] = current_user["user_id"]
+    elif agent_id:
+        # Admin filtering by specific agent
+        query["agent_id"] = agent_id
+
+    # Optional filter by summary type
+    if summary_type:
+        query["summary_type"] = SummaryType(summary_type)
+
+    summaries = await Summary.find(query).sort("-created_at").limit(limit).to_list()
 
     return {
         "summaries": [
@@ -309,6 +374,8 @@ async def get_summaries(
                 "status_distribution": s.status_distribution,
                 "source_distribution": s.source_distribution,
                 "service_distribution": s.service_distribution,
+                "activity_metrics": s.activity_metrics,
+                "lead_details": s.lead_details,
                 "created_at": s.created_at,
                 "created_by_name": s.created_by_name
             }
@@ -325,8 +392,6 @@ async def delete_summary(
     """
     Delete a summary (Admin only)
     """
-    from bson import ObjectId
-
     summary = await Summary.get(ObjectId(summary_id))
     if not summary:
         raise HTTPException(status_code=404, detail="Summary not found")
@@ -334,3 +399,203 @@ async def delete_summary(
     await summary.delete()
 
     return {"message": "Summary deleted successfully"}
+
+
+@router.get("/agent-activity")
+async def get_agent_activity(
+    agent_id: str,
+    date: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get detailed agent activity for a specific date.
+    Agents can only view their own activity.
+    Admins can view any agent's activity.
+    """
+    # Access control: agents can only see their own data
+    is_admin = current_user.get("role") in ["admin", "super_admin"]
+    if not is_admin and current_user["user_id"] != agent_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own activity"
+        )
+
+    # Parse date
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        date_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        date_end = date_start + timedelta(days=1)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    # Get agent info
+    agent = await User.get(ObjectId(agent_id))
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Get all leads assigned to this agent
+    leads_query = {
+        "$and": [
+            {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]},
+            {"assigned_to": agent_id}
+        ]
+    }
+    assigned_leads = await Lead.find(leads_query).to_list()
+
+    # Initialize response data
+    leads_assigned_list = []
+    calls_made_list = []
+    followups_due_list = []
+    followups_overdue_list = []
+
+    total_calls_today = 0
+    lead_ids = []
+
+    for lead in assigned_leads:
+        lead_ids.append(lead.lead_id)
+
+        # Add to leads assigned list
+        leads_assigned_list.append({
+            "lead_id": lead.lead_id,
+            "name": lead.name,
+            "status": lead.status.value if lead.status else "Unknown",
+            "phone_number": lead.phone_number,
+            "assigned_date": lead.created_at.strftime("%Y-%m-%d") if lead.created_at else None
+        })
+
+        # Check calls made today
+        if lead.calls:
+            for call in lead.calls:
+                call_dt = call.get("date_time")
+                if call_dt:
+                    # Parse call datetime
+                    if isinstance(call_dt, str):
+                        try:
+                            call_datetime = datetime.fromisoformat(call_dt.replace("Z", "+00:00"))
+                        except:
+                            continue
+                    elif isinstance(call_dt, datetime):
+                        call_datetime = call_dt
+                    else:
+                        continue
+
+                    # Check if call is on target date
+                    if date_start <= call_datetime < date_end:
+                        total_calls_today += 1
+                        calls_made_list.append({
+                            "lead_id": lead.lead_id,
+                            "name": lead.name,
+                            "call_number": call.get("call_number", 0),
+                            "call_time": call_datetime.strftime("%H:%M"),
+                            "summary": call.get("summary", "")[:100] if call.get("summary") else ""
+                        })
+
+        # Check follow-ups
+        if lead.follow_up_date:
+            follow_up_dt = lead.follow_up_date
+            if isinstance(follow_up_dt, str):
+                try:
+                    follow_up_dt = datetime.fromisoformat(follow_up_dt.replace("Z", "+00:00"))
+                except:
+                    follow_up_dt = None
+
+            if follow_up_dt:
+                follow_up_date_only = follow_up_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+                # Due today
+                if follow_up_date_only == date_start:
+                    followups_due_list.append({
+                        "lead_id": lead.lead_id,
+                        "name": lead.name,
+                        "follow_up_date": lead.follow_up_date.strftime("%Y-%m-%d %H:%M") if isinstance(lead.follow_up_date, datetime) else str(lead.follow_up_date),
+                        "status": lead.status.value if lead.status else "Unknown"
+                    })
+                # Overdue
+                elif follow_up_date_only < date_start:
+                    # Check if lead is not in a closed status
+                    closed_statuses = ["Lead Closed - No Response", "Not Interested"]
+                    if lead.status and lead.status.value not in closed_statuses:
+                        days_overdue = (date_start - follow_up_date_only).days
+                        followups_overdue_list.append({
+                            "lead_id": lead.lead_id,
+                            "name": lead.name,
+                            "follow_up_date": lead.follow_up_date.strftime("%Y-%m-%d") if isinstance(lead.follow_up_date, datetime) else str(lead.follow_up_date),
+                            "days_overdue": days_overdue,
+                            "status": lead.status.value if lead.status else "Unknown"
+                        })
+
+    # Get audit logs for status changes, comments, and reassignments by this agent on this date
+    audit_query = {
+        "user_id": agent_id,
+        "timestamp": {"$gte": date_start, "$lt": date_end}
+    }
+    audit_logs = await AuditLog.find(audit_query).to_list()
+
+    status_changes_list = []
+    comments_added_list = []
+    reassignments_list = []
+
+    for log in audit_logs:
+        lead_name = "Unknown"
+        # Try to get lead name from assigned leads
+        for lead in assigned_leads:
+            if lead.lead_id == log.lead_id:
+                lead_name = lead.name
+                break
+
+        if log.action == AuditAction.STATUS_CHANGED:
+            for change in log.changes:
+                if change.get("field") == "status":
+                    status_changes_list.append({
+                        "lead_id": log.lead_id,
+                        "name": lead_name,
+                        "old_status": change.get("old_value", ""),
+                        "new_status": change.get("new_value", ""),
+                        "changed_at": log.timestamp.strftime("%H:%M")
+                    })
+
+        # Check for comments in changes
+        for change in log.changes:
+            if change.get("field") == "comments":
+                comments_added_list.append({
+                    "lead_id": log.lead_id,
+                    "name": lead_name,
+                    "comment_preview": str(change.get("new_value", ""))[:100],
+                    "added_at": log.timestamp.strftime("%H:%M")
+                })
+
+        # Check for reassignments
+        if log.action == AuditAction.ASSIGNED or log.action == AuditAction.UPDATED:
+            for change in log.changes:
+                if change.get("field") in ["reassign_to", "reassign_to_name"]:
+                    reassignments_list.append({
+                        "lead_id": log.lead_id,
+                        "name": lead_name,
+                        "reassigned_to": change.get("new_value", ""),
+                        "reassigned_at": log.timestamp.strftime("%H:%M")
+                    })
+
+    # Build response
+    return {
+        "agent_id": agent_id,
+        "agent_name": agent.full_name,
+        "date": date,
+        "summary": {
+            "total_leads_assigned": len(assigned_leads),
+            "calls_made_today": total_calls_today,
+            "followups_due_today": len(followups_due_list),
+            "followups_overdue": len(followups_overdue_list),
+            "status_changes_today": len(status_changes_list),
+            "comments_added_today": len(comments_added_list),
+            "reassignments_made": len(reassignments_list)
+        },
+        "lead_details": {
+            "leads_assigned": leads_assigned_list,
+            "calls_made": calls_made_list,
+            "followups_due": followups_due_list,
+            "followups_overdue": followups_overdue_list,
+            "status_changes": status_changes_list,
+            "comments_added": comments_added_list,
+            "reassignments": reassignments_list
+        }
+    }

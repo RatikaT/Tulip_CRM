@@ -5,11 +5,10 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import LeadsPage from './pages/LeadsPage';
 import LeadDetailPage from './pages/LeadDetailPage';
-import UsersPage from './pages/UsersPage';
-import SettingsPage from './pages/SettingsPage';
 import SummariesPage from './pages/SummariesPage';
 import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
+import ConfigurationsPage from './pages/ConfigurationsPage';
 import CRMHomePage from './pages/CRMHomePage';
 import ComingSoonPage from './pages/ComingSoonPage';
 
@@ -102,22 +101,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'users',
-        element: (
-          <AdminRoute>
-            <UsersPage />
-          </AdminRoute>
-        ),
-      },
-      {
         path: 'summaries',
         element: <SummariesPage />,
       },
       {
-        path: 'settings',
+        path: 'configurations',
         element: (
           <AdminRoute>
-            <SettingsPage />
+            <ConfigurationsPage />
           </AdminRoute>
         ),
       },
@@ -166,7 +157,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/users',
-    element: <Navigate to="/tulip/users" replace />,
+    element: <Navigate to="/tulip/configurations" replace />,
   },
   {
     path: '/summaries',
@@ -174,7 +165,11 @@ export const router = createBrowserRouter([
   },
   {
     path: '/settings',
-    element: <Navigate to="/tulip/settings" replace />,
+    element: <Navigate to="/tulip/configurations" replace />,
+  },
+  {
+    path: '/configurations',
+    element: <Navigate to="/tulip/configurations" replace />,
   },
   {
     path: '/knowledge-base',
