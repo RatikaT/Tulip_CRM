@@ -37,11 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { dashboardService } from '../../services/dashboardService';
 import api from '../../services/api';
-import {
-  AgentActivityResponse,
-  AgentActivityMetrics,
-  AgentActivityLeadDetails,
-} from '../../types/summary.types';
+import { AgentActivityResponse } from '../../types/summary.types';
 
 interface User {
   id: string;
