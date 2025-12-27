@@ -29,7 +29,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
 import { leadService } from '../../services/leadService';
-import { Lead, LeadSource, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, STAGE_OPTIONS } from '../../types/lead.types';
+import { Lead, LeadSource, Stage, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, STAGE_OPTIONS } from '../../types/lead.types';
 
 interface LocalCallEntry {
   call_number: number;
@@ -147,6 +147,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
       const updateData = {
         ...formData,
         lead_source: formData.lead_source ? (formData.lead_source as LeadSource) : undefined,
+        stage: formData.stage ? (formData.stage as Stage) : undefined,
         follow_up_date: formData.follow_up_date instanceof Date ? formData.follow_up_date.toISOString() : null,
         number_of_calls: calls.length,
         calls: calls.map((c) => ({
