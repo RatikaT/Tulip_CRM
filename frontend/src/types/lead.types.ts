@@ -1,33 +1,57 @@
 // Lead Types
 
 export type LeadStatus =
-  | 'New'
   | 'Not Interested'
-  | 'Interested'
-  | 'Lead Closed - No Response'
-  | 'No Response'
-  | 'FollowUp Required';
+  | 'Enquiry Lead'
+  | 'Lead Closed-No Response'
+  | 'Enrolled'
+  | 'Follow up-In Process'
+  | 'Follow up-No Response'
+  | 'Duplicate';
 
 export type LeadSource =
+  | 'In Clinic-Walk In'
   | 'Mail'
+  | 'In Clinic-Gynae Consult'
+  | 'Bump Day'
   | 'Website'
-  | 'WA'
   | 'Call'
-  | 'SMS'
-  | 'EMR'
-  | 'Other';
+  | 'AMA'
+  | 'WhatsApp'
+  | 'In Clinic-Other Consults'
+  | 'Others';
 
-export type Stage =
-  | 'Pregnant - 1st'
-  | 'Pregnant - 2nd'
-  | 'Pregnant - 3rd'
-  | 'PlanningForPregnancy'
-  | 'NewMom'
-  | 'Exploring';
+export type Trimester =
+  | 'Trimester 1'
+  | 'Trimester 2'
+  | 'Trimester 3'
+  | 'Not Conceived';
 
 export type LookingFor = 'Self' | 'Family Member';
 
 export type ServiceEnrolled = 'PreConception' | 'Antenatal' | 'MaternityWellness';
+
+export type ServicePartner =
+  | 'Motherhood'
+  | 'Rainbow'
+  | 'Fortis'
+  | 'Apollo Cradle'
+  | 'Cloud 9'
+  | 'HCL Healthcare'
+  | 'Mamily'
+  | 'Others';
+
+export type ReasonForNoSale =
+  | 'Already Taking Service outside'
+  | 'Location not suitable'
+  | 'Different Service Provider Required-Brand'
+  | 'Travelling to Native Place for delivery'
+  | 'Package Cost'
+  | 'Only Delivery Package required'
+  | 'Package inadequate'
+  | 'Miscarriage'
+  | 'Looking for other HCLH services'
+  | 'Others';
 
 export interface CallEntry {
   call_number: number;
@@ -69,16 +93,19 @@ export interface Lead {
   address: string | null;
 
   // Lead Information
-  stage: Stage | null;
+  trimester: Trimester | null;
   looking_for: LookingFor | null;
   package_requested: string | null;
 
   // Service Details
   service_enrolled: ServiceEnrolled | null;
   package_name_enrolled: string | null;
-  provider_name: string | null;
+  service_partner: ServicePartner | null;
   provider_location: string | null;
   hclhc_spoc: string | null;
+
+  // Reason for No Sale
+  reason_for_no_sale: ReasonForNoSale | null;
 
   // Doctor/Consultation Details
   doctor_name: string | null;
@@ -127,14 +154,15 @@ export interface LeadCreateRequest {
   city?: string;
   pin_code?: string;
   address?: string;
-  stage?: Stage;
+  trimester?: Trimester;
   looking_for?: LookingFor;
   package_requested?: string;
   service_enrolled?: ServiceEnrolled;
   package_name_enrolled?: string;
-  provider_name?: string;
+  service_partner?: ServicePartner;
   provider_location?: string;
   hclhc_spoc?: string;
+  reason_for_no_sale?: ReasonForNoSale;
   doctor_name?: string;
   consult_date?: string;
   follow_up_date?: string;
@@ -160,14 +188,15 @@ export interface LeadUpdateRequest {
   city?: string;
   pin_code?: string;
   address?: string;
-  stage?: Stage;
+  trimester?: Trimester;
   looking_for?: LookingFor;
   package_requested?: string;
   service_enrolled?: ServiceEnrolled;
   package_name_enrolled?: string;
-  provider_name?: string;
+  service_partner?: ServicePartner;
   provider_location?: string;
   hclhc_spoc?: string;
+  reason_for_no_sale?: ReasonForNoSale;
   doctor_name?: string;
   consult_date?: string;
   assigned_to?: string;
@@ -195,31 +224,33 @@ export interface AuditTrailResponse {
 }
 
 export const LEAD_STATUS_OPTIONS: LeadStatus[] = [
-  'New',
   'Not Interested',
-  'Interested',
-  'Lead Closed - No Response',
-  'No Response',
-  'FollowUp Required',
+  'Enquiry Lead',
+  'Lead Closed-No Response',
+  'Enrolled',
+  'Follow up-In Process',
+  'Follow up-No Response',
+  'Duplicate',
 ];
 
 export const LEAD_SOURCE_OPTIONS: LeadSource[] = [
+  'In Clinic-Walk In',
   'Mail',
+  'In Clinic-Gynae Consult',
+  'Bump Day',
   'Website',
-  'WA',
   'Call',
-  'SMS',
-  'EMR',
-  'Other',
+  'AMA',
+  'WhatsApp',
+  'In Clinic-Other Consults',
+  'Others',
 ];
 
-export const STAGE_OPTIONS: Stage[] = [
-  'Pregnant - 1st',
-  'Pregnant - 2nd',
-  'Pregnant - 3rd',
-  'PlanningForPregnancy',
-  'NewMom',
-  'Exploring',
+export const TRIMESTER_OPTIONS: Trimester[] = [
+  'Trimester 1',
+  'Trimester 2',
+  'Trimester 3',
+  'Not Conceived',
 ];
 
 export const LOOKING_FOR_OPTIONS: LookingFor[] = ['Self', 'Family Member'];
@@ -230,5 +261,26 @@ export const SERVICE_ENROLLED_OPTIONS: ServiceEnrolled[] = [
   'MaternityWellness',
 ];
 
-// Alias for backward compatibility
-export const TRIMESTER_OPTIONS = STAGE_OPTIONS;
+export const SERVICE_PARTNER_OPTIONS: ServicePartner[] = [
+  'Motherhood',
+  'Rainbow',
+  'Fortis',
+  'Apollo Cradle',
+  'Cloud 9',
+  'HCL Healthcare',
+  'Mamily',
+  'Others',
+];
+
+export const REASON_FOR_NO_SALE_OPTIONS: ReasonForNoSale[] = [
+  'Already Taking Service outside',
+  'Location not suitable',
+  'Different Service Provider Required-Brand',
+  'Travelling to Native Place for delivery',
+  'Package Cost',
+  'Only Delivery Package required',
+  'Package inadequate',
+  'Miscarriage',
+  'Looking for other HCLH services',
+  'Others',
+];

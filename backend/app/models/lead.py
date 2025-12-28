@@ -9,31 +9,33 @@ from enum import Enum
 
 
 class LeadStatus(str, Enum):
-    NEW = "New"
     NOT_INTERESTED = "Not Interested"
-    INTERESTED = "Interested"
-    LEAD_CLOSED_NO_RESPONSE = "Lead Closed - No Response"
-    NO_RESPONSE = "No Response"
-    FOLLOWUP_REQUIRED = "FollowUp Required"
+    ENQUIRY_LEAD = "Enquiry Lead"
+    LEAD_CLOSED_NO_RESPONSE = "Lead Closed-No Response"
+    ENROLLED = "Enrolled"
+    FOLLOWUP_IN_PROCESS = "Follow up-In Process"
+    FOLLOWUP_NO_RESPONSE = "Follow up-No Response"
+    DUPLICATE = "Duplicate"
 
 
 class LeadSource(str, Enum):
+    IN_CLINIC_WALK_IN = "In Clinic-Walk In"
     MAIL = "Mail"
+    IN_CLINIC_GYNAE_CONSULT = "In Clinic-Gynae Consult"
+    BUMP_DAY = "Bump Day"
     WEBSITE = "Website"
-    WA = "WA"
     CALL = "Call"
-    SMS = "SMS"
-    EMR = "EMR"
-    OTHER = "Other"
+    AMA = "AMA"
+    WHATSAPP = "WhatsApp"
+    IN_CLINIC_OTHER_CONSULTS = "In Clinic-Other Consults"
+    OTHERS = "Others"
 
 
-class Stage(str, Enum):
-    PREGNANT_1ST = "Pregnant - 1st"
-    PREGNANT_2ND = "Pregnant - 2nd"
-    PREGNANT_3RD = "Pregnant - 3rd"
-    PLANNING_FOR_PREGNANCY = "PlanningForPregnancy"
-    NEW_MOM = "NewMom"
-    EXPLORING = "Exploring"
+class Trimester(str, Enum):
+    TRIMESTER_1 = "Trimester 1"
+    TRIMESTER_2 = "Trimester 2"
+    TRIMESTER_3 = "Trimester 3"
+    NOT_CONCEIVED = "Not Conceived"
 
 
 class LookingFor(str, Enum):
@@ -45,6 +47,30 @@ class ServiceEnrolled(str, Enum):
     PRE_CONCEPTION = "PreConception"
     ANTENATAL = "Antenatal"
     MATERNITY_WELLNESS = "MaternityWellness"
+
+
+class ServicePartner(str, Enum):
+    MOTHERHOOD = "Motherhood"
+    RAINBOW = "Rainbow"
+    FORTIS = "Fortis"
+    APOLLO_CRADLE = "Apollo Cradle"
+    CLOUD_9 = "Cloud 9"
+    HCL_HEALTHCARE = "HCL Healthcare"
+    MAMILY = "Mamily"
+    OTHERS = "Others"
+
+
+class ReasonForNoSale(str, Enum):
+    ALREADY_TAKING_SERVICE_OUTSIDE = "Already Taking Service outside"
+    LOCATION_NOT_SUITABLE = "Location not suitable"
+    DIFFERENT_SERVICE_PROVIDER_REQUIRED = "Different Service Provider Required-Brand"
+    TRAVELLING_TO_NATIVE = "Travelling to Native Place for delivery"
+    PACKAGE_COST = "Package Cost"
+    ONLY_DELIVERY_PACKAGE = "Only Delivery Package required"
+    PACKAGE_INADEQUATE = "Package inadequate"
+    MISCARRIAGE = "Miscarriage"
+    LOOKING_FOR_OTHER_HCLH = "Looking for other HCLH services"
+    OTHERS = "Others"
 
 
 class CallEntry(BaseModel):
@@ -75,7 +101,7 @@ class Lead(Document):
     # Lead Source and Status (mandatory, agent editable)
     lead_source: LeadSource
     lead_creation_date: Optional[date] = None  # Manual calendar select
-    status: LeadStatus = LeadStatus.NEW
+    status: LeadStatus = LeadStatus.ENQUIRY_LEAD
 
     # User Details (mandatory: name, email, phone - agent cannot edit)
     name: str
@@ -91,16 +117,19 @@ class Lead(Document):
     address: Optional[str] = None
 
     # Lead Information
-    stage: Optional[Stage] = None
+    trimester: Optional[Trimester] = None  # Renamed from stage
     looking_for: Optional[LookingFor] = None
     package_requested: Optional[str] = None
 
     # Service Details
     service_enrolled: Optional[ServiceEnrolled] = None
     package_name_enrolled: Optional[str] = None
-    provider_name: Optional[str] = None
+    service_partner: Optional[ServicePartner] = None  # Renamed from provider_name
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
+
+    # Reason for No Sale
+    reason_for_no_sale: Optional[ReasonForNoSale] = None
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None
@@ -147,12 +176,12 @@ class Lead(Document):
                 "city": "Delhi",
                 "pin_code": "110001",
                 "address": "123 Street, Area",
-                "stage": "Pregnant - 2nd",
+                "trimester": "Trimester 2",
                 "looking_for": "Self",
                 "package_requested": "Maternity Package",
                 "service_enrolled": "Antenatal",
                 "package_name_enrolled": "Premium Care",
-                "provider_name": "ABC Hospital",
+                "service_partner": "Motherhood",
                 "provider_location": "South Delhi",
                 "hclhc_spoc": "Dr. Smith",
                 "doctor_name": "Dr. Sharma",

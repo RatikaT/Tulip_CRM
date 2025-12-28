@@ -19,62 +19,57 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
-import { leadService } from '../../services/leadService';
+import { enrollmentService } from '../../services/enrollmentService';
 import {
-  LEAD_SOURCE_OPTIONS,
-  TRIMESTER_OPTIONS,
-  LOOKING_FOR_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
+  CONNECT_STATUS_OPTIONS,
+  ACTION_TAKEN_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
-  REASON_FOR_NO_SALE_OPTIONS,
-} from '../../types/lead.types';
+  TRIMESTER_OPTIONS,
+} from '../../types/enrollment.types';
 
-const createLeadSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+const createEnrollmentSchema = z.object({
+  subscriber_name: z.string().min(1, 'Subscriber name is required'),
+  employee_id: z.string().min(1, 'EmployeeID is required'),
   phone_number: z
     .string()
     .min(10, 'Phone number must be 10 digits')
     .max(10, 'Phone number must be 10 digits')
     .regex(/^[6-9]\d{9}$/, 'Phone must start with 6-9 and have 10 digits'),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
-  lead_source: z.string().min(1, 'Lead source is required'),
-  employee_id: z.string().optional(),
+  name: z.string().optional(),
   uhid: z.string().optional(),
-  user_facility: z.string().optional(),
-  city: z.string().optional(),
-  pin_code: z.string().optional(),
   address: z.string().optional(),
-  trimester: z.string().optional(),
-  looking_for: z.string().optional(),
-  package_requested: z.string().optional(),
-  service_enrolled: z.string().optional(),
-  package_name_enrolled: z.string().optional(),
-  service_partner: z.string().optional(),
-  provider_location: z.string().optional(),
+  package_billed: z.string().optional(),
   hclhc_spoc: z.string().optional(),
-  reason_for_no_sale: z.string().optional(),
+  hcl_location: z.string().optional(),
+  trimester: z.string().optional(),
   doctor_name: z.string().optional(),
-  assigned_to: z.string().optional(),
+  service_partner: z.string().optional(),
+  partner_centre_selected: z.string().optional(),
+  partner_gynaecologist: z.string().optional(),
+  connect_status: z.string().optional(),
+  action_taken: z.string().optional(),
+  customer_feedback: z.string().optional(),
+  remarks: z.string().optional(),
 });
 
-type CreateLeadFormData = z.infer<typeof createLeadSchema>;
+type CreateEnrollmentFormData = z.infer<typeof createEnrollmentSchema>;
 
-interface LeadCreateModalProps {
+interface EnrollmentCreateModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreateModalProps) {
+export default function EnrollmentCreateModal({ open, onClose, onSuccess }: EnrollmentCreateModalProps) {
   const [saving, setSaving] = useState(false);
-  const [leadCreationDate, setLeadCreationDate] = useState<Date | null>(new Date());
+  const [billedDate, setBilledDate] = useState<Date | null>(null);
+  const [dob, setDob] = useState<Date | null>(null);
   const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
-  const [consultDate, setConsultDate] = useState<Date | null>(null);
 
   const {
     register,
@@ -82,43 +77,42 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
     reset,
     control,
     formState: { errors },
-  } = useForm<CreateLeadFormData>({
-    resolver: zodResolver(createLeadSchema),
-    defaultValues: {
-      lead_source: '',
-    },
+  } = useForm<CreateEnrollmentFormData>({
+    resolver: zodResolver(createEnrollmentSchema),
+    defaultValues: {},
   });
 
   const handleClose = () => {
     reset();
-    setLeadCreationDate(new Date());
+    setBilledDate(null);
+    setDob(null);
     setFollowUpDate(null);
-    setConsultDate(null);
     onClose();
   };
 
-  const onSubmit = async (data: CreateLeadFormData) => {
+  const onSubmit = async (data: CreateEnrollmentFormData) => {
     setSaving(true);
     try {
-      // Filter out empty strings for optional enum fields
       const cleanData = {
         ...data,
         email: data.email || undefined,
         trimester: data.trimester || undefined,
-        looking_for: data.looking_for || undefined,
-        service_enrolled: data.service_enrolled || undefined,
-        lead_creation_date: leadCreationDate ? format(leadCreationDate, 'yyyy-MM-dd') : undefined,
-        follow_up_date: followUpDate?.toISOString(),
-        consult_date: consultDate ? format(consultDate, 'yyyy-MM-dd') : undefined,
+        doctor_name: data.doctor_name || undefined,
+        service_partner: data.service_partner || undefined,
+        connect_status: data.connect_status || undefined,
+        action_taken: data.action_taken || undefined,
+        billed_date: billedDate ? format(billedDate, 'yyyy-MM-dd') : undefined,
+        dob: dob ? format(dob, 'yyyy-MM-dd') : undefined,
+        follow_up_date: followUpDate ? format(followUpDate, 'yyyy-MM-dd') : undefined,
       };
 
-      await leadService.createLead(cleanData as Parameters<typeof leadService.createLead>[0]);
+      await enrollmentService.createEnrollment(cleanData as Parameters<typeof enrollmentService.createEnrollment>[0]);
       handleClose();
       onSuccess();
     } catch (error: unknown) {
       const message =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        'Failed to create lead';
+        'Failed to create enrollment';
       toast.error(message);
     } finally {
       setSaving(false);
@@ -131,7 +125,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Create New Lead
+              Create New Enrollment
             </Typography>
             <IconButton onClick={handleClose} size="small">
               <CloseIcon />
@@ -153,11 +147,21 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               <Grid item xs={12} sm={6}>
                 <TextField
-                  {...register('name')}
+                  {...register('subscriber_name')}
                   fullWidth
-                  label="Name *"
-                  error={!!errors.name}
-                  helperText={errors.name?.message}
+                  label="Subscriber Name *"
+                  error={!!errors.subscriber_name}
+                  helperText={errors.subscriber_name?.message}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  {...register('employee_id')}
+                  fullWidth
+                  label="EmployeeID *"
+                  error={!!errors.employee_id}
+                  helperText={errors.employee_id?.message}
                 />
               </Grid>
 
@@ -169,38 +173,6 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   error={!!errors.phone_number}
                   helperText={errors.phone_number?.message}
                   inputProps={{ maxLength: 10 }}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="lead_source"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      select
-                      label="Lead Source *"
-                      error={!!errors.lead_source}
-                      helperText={errors.lead_source?.message}
-                    >
-                      {LEAD_SOURCE_OPTIONS.map((source) => (
-                        <MenuItem key={source} value={source}>
-                          {source}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <DatePicker
-                  label="Lead Creation Date"
-                  value={leadCreationDate}
-                  onChange={setLeadCreationDate}
-                  slotProps={{ textField: { fullWidth: true } }}
                 />
               </Grid>
 
@@ -222,88 +194,59 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('employee_id')} fullWidth label="Employee ID" />
+                <TextField {...register('name')} fullWidth label="Name" />
               </Grid>
 
               <Grid item xs={12} sm={6}>
                 <TextField {...register('uhid')} fullWidth label="UHID" />
               </Grid>
 
-              {/* Location */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
-                  Location
-                </Typography>
-              </Grid>
-
               <Grid item xs={12} sm={6}>
-                <TextField {...register('user_facility')} fullWidth label="User Facility" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('city')} fullWidth label="City" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('pin_code')} fullWidth label="PIN Code" />
+                <DatePicker
+                  label="Date of Birth"
+                  value={dob}
+                  onChange={setDob}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
               </Grid>
 
               <Grid item xs={12}>
                 <TextField {...register('address')} fullWidth label="Address" multiline rows={2} />
               </Grid>
 
-              {/* Lead Information */}
+              {/* Billing Info */}
               <Grid item xs={12}>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
-                  Lead Information
+                  Billing Information
                 </Typography>
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <Controller
-                  name="trimester"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Trimester">
-                      <MenuItem value="">None</MenuItem>
-                      {TRIMESTER_OPTIONS.map((trimester) => (
-                        <MenuItem key={trimester} value={trimester}>
-                          {trimester}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="looking_for"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Looking For">
-                      <MenuItem value="">None</MenuItem>
-                      {LOOKING_FOR_OPTIONS.map((opt) => (
-                        <MenuItem key={opt} value={opt}>
-                          {opt}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('package_requested')} fullWidth label="Package Requested" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <DateTimePicker
-                  label="Follow Up Date"
-                  value={followUpDate}
-                  onChange={setFollowUpDate}
+                <DatePicker
+                  label="Billed Date"
+                  value={billedDate}
+                  onChange={setBilledDate}
                   slotProps={{ textField: { fullWidth: true } }}
                 />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('package_billed')} fullWidth label="Package Billed" />
+              </Grid>
+
+              {/* HCLH Details */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                  HCLH Details
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('hclhc_spoc')} fullWidth label="HCLH SPOC" />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('hcl_location')} fullWidth label="HCL Location" />
               </Grid>
 
               {/* Service Details */}
@@ -315,63 +258,14 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               <Grid item xs={12} sm={6}>
                 <Controller
-                  name="service_enrolled"
+                  name="trimester"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Enrolled">
+                    <TextField {...field} fullWidth select label="Current Trimester">
                       <MenuItem value="">None</MenuItem>
-                      {SERVICE_ENROLLED_OPTIONS.map((service) => (
-                        <MenuItem key={service} value={service}>
-                          {service}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  {...register('package_name_enrolled')}
-                  fullWidth
-                  label="Package Name Enrolled"
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  {...register('service_partner')}
-                  fullWidth
-                  select
-                  label="Service (Partner)"
-                >
-                  <MenuItem value="">Select Partner</MenuItem>
-                  {SERVICE_PARTNER_OPTIONS.map((partner) => (
-                    <MenuItem key={partner} value={partner}>
-                      {partner}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('provider_location')} fullWidth label="Provider Location" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('hclhc_spoc')} fullWidth label="HCLHC SPOC" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="reason_for_no_sale"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Reason for No Sale">
-                      <MenuItem value="">None</MenuItem>
-                      {REASON_FOR_NO_SALE_OPTIONS.map((reason) => (
-                        <MenuItem key={reason} value={reason}>
-                          {reason}
+                      {TRIMESTER_OPTIONS.map((t) => (
+                        <MenuItem key={t} value={t}>
+                          {t}
                         </MenuItem>
                       ))}
                     </TextField>
@@ -384,12 +278,86 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
+                <Controller
+                  name="service_partner"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Service Partner">
+                      <MenuItem value="">None</MenuItem>
+                      {SERVICE_PARTNER_OPTIONS.map((p) => (
+                        <MenuItem key={p} value={p}>
+                          {p}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('partner_centre_selected')} fullWidth label="Partner Centre Selected" />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('partner_gynaecologist')} fullWidth label="Partner Gynaecologist" />
+              </Grid>
+
+              {/* Status */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                  Status & Follow-up
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="connect_status"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Connect Status">
+                      <MenuItem value="">None</MenuItem>
+                      {CONNECT_STATUS_OPTIONS.map((s) => (
+                        <MenuItem key={s} value={s}>
+                          {s}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="action_taken"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Action Taken">
+                      <MenuItem value="">None</MenuItem>
+                      {ACTION_TAKEN_OPTIONS.map((a) => (
+                        <MenuItem key={a} value={a}>
+                          {a}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
                 <DatePicker
-                  label="Consult Date"
-                  value={consultDate}
-                  onChange={setConsultDate}
+                  label="Follow Up Date"
+                  value={followUpDate}
+                  onChange={setFollowUpDate}
                   slotProps={{ textField: { fullWidth: true } }}
                 />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('customer_feedback')} fullWidth label="Customer Feedback" />
+              </Grid>
+
+              <Grid item xs={12}>
+                <TextField {...register('remarks')} fullWidth label="Remarks" multiline rows={2} />
               </Grid>
             </Grid>
           </DialogContent>
@@ -399,7 +367,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
           <DialogActions sx={{ px: 3, py: 2 }}>
             <Button onClick={handleClose}>Cancel</Button>
             <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? <CircularProgress size={24} /> : 'Create Lead'}
+              {saving ? <CircularProgress size={24} /> : 'Create Enrollment'}
             </Button>
           </DialogActions>
         </form>

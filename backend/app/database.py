@@ -32,6 +32,7 @@ async def connect_to_database():
         from app.models.knowledge_document import KnowledgeDocument
         from app.models.document_chunk import DocumentChunk
         from app.models.chat_session import ChatSession
+        from app.models.enrollment import Enrollment
 
         # Initialize Beanie with document models
         await init_beanie(
@@ -44,7 +45,8 @@ async def connect_to_database():
                 CustomField,
                 KnowledgeDocument,
                 DocumentChunk,
-                ChatSession
+                ChatSession,
+                Enrollment
             ]
         )
 
@@ -100,6 +102,14 @@ async def create_indexes():
     await db.document_chunks.create_index("document_id")
     await db.kb_chat_sessions.create_index("user_id")
     await db.kb_chat_sessions.create_index([("updated_at", -1)])
+
+    # Enrollment indexes
+    await db.enrollments.create_index("enrollment_id", unique=True)
+    await db.enrollments.create_index("employee_id")
+    await db.enrollments.create_index("phone_number")
+    await db.enrollments.create_index("service_partner")
+    await db.enrollments.create_index("connect_status")
+    await db.enrollments.create_index([("created_at", -1)])
 
     logger.info("Database indexes created successfully")
 

@@ -253,8 +253,8 @@ export default function LeadsPage() {
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
     },
     {
-      field: 'stage',
-      headerName: 'Stage',
+      field: 'trimester',
+      headerName: 'Trimester',
       flex: 0.9,
       minWidth: 90,
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,

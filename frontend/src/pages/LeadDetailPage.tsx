@@ -41,9 +41,11 @@ import {
   AuditLogEntry,
   LEAD_STATUS_OPTIONS,
   LEAD_SOURCE_OPTIONS,
-  STAGE_OPTIONS,
+  TRIMESTER_OPTIONS,
   LOOKING_FOR_OPTIONS,
   SERVICE_ENROLLED_OPTIONS,
+  SERVICE_PARTNER_OPTIONS,
+  REASON_FOR_NO_SALE_OPTIONS,
 } from '../types/lead.types';
 import { brandColors } from '../theme';
 import api from '../services/api';
@@ -148,14 +150,15 @@ export default function LeadDetailPage() {
         city: data.city || undefined,
         pin_code: data.pin_code || undefined,
         address: data.address || undefined,
-        stage: data.stage || undefined,
+        trimester: data.trimester || undefined,
         looking_for: data.looking_for || undefined,
         package_requested: data.package_requested || undefined,
         service_enrolled: data.service_enrolled || undefined,
         package_name_enrolled: data.package_name_enrolled || undefined,
-        provider_name: data.provider_name || undefined,
+        service_partner: data.service_partner || undefined,
         provider_location: data.provider_location || undefined,
         hclhc_spoc: data.hclhc_spoc || undefined,
+        reason_for_no_sale: data.reason_for_no_sale || undefined,
         doctor_name: data.doctor_name || undefined,
         consult_date: data.consult_date || undefined,
         assigned_to: data.assigned_to || undefined,
@@ -262,16 +265,17 @@ export default function LeadDetailPage() {
       'pin_code',
       'address',
       // Healthcare fields
-      'stage',
+      'trimester',
       'looking_for',
       'package_requested',
       'service_enrolled',
       'package_name_enrolled',
-      'provider_name',
+      'service_partner',
       'provider_location',
       'doctor_name',
       'consult_date',
       'hclhc_spoc',
+      'reason_for_no_sale',
       'reassign_to',
     ];
     return agentEditableFields.includes(field);
@@ -530,16 +534,16 @@ export default function LeadDetailPage() {
                   <TextField
                     fullWidth
                     select
-                    label="Stage"
+                    label="Trimester"
                     size="small"
-                    value={formData.stage || ''}
-                    onChange={(e) => handleInputChange('stage', e.target.value)}
-                    disabled={!canEdit('stage')}
+                    value={formData.trimester || ''}
+                    onChange={(e) => handleInputChange('trimester', e.target.value)}
+                    disabled={!canEdit('trimester')}
                   >
                     <MenuItem value="">None</MenuItem>
-                    {STAGE_OPTIONS.map((stage) => (
-                      <MenuItem key={stage} value={stage}>
-                        {stage}
+                    {TRIMESTER_OPTIONS.map((trimester) => (
+                      <MenuItem key={trimester} value={trimester}>
+                        {trimester}
                       </MenuItem>
                     ))}
                   </TextField>
@@ -662,12 +666,20 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="Provider Name"
+                    select
+                    label="Service (Partner)"
                     size="small"
-                    value={formData.provider_name || ''}
-                    onChange={(e) => handleInputChange('provider_name', e.target.value)}
-                    disabled={!canEdit('provider_name')}
-                  />
+                    value={formData.service_partner || ''}
+                    onChange={(e) => handleInputChange('service_partner', e.target.value)}
+                    disabled={!canEdit('service_partner')}
+                  >
+                    <MenuItem value="">Select Partner</MenuItem>
+                    {SERVICE_PARTNER_OPTIONS.map((partner) => (
+                      <MenuItem key={partner} value={partner}>
+                        {partner}
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <TextField
@@ -688,6 +700,24 @@ export default function LeadDetailPage() {
                     onChange={(e) => handleInputChange('hclhc_spoc', e.target.value)}
                     disabled={!canEdit('hclhc_spoc')}
                   />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Reason for No Sale"
+                    size="small"
+                    value={formData.reason_for_no_sale || ''}
+                    onChange={(e) => handleInputChange('reason_for_no_sale', e.target.value)}
+                    disabled={!canEdit('reason_for_no_sale')}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {REASON_FOR_NO_SALE_OPTIONS.map((reason) => (
+                      <MenuItem key={reason} value={reason}>
+                        {reason}
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <TextField

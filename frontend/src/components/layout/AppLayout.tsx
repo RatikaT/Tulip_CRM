@@ -32,6 +32,7 @@ import {
   Settings as SettingsIcon,
   MenuBook as KnowledgeBaseIcon,
   Home as HomeIcon,
+  HowToReg as EnrollmentIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../stores/authStore';
 import { brandColors } from '../../theme';
@@ -50,6 +51,7 @@ const navItems: NavItem[] = [
   { title: 'Home', path: '/', icon: <HomeIcon />, isAbsolute: true },
   { title: 'Dashboard', path: '/tulip/dashboard', icon: <DashboardIcon /> },
   { title: 'Leads', path: '/tulip/leads', icon: <LeadsIcon /> },
+  { title: 'Enrollments', path: '/tulip/enrollments', icon: <EnrollmentIcon /> },
   { title: 'Bulk Upload', path: '/tulip/bulk-upload', icon: <UploadIcon />, adminOnly: true },
   { title: 'Summaries', path: '/tulip/summaries', icon: <SummaryIcon /> },
   { title: 'Knowledge Base', path: '/tulip/knowledge-base', icon: <KnowledgeBaseIcon /> },

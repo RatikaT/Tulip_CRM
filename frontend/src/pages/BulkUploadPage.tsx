@@ -244,9 +244,9 @@ export default function BulkUploadPage() {
         </Typography>
         <Box component="ul" sx={{ pl: 2 }}>
           <li><Typography variant="body2"><strong>email</strong> - Email address</Typography></li>
-          <li><Typography variant="body2"><strong>lead_source</strong> - Mail, Website, WA, Call, SMS, EMR, Other</Typography></li>
-          <li><Typography variant="body2"><strong>status</strong> - New, Interested, Not Interested, No Response, FollowUp Required, Lead Closed - No Response</Typography></li>
-          <li><Typography variant="body2"><strong>stage</strong> - Pregnant - 1st, Pregnant - 2nd, Pregnant - 3rd, PlanningForPregnancy, NewMom, Exploring</Typography></li>
+          <li><Typography variant="body2"><strong>lead_source</strong> - In Clinic-Walk In, Mail, In Clinic-Gynae Consult, Bump Day, Website, Call, AMA, WhatsApp, In Clinic-Other Consults, Others</Typography></li>
+          <li><Typography variant="body2"><strong>status</strong> - Not Interested, Enquiry Lead, Lead Closed-No Response, Enrolled, Follow up-In Process, Follow up-No Response, Duplicate</Typography></li>
+          <li><Typography variant="body2"><strong>trimester</strong> - Trimester 1, Trimester 2, Trimester 3, Not Conceived</Typography></li>
           <li><Typography variant="body2"><strong>looking_for</strong> - Self, Family Member</Typography></li>
           <li><Typography variant="body2"><strong>employee_id</strong> - Employee ID</Typography></li>
           <li><Typography variant="body2"><strong>uhid</strong> - UHID</Typography></li>
@@ -257,9 +257,10 @@ export default function BulkUploadPage() {
           <li><Typography variant="body2"><strong>package_requested</strong> - Package name requested</Typography></li>
           <li><Typography variant="body2"><strong>service_enrolled</strong> - PreConception, Antenatal, MaternityWellness</Typography></li>
           <li><Typography variant="body2"><strong>package_name_enrolled</strong> - Enrolled package name</Typography></li>
-          <li><Typography variant="body2"><strong>provider_name</strong> - Provider name</Typography></li>
+          <li><Typography variant="body2"><strong>service_partner</strong> - Service Partner (Motherhood, Rainbow, Fortis, Apollo Cradle, Cloud 9, HCL Healthcare, Mamily, Others)</Typography></li>
           <li><Typography variant="body2"><strong>provider_location</strong> - Provider location</Typography></li>
           <li><Typography variant="body2"><strong>hclhc_spoc</strong> - HCLHC SPOC name</Typography></li>
+          <li><Typography variant="body2"><strong>reason_for_no_sale</strong> - Already Taking Service outside, Location not suitable, Different Service Provider Required-Brand, Travelling to Native Place for delivery, Package Cost, Only Delivery Package required, Package inadequate, Miscarriage, Looking for other HCLH services, Others</Typography></li>
           <li><Typography variant="body2"><strong>doctor_name</strong> - Doctor name</Typography></li>
           <li><Typography variant="body2"><strong>consult_date</strong> - Consultation date (YYYY-MM-DD)</Typography></li>
           <li><Typography variant="body2"><strong>lead_creation_date</strong> - Lead creation date (YYYY-MM-DD)</Typography></li>

@@ -29,7 +29,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
 import { leadService } from '../../services/leadService';
-import { Lead, LeadSource, Stage, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, STAGE_OPTIONS } from '../../types/lead.types';
+import { Lead, LeadSource, Trimester, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TRIMESTER_OPTIONS } from '../../types/lead.types';
 
 interface LocalCallEntry {
   call_number: number;
@@ -80,7 +80,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
     address: lead.address || '',
     pin_code: lead.pin_code || '',
     city: lead.city || '',
-    stage: lead.stage || '',
+    trimester: lead.trimester || '',
     lead_source: lead.lead_source || '',
     doctor_name: lead.doctor_name || '',
     package_requested: lead.package_requested || '',
@@ -147,7 +147,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
       const updateData = {
         ...formData,
         lead_source: formData.lead_source ? (formData.lead_source as LeadSource) : undefined,
-        stage: formData.stage ? (formData.stage as Stage) : undefined,
+        trimester: formData.trimester ? (formData.trimester as Trimester) : undefined,
         follow_up_date: formData.follow_up_date instanceof Date ? formData.follow_up_date.toISOString() : null,
         number_of_calls: calls.length,
         calls: calls.map((c) => ({
@@ -330,15 +330,15 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                 <TextField
                   fullWidth
                   select
-                  label="Stage"
-                  value={formData.stage}
-                  onChange={(e) => handleFieldChange('stage', e.target.value)}
+                  label="Trimester"
+                  value={formData.trimester}
+                  onChange={(e) => handleFieldChange('trimester', e.target.value)}
                   disabled={!isAdmin}
                 >
                   <MenuItem value="">None</MenuItem>
-                  {STAGE_OPTIONS.map((s: string) => (
-                    <MenuItem key={s} value={s}>
-                      {s}
+                  {TRIMESTER_OPTIONS.map((t: string) => (
+                    <MenuItem key={t} value={t}>
+                      {t}
                     </MenuItem>
                   ))}
                 </TextField>

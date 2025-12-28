@@ -17,6 +17,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import EventIcon from '@mui/icons-material/Event';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import {
   PieChart,
   Pie,
@@ -45,6 +46,9 @@ interface DashboardMetrics {
   leads_by_source: Record<string, number>;
   leads_by_service: Record<string, number>;
   daily_trends: Array<{ date: string; count: number }>;
+  total_enrollments: number;
+  enrollments_by_partner: Record<string, number>;
+  enrollments_by_action: Record<string, number>;
 }
 
 interface MetricCardProps {
@@ -117,6 +121,9 @@ export default function DashboardPage() {
         leads_by_source: {},
         leads_by_service: {},
         daily_trends: [],
+        total_enrollments: 0,
+        enrollments_by_partner: {},
+        enrollments_by_action: {},
       });
       if (showRefreshing) toast.error('Failed to refresh data');
     } finally {
@@ -206,6 +213,14 @@ Keep it concise - this is for a dashboard quick view.`;
       leads: item.count,
     })) || [];
 
+  const enrollmentsByPartnerData = metrics?.enrollments_by_partner
+    ? Object.entries(metrics.enrollments_by_partner).map(([name, value]) => ({ name, value }))
+    : [];
+
+  const enrollmentsByActionData = metrics?.enrollments_by_action
+    ? Object.entries(metrics.enrollments_by_action).map(([name, value]) => ({ name, value }))
+    : [];
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
@@ -227,9 +242,9 @@ Keep it concise - this is for a dashboard quick view.`;
         </Tooltip>
       </Box>
 
-      {/* Metric Cards */}
+      {/* Metric Cards - 5 horizontal */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} sm={3}>
+        <Grid item xs={6} sm={4} md={2.4}>
           <MetricCard
             title="Total Leads"
             value={metrics?.total_leads || 0}
@@ -237,7 +252,7 @@ Keep it concise - this is for a dashboard quick view.`;
             color="#1E4088"
           />
         </Grid>
-        <Grid item xs={6} sm={3}>
+        <Grid item xs={6} sm={4} md={2.4}>
           <MetricCard
             title="Unique Users"
             value={metrics?.unique_users || 0}
@@ -245,7 +260,7 @@ Keep it concise - this is for a dashboard quick view.`;
             color="#7B4B94"
           />
         </Grid>
-        <Grid item xs={6} sm={3}>
+        <Grid item xs={6} sm={4} md={2.4}>
           <MetricCard
             title="New Today"
             value={metrics?.new_leads_today || 0}
@@ -253,12 +268,20 @@ Keep it concise - this is for a dashboard quick view.`;
             color="#4CAF50"
           />
         </Grid>
-        <Grid item xs={6} sm={3}>
+        <Grid item xs={6} sm={4} md={2.4}>
           <MetricCard
             title="Follow-ups Today"
             value={metrics?.follow_ups_today || 0}
             icon={<EventIcon fontSize="large" />}
             color="#E84A8A"
+          />
+        </Grid>
+        <Grid item xs={6} sm={4} md={2.4}>
+          <MetricCard
+            title="Total Enrollments"
+            value={metrics?.total_enrollments || 0}
+            icon={<AssignmentTurnedInIcon fontSize="large" />}
+            color="#FF9800"
           />
         </Grid>
       </Grid>
@@ -417,6 +440,67 @@ Keep it concise - this is for a dashboard quick view.`;
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
                 <Typography color="text.secondary">No data available</Typography>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Charts Row 3 - Enrollment Charts */}
+      <Grid container spacing={2} sx={{ mt: 1 }}>
+        {/* Enrollments by Service Partner - Bar Chart */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: 320 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Enrollments by Service Partner
+            </Typography>
+            {enrollmentsByPartnerData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={enrollmentsByPartnerData} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" tick={{ fontSize: 12 }} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
+                  <RechartsTooltip />
+                  <Bar dataKey="value" fill="#FF9800" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
+                <Typography color="text.secondary">No enrollment data available</Typography>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Enrollments by Action Taken - Pie Chart */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: 320 }}>
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Enrollments by Action Taken
+            </Typography>
+            {enrollmentsByActionData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={enrollmentsByActionData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    labelLine={false}
+                  >
+                    {enrollmentsByActionData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
+                <Typography color="text.secondary">No enrollment data available</Typography>
               </Box>
             )}
           </Paper>

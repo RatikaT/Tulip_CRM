@@ -4,7 +4,7 @@ Lead Schemas for request/response validation
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-from app.models.lead import LeadStatus, LeadSource, Stage, LookingFor, ServiceEnrolled
+from app.models.lead import LeadStatus, LeadSource, Trimester, LookingFor, ServiceEnrolled, ServicePartner, ReasonForNoSale
 
 
 class CallEntrySchema(BaseModel):
@@ -43,14 +43,15 @@ class LeadCreateRequest(BaseModel):
     city: Optional[str] = None
     pin_code: Optional[str] = None
     address: Optional[str] = None
-    stage: Optional[Stage] = None
+    trimester: Optional[Trimester] = None
     looking_for: Optional[LookingFor] = None
     package_requested: Optional[str] = None
     service_enrolled: Optional[ServiceEnrolled] = None
     package_name_enrolled: Optional[str] = None
-    provider_name: Optional[str] = None
+    service_partner: Optional[ServicePartner] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
+    reason_for_no_sale: Optional[ReasonForNoSale] = None
     doctor_name: Optional[str] = None
     consult_date: Optional[date] = None
     follow_up_date: Optional[datetime] = None
@@ -88,14 +89,15 @@ class LeadUpdateRequest(BaseModel):
     city: Optional[str] = None
     pin_code: Optional[str] = None
     address: Optional[str] = None
-    stage: Optional[Stage] = None
+    trimester: Optional[Trimester] = None
     looking_for: Optional[LookingFor] = None
     package_requested: Optional[str] = None
     service_enrolled: Optional[ServiceEnrolled] = None
     package_name_enrolled: Optional[str] = None
-    provider_name: Optional[str] = None
+    service_partner: Optional[ServicePartner] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
+    reason_for_no_sale: Optional[ReasonForNoSale] = None
     doctor_name: Optional[str] = None
     consult_date: Optional[date] = None
     assigned_to: Optional[str] = None
@@ -130,16 +132,19 @@ class LeadResponse(BaseModel):
     address: Optional[str] = None
 
     # Lead Information
-    stage: Optional[str] = None
+    trimester: Optional[str] = None
     looking_for: Optional[str] = None
     package_requested: Optional[str] = None
 
     # Service Details
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    provider_name: Optional[str] = None
+    service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
+
+    # Reason for No Sale
+    reason_for_no_sale: Optional[str] = None
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None

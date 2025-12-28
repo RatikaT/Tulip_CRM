@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import LeadsPage from './pages/LeadsPage';
 import LeadDetailPage from './pages/LeadDetailPage';
+import EnrollmentsPage from './pages/EnrollmentsPage';
 import SummariesPage from './pages/SummariesPage';
 import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
@@ -91,6 +92,10 @@ export const router = createBrowserRouter([
       {
         path: 'leads/:leadId',
         element: <LeadDetailPage />,
+      },
+      {
+        path: 'enrollments',
+        element: <EnrollmentsPage />,
       },
       {
         path: 'bulk-upload',

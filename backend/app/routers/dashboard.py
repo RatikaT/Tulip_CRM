@@ -1,5 +1,6 @@
 """
 Dashboard Routes - Metrics and Analytics
+Updated with enrollment metrics
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,6 +10,7 @@ from app.models.lead import Lead, LeadStatus
 from app.models.user import User
 from app.models.summary import Summary, SummaryType
 from app.models.audit_log import AuditLog, AuditAction
+from app.models.enrollment import Enrollment
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
 from bson import ObjectId
@@ -118,6 +120,28 @@ async def get_dashboard_metrics(
         date = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
         filled_trends.append({"date": date, "count": date_counts.get(date, 0)})
 
+    # Enrollment metrics
+    enrollment_base_query = {"is_deleted": False}
+    total_enrollments = await Enrollment.find(enrollment_base_query).count()
+
+    # Enrollments by service partner
+    partner_pipeline = [
+        {"$match": enrollment_base_query},
+        {"$group": {"_id": "$service_partner", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    partner_result = await get_database().enrollments.aggregate(partner_pipeline).to_list(100)
+    enrollments_by_partner = {item["_id"]: item["count"] for item in partner_result if item["_id"]}
+
+    # Enrollments by action taken
+    action_pipeline = [
+        {"$match": enrollment_base_query},
+        {"$group": {"_id": "$action_taken", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    action_result = await get_database().enrollments.aggregate(action_pipeline).to_list(100)
+    enrollments_by_action = {item["_id"]: item["count"] for item in action_result if item["_id"]}
+
     return {
         "total_leads": total_leads,
         "unique_users": unique_users,
@@ -126,7 +150,10 @@ async def get_dashboard_metrics(
         "leads_by_status": leads_by_status,
         "leads_by_source": leads_by_source,
         "leads_by_service": leads_by_service,
-        "daily_trends": filled_trends
+        "daily_trends": filled_trends,
+        "total_enrollments": total_enrollments,
+        "enrollments_by_partner": enrollments_by_partner,
+        "enrollments_by_action": enrollments_by_action
     }
 
 

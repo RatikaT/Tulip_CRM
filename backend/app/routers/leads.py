@@ -16,9 +16,11 @@ from app.schemas.lead import (
     LeadListResponse,
     CommentCreateRequest
 )
-from app.models.lead import Lead, LeadStatus, LeadSource, Stage, LookingFor, ServiceEnrolled
+from app.models.lead import Lead, LeadStatus, LeadSource, Trimester, LookingFor, ServiceEnrolled, ServicePartner, ReasonForNoSale
 from app.models.audit_log import AuditLog, AuditAction
 from app.models.user import User
+from app.models.enrollment import Enrollment, ConnectStatus as EnrollmentConnectStatus
+from app.utils.enrollment_id import generate_enrollment_id
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
@@ -59,16 +61,19 @@ def lead_to_response(lead: Lead) -> dict:
         "address": lead.address,
 
         # Lead Information
-        "stage": lead.stage.value if lead.stage else None,
+        "trimester": lead.trimester.value if lead.trimester else None,
         "looking_for": lead.looking_for.value if lead.looking_for else None,
         "package_requested": lead.package_requested,
 
         # Service Details
         "service_enrolled": lead.service_enrolled.value if lead.service_enrolled else None,
         "package_name_enrolled": lead.package_name_enrolled,
-        "provider_name": lead.provider_name,
+        "service_partner": lead.service_partner.value if lead.service_partner else None,
         "provider_location": lead.provider_location,
         "hclhc_spoc": lead.hclhc_spoc,
+
+        # Reason for No Sale
+        "reason_for_no_sale": lead.reason_for_no_sale.value if lead.reason_for_no_sale else None,
 
         # Doctor/Consultation Details
         "doctor_name": lead.doctor_name,
@@ -141,55 +146,68 @@ async def bulk_upload_leads(
                 lead_source = None
                 if lead_source_str:
                     source_map = {
+                        'in clinic-walk in': LeadSource.IN_CLINIC_WALK_IN,
                         'mail': LeadSource.MAIL,
+                        'in clinic-gynae consult': LeadSource.IN_CLINIC_GYNAE_CONSULT,
+                        'bump day': LeadSource.BUMP_DAY,
                         'website': LeadSource.WEBSITE,
-                        'wa': LeadSource.WA,
-                        'whatsapp': LeadSource.WA,
                         'call': LeadSource.CALL,
-                        'sms': LeadSource.SMS,
-                        'emr': LeadSource.EMR,
-                        'other': LeadSource.OTHER
+                        'ama': LeadSource.AMA,
+                        'whatsapp': LeadSource.WHATSAPP,
+                        'in clinic-other consults': LeadSource.IN_CLINIC_OTHER_CONSULTS,
+                        'others': LeadSource.OTHERS,
+                        # Backward compatibility mappings
+                        'wa': LeadSource.WHATSAPP,
+                        'sms': LeadSource.OTHERS,
+                        'emr': LeadSource.OTHERS,
+                        'other': LeadSource.OTHERS
                     }
-                    lead_source = source_map.get(lead_source_str.lower(), LeadSource.OTHER)
+                    lead_source = source_map.get(lead_source_str.lower(), LeadSource.OTHERS)
                 else:
-                    lead_source = LeadSource.OTHER
+                    lead_source = LeadSource.OTHERS
 
                 # Parse status
                 status_str = row.get('status', '').strip()
-                lead_status = LeadStatus.NEW
+                lead_status = LeadStatus.ENQUIRY_LEAD
                 if status_str:
                     status_map = {
-                        'new': LeadStatus.NEW,
                         'not interested': LeadStatus.NOT_INTERESTED,
-                        'interested': LeadStatus.INTERESTED,
+                        'enquiry lead': LeadStatus.ENQUIRY_LEAD,
+                        'lead closed-no response': LeadStatus.LEAD_CLOSED_NO_RESPONSE,
                         'lead closed - no response': LeadStatus.LEAD_CLOSED_NO_RESPONSE,
-                        'no response': LeadStatus.NO_RESPONSE,
-                        'followup required': LeadStatus.FOLLOWUP_REQUIRED,
-                        'follow up required': LeadStatus.FOLLOWUP_REQUIRED,
+                        'enrolled': LeadStatus.ENROLLED,
+                        'follow up-in process': LeadStatus.FOLLOWUP_IN_PROCESS,
+                        'follow up-no response': LeadStatus.FOLLOWUP_NO_RESPONSE,
+                        'duplicate': LeadStatus.DUPLICATE,
+                        # Backward compatibility
+                        'new': LeadStatus.ENQUIRY_LEAD,
+                        'interested': LeadStatus.ENQUIRY_LEAD,
+                        'followup required': LeadStatus.FOLLOWUP_IN_PROCESS,
+                        'no response': LeadStatus.FOLLOWUP_NO_RESPONSE,
                     }
-                    lead_status = status_map.get(status_str.lower(), LeadStatus.NEW)
+                    lead_status = status_map.get(status_str.lower(), LeadStatus.ENQUIRY_LEAD)
 
-                # Parse stage
-                stage_str = row.get('stage', '').strip()
-                stage = None
-                if stage_str:
-                    stage_map = {
-                        'pregnant - 1st': Stage.PREGNANT_1ST,
-                        '1st': Stage.PREGNANT_1ST,
-                        '1st trimester': Stage.PREGNANT_1ST,
-                        'pregnant - 2nd': Stage.PREGNANT_2ND,
-                        '2nd': Stage.PREGNANT_2ND,
-                        '2nd trimester': Stage.PREGNANT_2ND,
-                        'pregnant - 3rd': Stage.PREGNANT_3RD,
-                        '3rd': Stage.PREGNANT_3RD,
-                        '3rd trimester': Stage.PREGNANT_3RD,
-                        'planningforpregnancy': Stage.PLANNING_FOR_PREGNANCY,
-                        'planning': Stage.PLANNING_FOR_PREGNANCY,
-                        'newmom': Stage.NEW_MOM,
-                        'new mom': Stage.NEW_MOM,
-                        'exploring': Stage.EXPLORING,
+                # Parse trimester
+                trimester_str = row.get('trimester', '').strip()
+                trimester = None
+                if trimester_str:
+                    trimester_map = {
+                        'trimester 1': Trimester.TRIMESTER_1,
+                        'trimester1': Trimester.TRIMESTER_1,
+                        '1st': Trimester.TRIMESTER_1,
+                        '1': Trimester.TRIMESTER_1,
+                        'trimester 2': Trimester.TRIMESTER_2,
+                        'trimester2': Trimester.TRIMESTER_2,
+                        '2nd': Trimester.TRIMESTER_2,
+                        '2': Trimester.TRIMESTER_2,
+                        'trimester 3': Trimester.TRIMESTER_3,
+                        'trimester3': Trimester.TRIMESTER_3,
+                        '3rd': Trimester.TRIMESTER_3,
+                        '3': Trimester.TRIMESTER_3,
+                        'not conceived': Trimester.NOT_CONCEIVED,
+                        'notconceived': Trimester.NOT_CONCEIVED,
                     }
-                    stage = stage_map.get(stage_str.lower())
+                    trimester = trimester_map.get(trimester_str.lower())
 
                 # Parse looking_for
                 looking_for_str = row.get('looking_for', '').strip()
@@ -212,6 +230,40 @@ async def bulk_upload_leads(
                         'maternity wellness': ServiceEnrolled.MATERNITY_WELLNESS,
                     }
                     service_enrolled = service_map.get(service_str.lower())
+
+                # Parse service_partner
+                partner_str = row.get('service_partner', '').strip()
+                service_partner = None
+                if partner_str:
+                    partner_map = {
+                        'motherhood': ServicePartner.MOTHERHOOD,
+                        'rainbow': ServicePartner.RAINBOW,
+                        'fortis': ServicePartner.FORTIS,
+                        'apollo cradle': ServicePartner.APOLLO_CRADLE,
+                        'cloud 9': ServicePartner.CLOUD_9,
+                        'hcl healthcare': ServicePartner.HCL_HEALTHCARE,
+                        'mamily': ServicePartner.MAMILY,
+                        'others': ServicePartner.OTHERS,
+                    }
+                    service_partner = partner_map.get(partner_str.lower(), ServicePartner.OTHERS)
+
+                # Parse reason_for_no_sale
+                reason_str = row.get('reason_for_no_sale', '').strip()
+                reason_for_no_sale = None
+                if reason_str:
+                    reason_map = {
+                        'already taking service outside': ReasonForNoSale.ALREADY_TAKING_SERVICE_OUTSIDE,
+                        'location not suitable': ReasonForNoSale.LOCATION_NOT_SUITABLE,
+                        'different service provider required-brand': ReasonForNoSale.DIFFERENT_SERVICE_PROVIDER_REQUIRED,
+                        'travelling to native place for delivery': ReasonForNoSale.TRAVELLING_TO_NATIVE,
+                        'package cost': ReasonForNoSale.PACKAGE_COST,
+                        'only delivery package required': ReasonForNoSale.ONLY_DELIVERY_PACKAGE,
+                        'package inadequate': ReasonForNoSale.PACKAGE_INADEQUATE,
+                        'miscarriage': ReasonForNoSale.MISCARRIAGE,
+                        'looking for other hclh services': ReasonForNoSale.LOOKING_FOR_OTHER_HCLH,
+                        'others': ReasonForNoSale.OTHERS,
+                    }
+                    reason_for_no_sale = reason_map.get(reason_str.lower())
 
                 # Parse dates
                 lead_creation_date = None
@@ -256,14 +308,15 @@ async def bulk_upload_leads(
                     city=row.get('city', '').strip() or None,
                     pin_code=row.get('pin_code', '').strip() or None,
                     address=row.get('address', '').strip() or None,
-                    stage=stage,
+                    trimester=trimester,
                     looking_for=looking_for,
                     package_requested=row.get('package_requested', '').strip() or None,
                     service_enrolled=service_enrolled,
                     package_name_enrolled=row.get('package_name_enrolled', '').strip() or None,
-                    provider_name=row.get('provider_name', '').strip() or None,
+                    service_partner=service_partner,
                     provider_location=row.get('provider_location', '').strip() or None,
                     hclhc_spoc=row.get('hclhc_spoc', '').strip() or None,
+                    reason_for_no_sale=reason_for_no_sale,
                     doctor_name=row.get('doctor_name', '').strip() or None,
                     consult_date=consult_date_val,
                     follow_up_date=follow_up_date,
@@ -380,10 +433,10 @@ async def export_leads_excel(
     # Lead headers
     lead_headers = [
         "Lead ID", "Name", "Email", "Phone Number", "Employee ID", "UHID",
-        "Status", "Lead Source", "Lead Creation Date", "Stage", "Looking For",
+        "Status", "Lead Source", "Lead Creation Date", "Trimester", "Looking For",
         "User Facility", "City", "Pin Code", "Address",
         "Package Requested", "Service Enrolled", "Package Name Enrolled",
-        "Provider Name", "Provider Location", "HCLHC SPOC",
+        "Service (Partner)", "Provider Location", "HCLHC SPOC", "Reason for No Sale",
         "Doctor Name", "Consult Date",
         "Number of Calls", "Follow Up Date",
         "Assigned To", "Reassign To",
@@ -413,7 +466,7 @@ async def export_leads_excel(
             lead.status.value if lead.status else None,
             lead.lead_source.value if lead.lead_source else None,
             str(lead.lead_creation_date) if lead.lead_creation_date else None,
-            lead.stage.value if lead.stage else None,
+            lead.trimester.value if lead.trimester else None,
             lead.looking_for.value if lead.looking_for else None,
             lead.user_facility,
             lead.city,
@@ -422,9 +475,10 @@ async def export_leads_excel(
             lead.package_requested,
             lead.service_enrolled.value if lead.service_enrolled else None,
             lead.package_name_enrolled,
-            lead.provider_name,
+            lead.service_partner.value if lead.service_partner else None,
             lead.provider_location,
             lead.hclhc_spoc,
+            lead.reason_for_no_sale.value if lead.reason_for_no_sale else None,
             lead.doctor_name,
             str(lead.consult_date) if lead.consult_date else None,
             lead.number_of_calls,
@@ -646,14 +700,15 @@ async def create_lead(
         city=request.city,
         pin_code=request.pin_code,
         address=request.address,
-        stage=request.stage,
+        trimester=request.trimester,
         looking_for=request.looking_for,
         package_requested=request.package_requested,
         service_enrolled=request.service_enrolled,
         package_name_enrolled=request.package_name_enrolled,
-        provider_name=request.provider_name,
+        service_partner=request.service_partner,
         provider_location=request.provider_location,
         hclhc_spoc=request.hclhc_spoc,
+        reason_for_no_sale=request.reason_for_no_sale,
         follow_up_date=request.follow_up_date,
         assigned_to=request.assigned_to,
         assigned_to_name=assigned_to_name,
@@ -713,9 +768,9 @@ async def update_lead(
             # Location fields
             "user_facility", "city", "pin_code", "address",
             # Healthcare fields
-            "stage", "looking_for", "package_requested", "service_enrolled",
-            "package_name_enrolled", "provider_name", "provider_location",
-            "doctor_name", "consult_date", "hclhc_spoc"
+            "trimester", "looking_for", "package_requested", "service_enrolled",
+            "package_name_enrolled", "service_partner", "provider_location",
+            "doctor_name", "consult_date", "hclhc_spoc", "reason_for_no_sale"
         ]
         restricted_fields = [k for k in update_data.keys() if k not in allowed_fields]
         if restricted_fields:
@@ -731,19 +786,23 @@ async def update_lead(
             old_value = old_value.value
 
         # Convert enum strings to enum values for certain fields
-        if field in ["lead_source", "status", "stage", "looking_for", "service_enrolled"] and new_value:
+        if field in ["lead_source", "status", "trimester", "looking_for", "service_enrolled", "service_partner", "reason_for_no_sale"] and new_value:
             if isinstance(new_value, str):
                 try:
                     if field == "lead_source":
                         new_value = LeadSource(new_value)
                     elif field == "status":
                         new_value = LeadStatus(new_value)
-                    elif field == "stage":
-                        new_value = Stage(new_value)
+                    elif field == "trimester":
+                        new_value = Trimester(new_value)
                     elif field == "looking_for":
                         new_value = LookingFor(new_value)
                     elif field == "service_enrolled":
                         new_value = ServiceEnrolled(new_value)
+                    elif field == "service_partner":
+                        new_value = ServicePartner(new_value)
+                    elif field == "reason_for_no_sale":
+                        new_value = ReasonForNoSale(new_value)
                 except ValueError:
                     pass  # Keep as string if conversion fails
 
@@ -760,6 +819,53 @@ async def update_lead(
     lead.last_modified_by = current_user["user_id"]
 
     await lead.save()
+
+    # Auto-enrollment: Create enrollment when status changes to "Enrolled"
+    status_change = next((c for c in changes if c["field"] == "status" and c["new_value"] == LeadStatus.ENROLLED.value), None)
+    if status_change:
+        try:
+            db = get_database()
+            enrollment_id = await generate_enrollment_id(db)
+
+            # Map lead's service_partner to enrollment's service_partner
+            service_partner_value = None
+            if lead.service_partner:
+                from app.models.enrollment import ServicePartner as EnrollmentServicePartner
+                try:
+                    service_partner_value = EnrollmentServicePartner(lead.service_partner.value)
+                except ValueError:
+                    pass
+
+            # Map trimester
+            trimester_value = None
+            if lead.trimester:
+                from app.models.enrollment import Trimester as EnrollmentTrimester
+                try:
+                    trimester_value = EnrollmentTrimester(lead.trimester.value)
+                except ValueError:
+                    pass
+
+            enrollment = Enrollment(
+                enrollment_id=enrollment_id,
+                linked_lead_id=lead.lead_id,
+                subscriber_name=lead.name,
+                employee_id=lead.employee_id or "",
+                phone_number=lead.phone_number,
+                email=lead.email,
+                trimester=trimester_value,
+                doctor_name=lead.doctor_name,
+                service_partner=service_partner_value,
+                hclhc_spoc=lead.hclhc_spoc,
+                connect_status=EnrollmentConnectStatus.CONNECTED,
+                created_by=current_user["user_id"],
+                created_by_name=current_user["full_name"],
+                assigned_to=current_user["user_id"],
+                assigned_to_name=current_user["full_name"],
+            )
+            await enrollment.insert()
+            logger.info(f"Auto-created enrollment {enrollment_id} for lead {lead_id}")
+        except Exception as e:
+            logger.error(f"Failed to auto-create enrollment for lead {lead_id}: {str(e)}")
 
     # Create audit log if there are changes
     if changes:

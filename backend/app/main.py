@@ -2,13 +2,15 @@
 CRM - FastAPI Application Entry Point
 """
 import logging
+import traceback
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import connect_to_database, close_database_connection
 from app.services.auth_service import create_default_admin, create_default_super_admin
-from app.routers import auth, leads, users, dashboard, knowledge_base, custom_fields
+from app.routers import auth, leads, users, dashboard, knowledge_base, custom_fields, enrollments
 
 # Configure logging (console only for cloud compatibility)
 logging.basicConfig(
@@ -67,6 +69,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and log them"""
+    logger.error(f"Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)}
+    )
+
+
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(leads.router, prefix="/api/leads", tags=["Leads"])
@@ -74,6 +88,7 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(custom_fields.router, prefix="/api/custom-fields", tags=["Custom Fields"])
+app.include_router(enrollments.router, prefix="/api/enrollments", tags=["Enrollments"])
 
 
 @app.get("/")
