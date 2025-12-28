@@ -2,9 +2,9 @@ Field Name,Display Label,Field Type,Dropdown Values,Who Can Edit,Mandatory for C
 lead_id,Lead ID,Text (Auto-generated),,System,No,Yes,"Auto-generated format: Tulip_DDMMYYYY_XXX (e.g., Tulip_25122025_001)"
 created_at,Created At,DateTime,,System,No,Yes,Automatically set when lead is created
 updated_at,Updated At,DateTime,,System,No,Yes,Automatically updated on any change
-lead_source,Lead Source,Dropdown,"Mail, Website, WA, Call, SMS, EMR, Other",Both (Admin & Agent),Yes,No,Source from where lead originated
+lead_source,Lead Source,Dropdown,"In Clinic-Walk In, Mail, In Clinic-Gynae Consult, Bump Day, Website, Call, AMA, WhatsApp, In Clinic-Other Consults, Others",Both (Admin & Agent),Yes,No,Source from where lead originated
 lead_creation_date,Lead Date,Date (Calendar),,Both (Admin & Agent),No,No,Manual date selection for when lead was received
-status,Status,Dropdown,"New, Not Interested, Interested, Lead Closed - No Response, No Response, FollowUp Required",Both (Admin & Agent),No,No,Default: New. Current status of the lead
+status,Status,Dropdown,"Not Interested, Enquiry Lead, Lead Closed-No Response, Enrolled, Follow up-In Process, Follow up-No Response, Duplicate",Both (Admin & Agent),No,No,Default: Enquiry Lead. Current status of the lead
 name,Name,Text,,Admin Only,Yes,No,Full name of the lead/customer
 email,Email,Email,,Admin Only,No,No,Email address of the lead
 phone_number,Phone Number,Text,,Admin Only,Yes,No,Contact phone number
