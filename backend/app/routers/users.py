@@ -15,6 +15,7 @@ from app.models.user import User, UserRole
 from app.middleware.auth_middleware import get_current_user, require_admin
 from app.services.auth_service import hash_password
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +54,14 @@ async def list_users(
     else:
         users_query = User.find_all()
 
-    # Apply search filter if provided
+    # Apply search filter if provided (escape regex special chars for security)
     if search:
+        escaped_search = re.escape(search)
         users_query = User.find({
             "$or": [
-                {"username": {"$regex": search, "$options": "i"}},
-                {"email": {"$regex": search, "$options": "i"}},
-                {"full_name": {"$regex": search, "$options": "i"}}
+                {"username": {"$regex": escaped_search, "$options": "i"}},
+                {"email": {"$regex": escaped_search, "$options": "i"}},
+                {"full_name": {"$regex": escaped_search, "$options": "i"}}
             ]
         })
         total = await users_query.count()
@@ -138,6 +140,7 @@ async def create_user(
     """
     Create a new user (Admin only)
     """
+    logger.debug(f"Creating user: username={user_data.username}, email={user_data.email}, by admin={current_user['email']}")
     # Check if username already exists
     existing_username = await User.find_one(User.username == user_data.username)
     if existing_username:
@@ -194,6 +197,7 @@ async def update_user(
     """
     Update a user (Admin only)
     """
+    logger.debug(f"Updating user {user_id} by admin={current_user['email']}")
     from bson import ObjectId
 
     if not ObjectId.is_valid(user_id):
@@ -282,6 +286,7 @@ async def delete_user(
     """
     Deactivate a user (Admin only) - soft delete
     """
+    logger.debug(f"Deleting/deactivating user {user_id} by admin={current_user['email']}")
     from bson import ObjectId
 
     if not ObjectId.is_valid(user_id):

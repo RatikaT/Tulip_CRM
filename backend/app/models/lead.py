@@ -107,6 +107,7 @@ class Lead(Document):
     name: str
     email: Optional[EmailStr] = None
     phone_number: str
+    alternate_mobile_number: Optional[str] = None  # For family member inquiries
     employee_id: Optional[str] = None
     uhid: Optional[str] = None
 
@@ -119,6 +120,7 @@ class Lead(Document):
     # Lead Information
     trimester: Optional[Trimester] = None  # Renamed from stage
     looking_for: Optional[LookingFor] = None
+    family_member_relation: Optional[str] = None  # Free text: Mother, Daughter, Sister, Wife, etc.
     package_requested: Optional[str] = None
 
     # Service Details

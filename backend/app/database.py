@@ -110,6 +110,15 @@ async def create_indexes():
     await db.enrollments.create_index("service_partner")
     await db.enrollments.create_index("connect_status")
     await db.enrollments.create_index([("created_at", -1)])
+    await db.enrollments.create_index("linked_lead_id")  # For enrollment-lead joins
+    await db.enrollments.create_index("is_deleted")  # For soft delete filtering
+    await db.enrollments.create_index([("assigned_to", 1), ("connect_status", 1)])  # For agent filtering
+
+    # Additional Lead indexes for optimization
+    await db.leads.create_index("is_deleted")  # For soft delete filtering
+
+    # Additional Audit Log indexes
+    await db.audit_logs.create_index("action")  # For action filtering
 
     logger.info("Database indexes created successfully")
 

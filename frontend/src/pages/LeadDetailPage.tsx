@@ -144,6 +144,7 @@ export default function LeadDetailPage() {
         name: data.name,
         email: data.email || undefined,
         phone_number: data.phone_number,
+        alternate_mobile_number: data.alternate_mobile_number || undefined,
         employee_id: data.employee_id || undefined,
         uhid: data.uhid || undefined,
         user_facility: data.user_facility || undefined,
@@ -152,6 +153,7 @@ export default function LeadDetailPage() {
         address: data.address || undefined,
         trimester: data.trimester || undefined,
         looking_for: data.looking_for || undefined,
+        family_member_relation: data.looking_for === 'Family Member' ? (data.family_member_relation || undefined) : undefined,
         package_requested: data.package_requested || undefined,
         service_enrolled: data.service_enrolled || undefined,
         package_name_enrolled: data.package_name_enrolled || undefined,
@@ -267,6 +269,7 @@ export default function LeadDetailPage() {
       // Healthcare fields
       'trimester',
       'looking_for',
+      'family_member_relation',
       'package_requested',
       'service_enrolled',
       'package_name_enrolled',
@@ -410,6 +413,18 @@ export default function LeadDetailPage() {
                     value={formData.phone_number || ''}
                     onChange={(e) => handleInputChange('phone_number', e.target.value)}
                     disabled={!canEdit('phone_number')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Alternate Mobile Number"
+                    size="small"
+                    placeholder="For family member inquiries"
+                    value={formData.alternate_mobile_number || ''}
+                    onChange={(e) => handleInputChange('alternate_mobile_number', e.target.value)}
+                    disabled={!canEdit('alternate_mobile_number')}
+                    inputProps={{ maxLength: 10 }}
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
@@ -566,6 +581,19 @@ export default function LeadDetailPage() {
                     ))}
                   </TextField>
                 </Grid>
+                {formData.looking_for === 'Family Member' && (
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      fullWidth
+                      label="Relation (e.g., Mother, Daughter, Sister, Wife)"
+                      size="small"
+                      placeholder="Enter relation"
+                      value={formData.family_member_relation || ''}
+                      onChange={(e) => handleInputChange('family_member_relation', e.target.value)}
+                      disabled={!canEdit('family_member_relation')}
+                    />
+                  </Grid>
+                )}
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth

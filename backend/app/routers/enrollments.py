@@ -26,6 +26,7 @@ from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
 import logging
 import math
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -499,15 +500,16 @@ async def get_enrollments(
         if service_partner:
             query["service_partner"] = service_partner
 
-        # Search
+        # Search (escape regex special chars for security)
         if search:
+            escaped_search = re.escape(search)
             query["$or"] = [
-                {"subscriber_name": {"$regex": search, "$options": "i"}},
-                {"employee_code": {"$regex": search, "$options": "i"}},
-                {"employee_name": {"$regex": search, "$options": "i"}},
-                {"phone_number": {"$regex": search}},
-                {"enrollment_id": {"$regex": search, "$options": "i"}},
-                {"email": {"$regex": search, "$options": "i"}}
+                {"subscriber_name": {"$regex": escaped_search, "$options": "i"}},
+                {"employee_code": {"$regex": escaped_search, "$options": "i"}},
+                {"employee_name": {"$regex": escaped_search, "$options": "i"}},
+                {"phone_number": {"$regex": escaped_search}},
+                {"enrollment_id": {"$regex": escaped_search, "$options": "i"}},
+                {"email": {"$regex": escaped_search, "$options": "i"}}
             ]
 
         # Get total count
@@ -578,6 +580,7 @@ async def update_enrollment(
     current_user: dict = Depends(get_current_user)
 ):
     """Update an enrollment"""
+    logger.debug(f"Updating enrollment {enrollment_id} by user={current_user['email']}")
     enrollment = await Enrollment.find_one(
         Enrollment.enrollment_id == enrollment_id,
         Enrollment.is_deleted == False
@@ -608,6 +611,7 @@ async def delete_enrollment(
     current_user: dict = Depends(get_current_admin)
 ):
     """Soft delete an enrollment (Admin only)"""
+    logger.debug(f"Deleting enrollment {enrollment_id} by user={current_user['email']}")
     enrollment = await Enrollment.find_one(
         Enrollment.enrollment_id == enrollment_id,
         Enrollment.is_deleted == False

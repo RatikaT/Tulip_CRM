@@ -23,9 +23,11 @@ async def login(request: LoginRequest):
     """
     Authenticate user and return JWT token
     """
+    logger.debug(f"Login attempt for email: {request.email}")
     user = await authenticate_user(request.email, request.password)
 
     if not user:
+        logger.warning(f"Failed login attempt for email: {request.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

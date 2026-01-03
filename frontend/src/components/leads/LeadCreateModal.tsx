@@ -42,6 +42,7 @@ const createLeadSchema = z.object({
     .max(10, 'Phone number must be 10 digits')
     .regex(/^[6-9]\d{9}$/, 'Phone must start with 6-9 and have 10 digits'),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
+  alternate_mobile_number: z.string().optional(),
   lead_source: z.string().min(1, 'Lead source is required'),
   employee_id: z.string().optional(),
   uhid: z.string().optional(),
@@ -51,6 +52,7 @@ const createLeadSchema = z.object({
   address: z.string().optional(),
   trimester: z.string().optional(),
   looking_for: z.string().optional(),
+  family_member_relation: z.string().optional(),
   package_requested: z.string().optional(),
   service_enrolled: z.string().optional(),
   package_name_enrolled: z.string().optional(),
@@ -81,6 +83,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
     handleSubmit,
     reset,
     control,
+    watch,
     formState: { errors },
   } = useForm<CreateLeadFormData>({
     resolver: zodResolver(createLeadSchema),
@@ -88,6 +91,9 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
       lead_source: '',
     },
   });
+
+  // Watch looking_for to conditionally show family_member_relation field
+  const lookingForValue = watch('looking_for');
 
   const handleClose = () => {
     reset();
@@ -106,6 +112,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
         email: data.email || undefined,
         trimester: data.trimester || undefined,
         looking_for: data.looking_for || undefined,
+        family_member_relation: data.looking_for === 'Family Member' ? data.family_member_relation : undefined,
         service_enrolled: data.service_enrolled || undefined,
         lead_creation_date: leadCreationDate ? format(leadCreationDate, 'yyyy-MM-dd') : undefined,
         follow_up_date: followUpDate?.toISOString(),
@@ -214,6 +221,16 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                 />
               </Grid>
 
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  {...register('alternate_mobile_number')}
+                  fullWidth
+                  label="Alternate Mobile Number"
+                  placeholder="For family member inquiries"
+                  inputProps={{ maxLength: 10 }}
+                />
+              </Grid>
+
               {/* User Details */}
               <Grid item xs={12}>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
@@ -292,6 +309,17 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   )}
                 />
               </Grid>
+
+              {lookingForValue === 'Family Member' && (
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    {...register('family_member_relation')}
+                    fullWidth
+                    label="Relation (e.g., Mother, Daughter, Sister, Wife)"
+                    placeholder="Enter relation"
+                  />
+                </Grid>
+              )}
 
               <Grid item xs={12} sm={6}>
                 <TextField {...register('package_requested')} fullWidth label="Package Requested" />

@@ -27,14 +27,14 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     LOG_LEVEL: str = "DEBUG"
 
-    # Default Admin (Tulip specific)
+    # Default Admin (Tulip specific) - REQUIRED in .env
     DEFAULT_ADMIN_EMAIL: str = "admin@tulip.com"
-    DEFAULT_ADMIN_PASSWORD: str = "Admin@2025"
+    DEFAULT_ADMIN_PASSWORD: str  # No default - must be set in .env
     DEFAULT_ADMIN_NAME: str = "Admin User"
 
-    # Super Admin (CRM-wide access)
+    # Super Admin (CRM-wide access) - REQUIRED in .env
     DEFAULT_SUPER_ADMIN_EMAIL: str = "superadmin@crm.com"
-    DEFAULT_SUPER_ADMIN_PASSWORD: str = "SuperAdmin@2025"
+    DEFAULT_SUPER_ADMIN_PASSWORD: str  # No default - must be set in .env
     DEFAULT_SUPER_ADMIN_NAME: str = "Super Admin"
 
     # Pagination

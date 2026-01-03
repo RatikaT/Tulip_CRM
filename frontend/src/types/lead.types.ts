@@ -83,6 +83,7 @@ export interface Lead {
   name: string;
   email: string | null;
   phone_number: string;
+  alternate_mobile_number: string | null;
   employee_id: string | null;
   uhid: string | null;
 
@@ -95,6 +96,7 @@ export interface Lead {
   // Lead Information
   trimester: Trimester | null;
   looking_for: LookingFor | null;
+  family_member_relation: string | null;
   package_requested: string | null;
 
   // Service Details
@@ -148,6 +150,7 @@ export interface LeadCreateRequest {
   // Optional fields
   lead_creation_date?: string;
   email?: string;
+  alternate_mobile_number?: string;
   employee_id?: string;
   uhid?: string;
   user_facility?: string;
@@ -156,6 +159,7 @@ export interface LeadCreateRequest {
   address?: string;
   trimester?: Trimester;
   looking_for?: LookingFor;
+  family_member_relation?: string;
   package_requested?: string;
   service_enrolled?: ServiceEnrolled;
   package_name_enrolled?: string;
@@ -182,6 +186,7 @@ export interface LeadUpdateRequest {
   name?: string;
   email?: string;
   phone_number?: string;
+  alternate_mobile_number?: string;
   employee_id?: string;
   uhid?: string;
   user_facility?: string;
@@ -190,6 +195,7 @@ export interface LeadUpdateRequest {
   address?: string;
   trimester?: Trimester;
   looking_for?: LookingFor;
+  family_member_relation?: string;
   package_requested?: string;
   service_enrolled?: ServiceEnrolled;
   package_name_enrolled?: string;

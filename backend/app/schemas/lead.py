@@ -35,6 +35,7 @@ class LeadCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: Optional[EmailStr] = None
     phone_number: str = Field(..., min_length=10, max_length=10)
+    alternate_mobile_number: Optional[str] = None
 
     # Optional fields
     employee_id: Optional[str] = None
@@ -45,6 +46,7 @@ class LeadCreateRequest(BaseModel):
     address: Optional[str] = None
     trimester: Optional[Trimester] = None
     looking_for: Optional[LookingFor] = None
+    family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
     service_enrolled: Optional[ServiceEnrolled] = None
     package_name_enrolled: Optional[str] = None
@@ -83,6 +85,7 @@ class LeadUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
+    alternate_mobile_number: Optional[str] = None
     employee_id: Optional[str] = None
     uhid: Optional[str] = None
     user_facility: Optional[str] = None
@@ -91,6 +94,7 @@ class LeadUpdateRequest(BaseModel):
     address: Optional[str] = None
     trimester: Optional[Trimester] = None
     looking_for: Optional[LookingFor] = None
+    family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
     service_enrolled: Optional[ServiceEnrolled] = None
     package_name_enrolled: Optional[str] = None
@@ -122,6 +126,7 @@ class LeadResponse(BaseModel):
     name: str
     email: Optional[str] = None
     phone_number: str
+    alternate_mobile_number: Optional[str] = None
     employee_id: Optional[str] = None
     uhid: Optional[str] = None
 
@@ -134,6 +139,7 @@ class LeadResponse(BaseModel):
     # Lead Information
     trimester: Optional[str] = None
     looking_for: Optional[str] = None
+    family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
 
     # Service Details

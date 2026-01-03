@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import math
 import logging
+import re
 
 from app.models.knowledge_document import KnowledgeDocument, DocumentStatus, DocumentCategory
 from app.models.document_chunk import DocumentChunk
@@ -160,7 +161,7 @@ async def list_documents(
         query["status"] = status_filter
 
     if search:
-        query["name"] = {"$regex": search, "$options": "i"}
+        query["name"] = {"$regex": re.escape(search), "$options": "i"}
 
     # Get total count
     total = await KnowledgeDocument.find(query).count()

@@ -26,6 +26,7 @@ from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
 import math
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def lead_to_response(lead: Lead) -> dict:
         "name": lead.name,
         "email": lead.email,
         "phone_number": lead.phone_number,
+        "alternate_mobile_number": lead.alternate_mobile_number,
         "employee_id": lead.employee_id,
         "uhid": lead.uhid,
 
@@ -63,6 +65,7 @@ def lead_to_response(lead: Lead) -> dict:
         # Lead Information
         "trimester": lead.trimester.value if lead.trimester else None,
         "looking_for": lead.looking_for.value if lead.looking_for else None,
+        "family_member_relation": lead.family_member_relation,
         "package_requested": lead.package_requested,
 
         # Service Details
@@ -375,17 +378,18 @@ async def get_leads(
     if lead_source:
         query["lead_source"] = lead_source
     if city:
-        query["city"] = {"$regex": city, "$options": "i"}
+        query["city"] = {"$regex": re.escape(city), "$options": "i"}
     if assigned_to:
         query["assigned_to"] = assigned_to
 
-    # Search by name, phone, or lead_id
+    # Search by name, phone, or lead_id (escape regex special chars for security)
     if search:
+        escaped_search = re.escape(search)
         query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"phone_number": {"$regex": search}},
-            {"lead_id": {"$regex": search, "$options": "i"}},
-            {"email": {"$regex": search, "$options": "i"}}
+            {"name": {"$regex": escaped_search, "$options": "i"}},
+            {"phone_number": {"$regex": escaped_search}},
+            {"lead_id": {"$regex": escaped_search, "$options": "i"}},
+            {"email": {"$regex": escaped_search, "$options": "i"}}
         ]
 
     # Count total
@@ -674,6 +678,7 @@ async def create_lead(
     """
     Create a new lead (Admin only)
     """
+    logger.debug(f"Creating lead: name={request.name}, phone={request.phone_number}, by user={current_user['email']}")
     db = get_database()
 
     # Generate unique LeadID
@@ -694,6 +699,7 @@ async def create_lead(
         name=request.name,
         email=request.email,
         phone_number=request.phone_number,
+        alternate_mobile_number=request.alternate_mobile_number,
         employee_id=request.employee_id,
         uhid=request.uhid,
         user_facility=request.user_facility,
@@ -702,6 +708,7 @@ async def create_lead(
         address=request.address,
         trimester=request.trimester,
         looking_for=request.looking_for,
+        family_member_relation=request.family_member_relation,
         package_requested=request.package_requested,
         service_enrolled=request.service_enrolled,
         package_name_enrolled=request.package_name_enrolled,
@@ -747,6 +754,7 @@ async def update_lead(
     Agents can only update: lead_source, lead_creation_date, status, number_of_calls, calls, follow_up_date
     Admins can update all fields
     """
+    logger.debug(f"Updating lead {lead_id} by user={current_user['email']}, role={current_user['role']}")
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
 
     if not lead:
@@ -768,7 +776,7 @@ async def update_lead(
             # Location fields
             "user_facility", "city", "pin_code", "address",
             # Healthcare fields
-            "trimester", "looking_for", "package_requested", "service_enrolled",
+            "trimester", "looking_for", "family_member_relation", "package_requested", "service_enrolled",
             "package_name_enrolled", "service_partner", "provider_location",
             "doctor_name", "consult_date", "hclhc_spoc", "reason_for_no_sale"
         ]
@@ -944,6 +952,7 @@ async def delete_lead(
     """
     Soft delete a lead (Admin only)
     """
+    logger.debug(f"Deleting lead {lead_id} by user={current_user['email']}")
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
 
     if not lead:

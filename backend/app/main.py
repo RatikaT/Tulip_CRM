@@ -3,6 +3,7 @@ CRM - FastAPI Application Entry Point
 """
 import logging
 import traceback
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -68,6 +69,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Request/Response Logging Middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and their responses for debugging"""
+    # Skip logging for health checks and docs to reduce noise
+    skip_paths = ["/health", "/api/docs", "/api/redoc", "/openapi.json"]
+    if any(request.url.path.startswith(path) for path in skip_paths):
+        return await call_next(request)
+
+    # Generate request ID for tracing
+    request_id = f"{time.time():.0f}"
+
+    # Log incoming request
+    logger.info(f"[{request_id}] REQUEST: {request.method} {request.url.path}")
+    if request.query_params:
+        logger.debug(f"[{request_id}] Query params: {dict(request.query_params)}")
+
+    # Process request and measure time
+    start_time = time.time()
+    try:
+        response = await call_next(request)
+        duration = time.time() - start_time
+
+        # Log response
+        status_emoji = "✓" if response.status_code < 400 else "✗"
+        logger.info(f"[{request_id}] RESPONSE: {status_emoji} {request.method} {request.url.path} - {response.status_code} ({duration:.3f}s)")
+
+        return response
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"[{request_id}] EXCEPTION: {request.method} {request.url.path} - {str(e)} ({duration:.3f}s)")
+        raise
+
 
 # Global exception handler
 @app.exception_handler(Exception)
