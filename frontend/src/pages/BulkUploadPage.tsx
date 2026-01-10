@@ -10,8 +10,10 @@ import {
   ListItemIcon,
   ListItemText,
   Alert,
+  Divider,
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import DownloadIcon from '@mui/icons-material/Download';
 import ErrorIcon from '@mui/icons-material/Error';
 import DescriptionIcon from '@mui/icons-material/Description';
 import { toast } from 'react-toastify';
@@ -52,18 +54,14 @@ export default function BulkUploadPage() {
         setFile(droppedFile);
         setResult(null);
       } else {
-        toast.error('Please upload a CSV or Excel file');
+        toast.error('Please upload a CSV file');
       }
     }
   }, []);
 
   const isValidFile = (file: File) => {
-    const validTypes = [
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ];
-    return validTypes.includes(file.type) || file.name.endsWith('.csv') || file.name.endsWith('.xlsx');
+    const validTypes = ['text/csv', 'application/vnd.ms-excel'];
+    return validTypes.includes(file.type) || file.name.endsWith('.csv');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,7 +71,7 @@ export default function BulkUploadPage() {
         setFile(selectedFile);
         setResult(null);
       } else {
-        toast.error('Please upload a CSV or Excel file');
+        toast.error('Please upload a CSV file');
       }
     }
   };
@@ -94,8 +92,15 @@ export default function BulkUploadPage() {
         },
       });
       setResult(response.data);
-      if (response.data.success) {
-        toast.success(`Successfully imported ${response.data.created} leads`);
+
+      // Show appropriate toast based on results
+      const { created = 0, errors = [] } = response.data;
+      if (created > 0 && errors.length === 0) {
+        toast.success(`Successfully imported ${created} leads`);
+      } else if (created > 0 && errors.length > 0) {
+        toast.warning(`Imported ${created} leads. ${errors.length} entries failed.`);
+      } else if (created === 0 && errors.length > 0) {
+        toast.error(`Upload failed. ${errors.length} entries had errors.`);
       }
     } catch (error: unknown) {
       const message =
@@ -108,11 +113,153 @@ export default function BulkUploadPage() {
     }
   };
 
+  const handleDownloadSampleCSV = () => {
+    // CSV headers matching backend field expectations
+    const headers = [
+      'name',
+      'phone_number',
+      'email',
+      'lead_source',
+      'status',
+      'trimester',
+      'looking_for',
+      'employee_id',
+      'uhid',
+      'city',
+      'pin_code',
+      'address',
+      'user_facility',
+      'package_requested',
+      'service_enrolled',
+      'package_name_enrolled',
+      'service_partner',
+      'provider_location',
+      'hclhc_spoc',
+      'reason_for_no_sale',
+      'doctor_name',
+      'consult_date',
+      'lead_creation_date',
+      'follow_up_date',
+    ];
+
+    // Sample data rows with realistic examples
+    const sampleRows = [
+      [
+        'Priya Sharma',
+        '9876543210',
+        'priya@example.com',
+        'Website',
+        'Enquiry Lead',
+        'Trimester 1',
+        'Self',
+        'EMP001',
+        'UH12345',
+        'Delhi',
+        '110001',
+        '123 Main Street',
+        'HCL Noida',
+        'Maternity Premium',
+        'Antenatal',
+        'Premium Package',
+        'Motherhood',
+        'Noida Sector 18',
+        'Dr. Smith',
+        '',
+        'Dr. Kapoor',
+        '2025-12-25',
+        '2025-12-28',
+        '2025-12-30T10:00:00',
+      ],
+      [
+        'Anjali Gupta',
+        '8765432109',
+        'anjali@example.com',
+        'Call',
+        'Follow up-In Process',
+        'Trimester 2',
+        'Family Member',
+        'EMP002',
+        'UH12346',
+        'Mumbai',
+        '400001',
+        '456 Park Avenue',
+        'HCL Mumbai',
+        'Maternity Basic',
+        'PreConception',
+        'Basic Package',
+        'Rainbow',
+        'Mumbai Central',
+        'Dr. Sharma',
+        '',
+        'Dr. Mehta',
+        '2025-12-26',
+        '2025-12-27',
+        '2025-12-29T14:30:00',
+      ],
+      [
+        'Neha Verma',
+        '7654321098',
+        '',
+        'In Clinic-Walk In',
+        'Not Interested',
+        'Not Conceived',
+        'Self',
+        '',
+        '',
+        'Bangalore',
+        '560001',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        'Package Cost',
+        'Dr. Reddy',
+        '2025-12-25',
+        '',
+        '',
+      ],
+    ];
+
+    // Build CSV content
+    const csvContent = [
+      headers.join(','),
+      ...sampleRows.map((row) =>
+        row.map((cell) => (cell.includes(',') || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell)).join(',')
+      ),
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'leads_bulk_upload_sample.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('Sample CSV downloaded');
+  };
+
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-        Bulk Upload Leads
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+          Bulk Upload Leads
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={handleDownloadSampleCSV}
+          color="primary"
+        >
+          Download Sample CSV
+        </Button>
+      </Box>
 
       <Paper
         sx={{
@@ -133,7 +280,7 @@ export default function BulkUploadPage() {
         <input
           id="file-input"
           type="file"
-          accept=".csv,.xlsx"
+          accept=".csv"
           onChange={handleFileChange}
           style={{ display: 'none' }}
         />
@@ -146,7 +293,7 @@ export default function BulkUploadPage() {
           or click to browse
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Supported formats: CSV, Excel (.xlsx)
+          Supported format: CSV
         </Typography>
       </Paper>
 
@@ -178,27 +325,39 @@ export default function BulkUploadPage() {
 
       {result && (
         <Paper sx={{ p: 3 }}>
-          <Alert severity={result.success ? 'success' : 'error'} sx={{ mb: 2 }}>
+          <Alert
+            severity={
+              result.errors && result.errors.length > 0
+                ? result.created && result.created > 0
+                  ? 'warning'
+                  : 'error'
+                : 'success'
+            }
+            sx={{ mb: 2 }}
+          >
             {result.message}
           </Alert>
 
-          {result.success && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2">
-                Total rows processed: <strong>{result.total_rows}</strong>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              Total rows processed: <strong>{result.total_rows || 0}</strong>
+            </Typography>
+            <Typography variant="body2" color="success.main">
+              Leads created: <strong>{result.created || 0}</strong>
+            </Typography>
+            {result.errors && result.errors.length > 0 && (
+              <Typography variant="body2" color="error.main">
+                Failed entries: <strong>{result.errors.length}</strong>
               </Typography>
-              <Typography variant="body2">
-                Leads created: <strong>{result.created}</strong>
-              </Typography>
-            </Box>
-          )}
+            )}
+          </Box>
 
           {result.errors && result.errors.length > 0 && (
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                Errors ({result.errors.length})
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: 'error.main' }}>
+                Error Details
               </Typography>
-              <List dense>
+              <List dense sx={{ bgcolor: 'error.50', borderRadius: 1 }}>
                 {result.errors.slice(0, 10).map((err, idx) => (
                   <ListItem key={idx}>
                     <ListItemIcon>
@@ -206,6 +365,7 @@ export default function BulkUploadPage() {
                     </ListItemIcon>
                     <ListItemText
                       primary={`Row ${err.row}: ${err.error}`}
+                      primaryTypographyProps={{ variant: 'body2' }}
                     />
                   </ListItem>
                 ))}
@@ -213,7 +373,7 @@ export default function BulkUploadPage() {
                   <ListItem>
                     <ListItemText
                       primary={`... and ${result.errors.length - 10} more errors`}
-                      sx={{ color: 'text.secondary' }}
+                      primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
                     />
                   </ListItem>
                 )}

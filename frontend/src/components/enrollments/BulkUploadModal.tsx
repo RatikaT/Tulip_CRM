@@ -44,8 +44,8 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
-        toast.error('Please select a CSV or Excel file');
+      if (!file.name.endsWith('.csv')) {
+        toast.error('Please select a CSV file');
         return;
       }
       setSelectedFile(file);
@@ -60,9 +60,19 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
     try {
       const response = await enrollmentService.bulkUpload(selectedFile);
       setResult(response);
-      if (response.success) {
-        toast.success(`Successfully created ${response.created} enrollments`);
+
+      // Show appropriate toast based on results
+      const { created = 0, errors = [] } = response;
+      if (created > 0 && errors.length === 0) {
+        toast.success(`Successfully created ${created} enrollments`);
         onSuccess();
+      } else if (created > 0 && errors.length > 0) {
+        toast.warning(`Created ${created} enrollments. ${errors.length} entries failed.`);
+        onSuccess();
+      } else if (created === 0 && errors.length > 0) {
+        toast.error(`Upload failed. ${errors.length} entries had errors.`);
+      } else if (created === 0 && errors.length === 0) {
+        toast.warning('No enrollments were created.');
       }
     } catch (error: unknown) {
       const message =
@@ -75,7 +85,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
   };
 
   const handleDownloadTemplate = () => {
-    // Create a CSV template
+    // Create a CSV template with headers and sample data
     const headers = [
       'Billed Date',
       'Package Billed',
@@ -101,12 +111,95 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
       'Remarks',
     ];
 
-    const csvContent = headers.join(',') + '\n';
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    // Sample data rows with realistic examples
+    const sampleRows = [
+      [
+        '2025-12-01',
+        'Maternity Premium',
+        'Dr. Smith',
+        'HCL Noida',
+        'UH12345',
+        'Priya Sharma',
+        '1992-05-15',
+        'EMP001',
+        'Priya Sharma',
+        '9876543210',
+        'priya@example.com',
+        '123 Main Street, Delhi',
+        'Trimester 1',
+        'Dr. Kapoor',
+        'Motherhood',
+        'Noida Sector 18',
+        'Dr. Mehta',
+        'Connected',
+        'Appointment Booked',
+        '2025-12-15',
+        'Very satisfied with the service',
+        'Premium package enrollment',
+      ],
+      [
+        '2025-12-05',
+        'Maternity Basic',
+        'Dr. Sharma',
+        'HCL Mumbai',
+        'UH12346',
+        'Anjali Gupta',
+        '1990-08-20',
+        'EMP002',
+        'Anjali Gupta',
+        '8765432109',
+        'anjali@example.com',
+        '456 Park Avenue, Mumbai',
+        'Trimester 2',
+        'Dr. Reddy',
+        'Rainbow',
+        'Mumbai Central',
+        'Dr. Singh',
+        'Follow Up Required',
+        'Feedback Taken',
+        '2025-12-20',
+        'Good experience so far',
+        'Basic package with add-ons',
+      ],
+      [
+        '2025-12-10',
+        'Wellness Complete',
+        'Dr. Kumar',
+        'HCL Bangalore',
+        'UH12347',
+        'Neha Verma',
+        '1988-03-10',
+        'EMP003',
+        'Neha Verma',
+        '7654321098',
+        '',
+        '789 Tech Park, Bangalore',
+        'Trimester 3',
+        'Dr. Patel',
+        'Fortis',
+        'Bangalore Whitefield',
+        'Dr. Rao',
+        'No Response',
+        '',
+        '',
+        '',
+        'Pending follow-up',
+      ],
+    ];
+
+    // Build CSV content with proper escaping
+    const csvContent = [
+      headers.join(','),
+      ...sampleRows.map((row) =>
+        row.map((cell) => (cell.includes(',') || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell)).join(',')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'enrollment_upload_template.csv');
+    link.setAttribute('download', 'enrollment_upload_sample.csv');
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -158,7 +251,7 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
               type="file"
               ref={fileInputRef}
               onChange={handleFileSelect}
-              accept=".csv,.xlsx"
+              accept=".csv"
               style={{ display: 'none' }}
             />
             <CloudUploadIcon sx={{ fontSize: 48, color: 'grey.400', mb: 2 }} />
@@ -166,36 +259,65 @@ export default function BulkUploadModal({ open, onClose, onSuccess }: BulkUpload
               {selectedFile ? selectedFile.name : 'Click to select a file'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Supported formats: CSV, XLSX
+              Supported format: CSV
             </Typography>
           </Paper>
 
           {result && (
             <Box sx={{ mt: 3, textAlign: 'left' }}>
-              {result.success ? (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  Successfully processed {result.total_rows} rows. Created {result.created} enrollments.
-                </Alert>
-              ) : (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  Upload completed with errors. Created {result.created} of {result.total_rows} enrollments.
-                </Alert>
-              )}
+              <Alert
+                severity={
+                  result.errors && result.errors.length > 0
+                    ? result.created && result.created > 0
+                      ? 'warning'
+                      : 'error'
+                    : 'success'
+                }
+                sx={{ mb: 2 }}
+              >
+                {result.message}
+              </Alert>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  Total rows processed: <strong>{result.total_rows || 0}</strong>
+                </Typography>
+                <Typography variant="body2" color="success.main">
+                  Enrollments created: <strong>{result.created || 0}</strong>
+                </Typography>
+                {result.errors && result.errors.length > 0 && (
+                  <Typography variant="body2" color="error.main">
+                    Failed entries: <strong>{result.errors.length}</strong>
+                  </Typography>
+                )}
+              </Box>
 
               {result.errors && result.errors.length > 0 && (
-                <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto' }}>
-                  <List dense>
-                    {result.errors.map((error, index) => (
-                      <ListItem key={index}>
-                        <ListItemText
-                          primary={`Row ${error.row}`}
-                          secondary={error.error}
-                          secondaryTypographyProps={{ color: 'error' }}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Paper>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: 'error.main' }}>
+                    Error Details
+                  </Typography>
+                  <Paper variant="outlined" sx={{ maxHeight: 200, overflow: 'auto', bgcolor: 'error.50' }}>
+                    <List dense>
+                      {result.errors.slice(0, 10).map((error, index) => (
+                        <ListItem key={index}>
+                          <ListItemText
+                            primary={`Row ${error.row}: ${error.error}`}
+                            primaryTypographyProps={{ variant: 'body2' }}
+                          />
+                        </ListItem>
+                      ))}
+                      {result.errors.length > 10 && (
+                        <ListItem>
+                          <ListItemText
+                            primary={`... and ${result.errors.length - 10} more errors`}
+                            primaryTypographyProps={{ color: 'text.secondary', variant: 'body2' }}
+                          />
+                        </ListItem>
+                      )}
+                    </List>
+                  </Paper>
+                </Box>
               )}
             </Box>
           )}

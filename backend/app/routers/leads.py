@@ -141,7 +141,7 @@ async def bulk_upload_leads(
                 # Check for duplicate phone
                 existing = await Lead.find_one(Lead.phone_number == phone, Lead.is_deleted == False)
                 if existing:
-                    errors.append({"row": row_num, "error": f"Phone {phone} already exists"})
+                    errors.append({"row": row_num, "error": f"Duplicate: Phone number {phone} already exists in database"})
                     continue
 
                 # Parse lead source

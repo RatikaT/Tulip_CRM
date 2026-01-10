@@ -1,6 +1,7 @@
 """
 Enrollment Management Routes
 """
+# Updated: Bug fixes for bulk upload
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import Optional, List
@@ -39,9 +40,9 @@ async def generate_enrollment_id() -> str:
     date_str = today.strftime("%d%m%Y")
     prefix = f"ENR_{date_str}_"
 
-    # Find the highest number for today
+    # Find the highest number for today using regex
     existing = await Enrollment.find(
-        Enrollment.enrollment_id.startswith(prefix)
+        {"enrollment_id": {"$regex": f"^{prefix}"}}
     ).sort("-enrollment_id").first_or_none()
 
     if existing:
@@ -312,9 +313,9 @@ async def bulk_upload_enrollments(
                     follow_up_date=follow_up_date,
                     customer_feedback=row.get('Customer Feedback', row.get('customer_feedback', '')).strip() or None,
                     remarks=row.get('Remarks', row.get('remarks', '')).strip() or None,
-                    created_by=current_user["id"],
+                    created_by=current_user["user_id"],
                     created_by_name=current_user.get("full_name", current_user["email"]),
-                    assigned_to=current_user["id"],
+                    assigned_to=current_user["user_id"],
                     assigned_to_name=current_user.get("full_name", current_user["email"]),
                 )
                 await enrollment.insert()
@@ -543,9 +544,9 @@ async def create_enrollment(
     enrollment = Enrollment(
         enrollment_id=await generate_enrollment_id(),
         **enrollment_data.model_dump(exclude_unset=True),
-        created_by=current_user["id"],
+        created_by=current_user["user_id"],
         created_by_name=current_user.get("full_name", current_user["email"]),
-        assigned_to=enrollment_data.assigned_to or current_user["id"],
+        assigned_to=enrollment_data.assigned_to or current_user["user_id"],
         assigned_to_name=current_user.get("full_name", current_user["email"]),
     )
     await enrollment.insert()
@@ -597,7 +598,7 @@ async def update_enrollment(
         setattr(enrollment, field, value)
 
     enrollment.updated_at = datetime.utcnow()
-    enrollment.last_modified_by = current_user["id"]
+    enrollment.last_modified_by = current_user["user_id"]
     await enrollment.save()
 
     logger.info(f"Enrollment {enrollment_id} updated by {current_user['email']}")
@@ -657,7 +658,7 @@ async def add_follow_up(
         "action_taken": follow_up_data.action_taken.value if follow_up_data.action_taken else None,
         "feedback": follow_up_data.feedback,
         "remarks": follow_up_data.remarks,
-        "created_by": current_user["id"],
+        "created_by": current_user["user_id"],
         "created_by_name": current_user.get("full_name", current_user["email"]),
         "created_at": datetime.utcnow().isoformat()
     }
