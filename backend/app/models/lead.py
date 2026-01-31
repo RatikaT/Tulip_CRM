@@ -19,16 +19,21 @@ class LeadStatus(str, Enum):
 
 
 class LeadSource(str, Enum):
-    IN_CLINIC_WALK_IN = "In Clinic-Walk In"
-    MAIL = "Mail"
+    PRESCRIPTION_DUMP = "Prescription Dump"
     IN_CLINIC_GYNAE_CONSULT = "In Clinic-Gynae Consult"
-    BUMP_DAY = "Bump Day"
-    WEBSITE = "Website"
-    CALL = "Call"
-    AMA = "AMA"
-    WHATSAPP = "WhatsApp"
     IN_CLINIC_OTHER_CONSULTS = "In Clinic-Other Consults"
+    IN_CLINIC_WALK_IN = "In Clinic-Walk In"
+    AMA = "AMA"
+    BEWELL = "BEWELL"
+    EVENTS = "Events"
+    CALL = "Call"
     OTHERS = "Others"
+    BUMP_DAY = "Bump Day"
+    WHATSAPP = "WhatsApp"
+    MAIL = "Mail"
+    TELE_CONSULTATION = "Tele-Consultation"
+    WEBSITE = "Website"
+    HABIT_BANNER = "Habit Banner"
 
 
 class Trimester(str, Enum):
@@ -98,15 +103,15 @@ class Lead(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Lead Source and Status (mandatory, agent editable)
-    lead_source: LeadSource
+    # Lead Source and Status (agent editable)
+    lead_source: Optional[LeadSource] = None
     lead_creation_date: Optional[date] = None  # Manual calendar select
     status: LeadStatus = LeadStatus.ENQUIRY_LEAD
 
-    # User Details (mandatory: name, email, phone - agent cannot edit)
-    name: str
+    # User Details - At least one of UHID, phone_number, or email is required
+    name: Optional[str] = "Unknown"
     email: Optional[EmailStr] = None
-    phone_number: str
+    phone_number: Optional[str] = None
     alternate_mobile_number: Optional[str] = None  # For family member inquiries
     employee_id: Optional[str] = None
     uhid: Optional[str] = None
@@ -124,9 +129,9 @@ class Lead(Document):
     package_requested: Optional[str] = None
 
     # Service Details
-    service_enrolled: Optional[ServiceEnrolled] = None
+    service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[ServicePartner] = None  # Renamed from provider_name
+    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
 
@@ -135,7 +140,18 @@ class Lead(Document):
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None
+    doctor_speciality: Optional[str] = None  # Treating Doctor Speciality/Department
     consult_date: Optional[date] = None
+
+    # Medical/Clinical Details
+    visit_id: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    icd_code: Optional[str] = None
+    diagnosis: Optional[str] = None
+    investigation_item_name: Optional[str] = None
+    investigation_service_type: Optional[str] = None
+    cug_name: Optional[str] = None
 
     # Call Tracking (agent editable)
     number_of_calls: int = 1
@@ -145,10 +161,12 @@ class Lead(Document):
     # Assignment (agent cannot edit)
     assigned_to: Optional[str] = None  # User ID
     assigned_to_name: Optional[str] = None
+    assigned_date: Optional[datetime] = None  # Date when first assigned
 
     # Reassignment (both admin and agent can edit)
     reassign_to: Optional[str] = None  # User ID - defaults to assigned_to
     reassign_to_name: Optional[str] = None
+    reassigned_date: Optional[datetime] = None  # Date when reassigned
 
     # Comments (agent can add, sorted by latest)
     comments: List[Dict[str, Any]] = Field(default_factory=list)

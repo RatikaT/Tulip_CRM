@@ -10,16 +10,21 @@ export type LeadStatus =
   | 'Duplicate';
 
 export type LeadSource =
-  | 'In Clinic-Walk In'
-  | 'Mail'
+  | 'Prescription Dump'
   | 'In Clinic-Gynae Consult'
-  | 'Bump Day'
-  | 'Website'
-  | 'Call'
-  | 'AMA'
-  | 'WhatsApp'
   | 'In Clinic-Other Consults'
-  | 'Others';
+  | 'In Clinic-Walk In'
+  | 'AMA'
+  | 'BEWELL'
+  | 'Events'
+  | 'Call'
+  | 'Others'
+  | 'Bump Day'
+  | 'WhatsApp'
+  | 'Mail'
+  | 'Tele-Consultation'
+  | 'Website'
+  | 'Habit Banner';
 
 export type Trimester =
   | 'Trimester 1'
@@ -32,13 +37,14 @@ export type LookingFor = 'Self' | 'Family Member';
 export type ServiceEnrolled = 'PreConception' | 'Antenatal' | 'MaternityWellness';
 
 export type ServicePartner =
+  | 'Apollo Cradle'
+  | 'Fortis'
+  | 'Fortis La Femme'
+  | 'Mamily'
   | 'Motherhood'
   | 'Rainbow'
-  | 'Fortis'
-  | 'Apollo Cradle'
-  | 'Cloud 9'
-  | 'HCL Healthcare'
-  | 'Mamily'
+  | 'Thyrocare'
+  | 'Agilus'
   | 'Others';
 
 export type ReasonForNoSale =
@@ -111,7 +117,18 @@ export interface Lead {
 
   // Doctor/Consultation Details
   doctor_name: string | null;
+  doctor_speciality: string | null;
   consult_date: string | null;
+
+  // Medical/Clinical Details
+  visit_id: string | null;
+  age: number | null;
+  gender: string | null;
+  icd_code: string | null;
+  diagnosis: string | null;
+  investigation_item_name: string | null;
+  investigation_service_type: string | null;
+  cug_name: string | null;
 
   // Call Tracking
   number_of_calls: number;
@@ -168,9 +185,20 @@ export interface LeadCreateRequest {
   hclhc_spoc?: string;
   reason_for_no_sale?: ReasonForNoSale;
   doctor_name?: string;
+  doctor_speciality?: string;
   consult_date?: string;
   follow_up_date?: string;
   assigned_to?: string;
+
+  // Medical/Clinical Details
+  visit_id?: string;
+  age?: number;
+  gender?: string;
+  icd_code?: string;
+  diagnosis?: string;
+  investigation_item_name?: string;
+  investigation_service_type?: string;
+  cug_name?: string;
 }
 
 export interface LeadUpdateRequest {
@@ -204,11 +232,22 @@ export interface LeadUpdateRequest {
   hclhc_spoc?: string;
   reason_for_no_sale?: ReasonForNoSale;
   doctor_name?: string;
+  doctor_speciality?: string;
   consult_date?: string;
   assigned_to?: string;
   assigned_to_name?: string;
   reassign_to?: string;
   reassign_to_name?: string;
+
+  // Medical/Clinical Details
+  visit_id?: string;
+  age?: number;
+  gender?: string;
+  icd_code?: string;
+  diagnosis?: string;
+  investigation_item_name?: string;
+  investigation_service_type?: string;
+  cug_name?: string;
 }
 
 export interface CommentCreateRequest {
@@ -240,16 +279,21 @@ export const LEAD_STATUS_OPTIONS: LeadStatus[] = [
 ];
 
 export const LEAD_SOURCE_OPTIONS: LeadSource[] = [
-  'In Clinic-Walk In',
-  'Mail',
+  'Prescription Dump',
   'In Clinic-Gynae Consult',
-  'Bump Day',
-  'Website',
-  'Call',
-  'AMA',
-  'WhatsApp',
   'In Clinic-Other Consults',
+  'In Clinic-Walk In',
+  'AMA',
+  'BEWELL',
+  'Events',
+  'Call',
   'Others',
+  'Bump Day',
+  'WhatsApp',
+  'Mail',
+  'Tele-Consultation',
+  'Website',
+  'Habit Banner',
 ];
 
 export const TRIMESTER_OPTIONS: Trimester[] = [
@@ -261,20 +305,24 @@ export const TRIMESTER_OPTIONS: Trimester[] = [
 
 export const LOOKING_FOR_OPTIONS: LookingFor[] = ['Self', 'Family Member'];
 
-export const SERVICE_ENROLLED_OPTIONS: ServiceEnrolled[] = [
-  'PreConception',
-  'Antenatal',
-  'MaternityWellness',
+export const SERVICE_ENROLLED_OPTIONS: string[] = [
+  'Tulip Pre-Conception',
+  'Tulip Antenatal',
+  'Tulip Wellness',
+  'Tulip Pre-Conception + Antenatal',
+  'Tulip Antenatal + Wellness',
+  'Tulip Pre-Conception + Antenatal + Wellness',
 ];
 
 export const SERVICE_PARTNER_OPTIONS: ServicePartner[] = [
+  'Apollo Cradle',
+  'Fortis',
+  'Fortis La Femme',
+  'Mamily',
   'Motherhood',
   'Rainbow',
-  'Fortis',
-  'Apollo Cradle',
-  'Cloud 9',
-  'HCL Healthcare',
-  'Mamily',
+  'Thyrocare',
+  'Agilus',
   'Others',
 ];
 
@@ -289,4 +337,14 @@ export const REASON_FOR_NO_SALE_OPTIONS: ReasonForNoSale[] = [
   'Miscarriage',
   'Looking for other HCLH services',
   'Others',
+];
+
+// Package options for Package Requested and Package Name Enrolled
+export const PACKAGE_OPTIONS: string[] = [
+  'Tulip Pre-Conception',
+  'Tulip Antenatal',
+  'Tulip Wellness',
+  'Tulip Pre-Conception + Antenatal',
+  'Tulip Antenatal + Wellness',
+  'Tulip Pre-Conception + Antenatal + Wellness',
 ];

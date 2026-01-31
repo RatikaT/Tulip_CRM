@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import {
   IconButton,
   Divider,
   CircularProgress,
+  Autocomplete,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -24,29 +25,43 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { enrollmentService } from '../../services/enrollmentService';
+import api from '../../services/api';
 import {
   CONNECT_STATUS_OPTIONS,
   ACTION_TAKEN_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
   TRIMESTER_OPTIONS,
+  SERVICE_ENROLLED_OPTIONS,
+  PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
 
+interface UserOption {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
 const createEnrollmentSchema = z.object({
-  subscriber_name: z.string().min(1, 'Subscriber name is required'),
-  employee_id: z.string().min(1, 'EmployeeID is required'),
+  subscriber_name: z.string().optional().or(z.literal('')),
+  employee_id: z.string().optional().or(z.literal('')),
   phone_number: z
     .string()
-    .min(10, 'Phone number must be 10 digits')
-    .max(10, 'Phone number must be 10 digits')
-    .regex(/^[6-9]\d{9}$/, 'Phone must start with 6-9 and have 10 digits'),
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (val) => !val || (val.length === 10 && /^[6-9]\d{9}$/.test(val)),
+      'Contact No. must start with 6-9 and have 10 digits'
+    ),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   name: z.string().optional(),
-  uhid: z.string().optional(),
+  uhid: z.string().optional().or(z.literal('')),
   address: z.string().optional(),
   package_billed: z.string().optional(),
   hclhc_spoc: z.string().optional(),
-  hcl_location: z.string().optional(),
+  hcl_facility: z.string().optional(),
   trimester: z.string().optional(),
+  service_enrolled: z.string().optional(),
+  package_name_enrolled: z.string().optional(),
   doctor_name: z.string().optional(),
   service_partner: z.string().optional(),
   partner_centre_selected: z.string().optional(),
@@ -55,7 +70,13 @@ const createEnrollmentSchema = z.object({
   action_taken: z.string().optional(),
   customer_feedback: z.string().optional(),
   remarks: z.string().optional(),
-});
+}).refine(
+  (data) => data.email || data.uhid || data.phone_number,
+  {
+    message: 'At least one of Email, UHID, or Contact No. is required',
+    path: ['phone_number'],
+  }
+);
 
 type CreateEnrollmentFormData = z.infer<typeof createEnrollmentSchema>;
 
@@ -70,23 +91,46 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [billedDate, setBilledDate] = useState<Date | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
   const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
+  const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
 
   const {
     register,
     handleSubmit,
     reset,
     control,
+    setValue,
     formState: { errors },
   } = useForm<CreateEnrollmentFormData>({
     resolver: zodResolver(createEnrollmentSchema),
     defaultValues: {},
   });
 
+  // Fetch users for HCLHC SPOC dropdown - only users with Tulip CRM access
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await api.get<{ users: UserOption[] }>('/users/dropdown', {
+          params: { crm_type: 'tulip' }
+        });
+        setUsers(response.data.users || []);
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+      }
+    };
+    if (open) {
+      fetchUsers();
+    }
+  }, [open]);
+
   const handleClose = () => {
     reset();
     setBilledDate(null);
     setDob(null);
     setFollowUpDate(null);
+    setNextFollowUpDate(null);
+    setSelectedSpoc(null);
     onClose();
   };
 
@@ -95,15 +139,31 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
     try {
       const cleanData = {
         ...data,
+        subscriber_name: data.subscriber_name || undefined,
+        employee_id: data.employee_id || undefined,
         email: data.email || undefined,
+        uhid: data.uhid || undefined,
+        phone_number: data.phone_number || undefined,
+        name: data.name || undefined,
+        address: data.address || undefined,
+        package_billed: data.package_billed || undefined,
+        hclhc_spoc: data.hclhc_spoc || undefined,
+        hcl_facility: data.hcl_facility || undefined,
         trimester: data.trimester || undefined,
+        service_enrolled: data.service_enrolled || undefined,
+        package_name_enrolled: data.package_name_enrolled || undefined,
         doctor_name: data.doctor_name || undefined,
         service_partner: data.service_partner || undefined,
+        partner_centre_selected: data.partner_centre_selected || undefined,
+        partner_gynaecologist: data.partner_gynaecologist || undefined,
         connect_status: data.connect_status || undefined,
         action_taken: data.action_taken || undefined,
+        customer_feedback: data.customer_feedback || undefined,
+        remarks: data.remarks || undefined,
         billed_date: billedDate ? format(billedDate, 'yyyy-MM-dd') : undefined,
         dob: dob ? format(dob, 'yyyy-MM-dd') : undefined,
         follow_up_date: followUpDate ? format(followUpDate, 'yyyy-MM-dd') : undefined,
+        next_follow_up_date: nextFollowUpDate ? format(nextFollowUpDate, 'yyyy-MM-dd') : undefined,
       };
 
       await enrollmentService.createEnrollment(cleanData as Parameters<typeof enrollmentService.createEnrollment>[0]);
@@ -149,7 +209,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                 <TextField
                   {...register('subscriber_name')}
                   fullWidth
-                  label="Subscriber Name *"
+                  label="Subscriber Name"
                   error={!!errors.subscriber_name}
                   helperText={errors.subscriber_name?.message}
                 />
@@ -159,30 +219,47 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                 <TextField
                   {...register('employee_id')}
                   fullWidth
-                  label="EmployeeID *"
+                  label="EmployeeID"
                   error={!!errors.employee_id}
                   helperText={errors.employee_id?.message}
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  {...register('phone_number')}
-                  fullWidth
-                  label="Phone Number *"
-                  error={!!errors.phone_number}
-                  helperText={errors.phone_number?.message}
-                  inputProps={{ maxLength: 10 }}
-                />
+              {/* At least one identifier required */}
+              <Grid item xs={12}>
+                <Typography variant="caption" color="primary" sx={{ fontStyle: 'italic' }}>
+                  At least one of Email, UHID, or Contact No. is required
+                </Typography>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12} sm={4}>
                 <TextField
                   {...register('email')}
                   fullWidth
                   label="Email"
                   error={!!errors.email}
                   helperText={errors.email?.message}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  {...register('uhid')}
+                  fullWidth
+                  label="UHID"
+                  error={!!errors.uhid}
+                  helperText={errors.uhid?.message}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  {...register('phone_number')}
+                  fullWidth
+                  label="Contact No."
+                  error={!!errors.phone_number}
+                  helperText={errors.phone_number?.message}
+                  inputProps={{ maxLength: 10 }}
                 />
               </Grid>
 
@@ -195,10 +272,6 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               <Grid item xs={12} sm={6}>
                 <TextField {...register('name')} fullWidth label="Name" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('uhid')} fullWidth label="UHID" />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -242,11 +315,23 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('hclhc_spoc')} fullWidth label="HCLH SPOC" />
+                <Autocomplete
+                  options={users}
+                  getOptionLabel={(option) => option.full_name}
+                  value={selectedSpoc}
+                  onChange={(_, newValue) => {
+                    setSelectedSpoc(newValue);
+                    setValue('hclhc_spoc', newValue?.full_name || '');
+                  }}
+                  renderInput={(params) => (
+                    <TextField {...params} fullWidth label="HCLH SPOC" />
+                  )}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('hcl_location')} fullWidth label="HCL Location" />
+                <TextField {...register('hcl_facility')} fullWidth label="HCL Facility" />
               </Grid>
 
               {/* Service Details */}
@@ -274,6 +359,40 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
+                <Controller
+                  name="service_enrolled"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Service Enrolled">
+                      <MenuItem value="">None</MenuItem>
+                      {SERVICE_ENROLLED_OPTIONS.map((s) => (
+                        <MenuItem key={s} value={s}>
+                          {s}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="package_name_enrolled"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Package Name Enrolled">
+                      <MenuItem value="">None</MenuItem>
+                      {PACKAGE_OPTIONS.map((pkg) => (
+                        <MenuItem key={pkg} value={pkg}>
+                          {pkg}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
                 <TextField {...register('doctor_name')} fullWidth label="Doctor Name" />
               </Grid>
 
@@ -282,8 +401,21 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   name="service_partner"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Partner">
-                      <MenuItem value="">None</MenuItem>
+                    <TextField
+                      {...field}
+                      fullWidth
+                      select
+                      label="Service Partner"
+                      value={field.value ? (typeof field.value === 'string' ? field.value.split(', ').filter(Boolean) : field.value) : []}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        field.onChange(Array.isArray(value) ? value.join(', ') : value);
+                      }}
+                      SelectProps={{
+                        multiple: true,
+                        renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
+                      }}
+                    >
                       {SERVICE_PARTNER_OPTIONS.map((p) => (
                         <MenuItem key={p} value={p}>
                           {p}
@@ -348,6 +480,15 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   label="Follow Up Date"
                   value={followUpDate}
                   onChange={setFollowUpDate}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <DatePicker
+                  label="Next Follow Up Date"
+                  value={nextFollowUpDate}
+                  onChange={setNextFollowUpDate}
                   slotProps={{ textField: { fullWidth: true } }}
                 />
               </Grid>

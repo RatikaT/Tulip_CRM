@@ -25,6 +25,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { leadService } from '../../services/leadService';
+import { fromISTPickerToUTC } from '../../utils/dateUtils';
 import {
   LEAD_SOURCE_OPTIONS,
   TRIMESTER_OPTIONS,
@@ -32,18 +33,21 @@ import {
   SERVICE_ENROLLED_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
+  PACKAGE_OPTIONS,
 } from '../../types/lead.types';
 
 const createLeadSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().optional(),
   phone_number: z
     .string()
-    .min(10, 'Phone number must be 10 digits')
-    .max(10, 'Phone number must be 10 digits')
-    .regex(/^[6-9]\d{9}$/, 'Phone must start with 6-9 and have 10 digits'),
+    .optional()
+    .refine(
+      (val) => !val || (val.length === 10 && /^[6-9]\d{9}$/.test(val)),
+      'Phone must start with 6-9 and have 10 digits'
+    ),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   alternate_mobile_number: z.string().optional(),
-  lead_source: z.string().min(1, 'Lead source is required'),
+  lead_source: z.string().optional(),
   employee_id: z.string().optional(),
   uhid: z.string().optional(),
   user_facility: z.string().optional(),
@@ -61,8 +65,24 @@ const createLeadSchema = z.object({
   hclhc_spoc: z.string().optional(),
   reason_for_no_sale: z.string().optional(),
   doctor_name: z.string().optional(),
+  doctor_speciality: z.string().optional(),
   assigned_to: z.string().optional(),
-});
+  // Medical/Clinical Details
+  visit_id: z.string().optional(),
+  age: z.string().optional(),
+  gender: z.string().optional(),
+  icd_code: z.string().optional(),
+  diagnosis: z.string().optional(),
+  investigation_item_name: z.string().optional(),
+  investigation_service_type: z.string().optional(),
+  cug_name: z.string().optional(),
+}).refine(
+  (data) => data.uhid || data.phone_number || data.email,
+  {
+    message: 'At least one of UHID, Contact No., or Email is required',
+    path: ['phone_number'], // Show error on phone_number field
+  }
+);
 
 type CreateLeadFormData = z.infer<typeof createLeadSchema>;
 
@@ -110,13 +130,38 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
       const cleanData = {
         ...data,
         email: data.email || undefined,
+        alternate_mobile_number: data.alternate_mobile_number || undefined,
+        employee_id: data.employee_id || undefined,
+        uhid: data.uhid || undefined,
+        user_facility: data.user_facility || undefined,
+        city: data.city || undefined,
+        pin_code: data.pin_code || undefined,
+        address: data.address || undefined,
         trimester: data.trimester || undefined,
         looking_for: data.looking_for || undefined,
         family_member_relation: data.looking_for === 'Family Member' ? data.family_member_relation : undefined,
+        package_requested: data.package_requested || undefined,
         service_enrolled: data.service_enrolled || undefined,
+        package_name_enrolled: data.package_name_enrolled || undefined,
+        service_partner: data.service_partner || undefined,
+        provider_location: data.provider_location || undefined,
+        hclhc_spoc: data.hclhc_spoc || undefined,
+        reason_for_no_sale: data.reason_for_no_sale || undefined,
+        doctor_name: data.doctor_name || undefined,
+        doctor_speciality: data.doctor_speciality || undefined,
+        assigned_to: data.assigned_to || undefined,
         lead_creation_date: leadCreationDate ? format(leadCreationDate, 'yyyy-MM-dd') : undefined,
-        follow_up_date: followUpDate?.toISOString(),
+        follow_up_date: fromISTPickerToUTC(followUpDate),
         consult_date: consultDate ? format(consultDate, 'yyyy-MM-dd') : undefined,
+        // Medical/Clinical Details
+        visit_id: data.visit_id || undefined,
+        age: data.age ? parseInt(data.age) : undefined,
+        gender: data.gender || undefined,
+        icd_code: data.icd_code || undefined,
+        diagnosis: data.diagnosis || undefined,
+        investigation_item_name: data.investigation_item_name || undefined,
+        investigation_service_type: data.investigation_service_type || undefined,
+        cug_name: data.cug_name || undefined,
       };
 
       await leadService.createLead(cleanData as Parameters<typeof leadService.createLead>[0]);
@@ -151,10 +196,10 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogContent>
             <Grid container spacing={2}>
-              {/* Required Fields */}
+              {/* Identifier Fields */}
               <Grid item xs={12}>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                  Required Information
+                  Lead Identifiers (at least one of UHID, Contact No., or Email is required)
                 </Typography>
               </Grid>
 
@@ -162,9 +207,9 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                 <TextField
                   {...register('name')}
                   fullWidth
-                  label="Name *"
+                  label="Name"
                   error={!!errors.name}
-                  helperText={errors.name?.message}
+                  helperText={errors.name?.message || 'Optional - defaults to "Unknown"'}
                 />
               </Grid>
 
@@ -172,9 +217,9 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                 <TextField
                   {...register('phone_number')}
                   fullWidth
-                  label="Phone Number *"
+                  label="Contact No."
                   error={!!errors.phone_number}
-                  helperText={errors.phone_number?.message}
+                  helperText={errors.phone_number?.message || 'One of UHID/Contact No./Email required'}
                   inputProps={{ maxLength: 10 }}
                 />
               </Grid>
@@ -188,10 +233,11 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                       {...field}
                       fullWidth
                       select
-                      label="Lead Source *"
+                      label="Lead Source"
                       error={!!errors.lead_source}
                       helperText={errors.lead_source?.message}
                     >
+                      <MenuItem value="">Select Source</MenuItem>
                       {LEAD_SOURCE_OPTIONS.map((source) => (
                         <MenuItem key={source} value={source}>
                           {source}
@@ -217,7 +263,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   fullWidth
                   label="Email"
                   error={!!errors.email}
-                  helperText={errors.email?.message}
+                  helperText={errors.email?.message || 'One of UHID/Contact No./Email required'}
                 />
               </Grid>
 
@@ -238,12 +284,21 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                 </Typography>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12} sm={4}>
                 <TextField {...register('employee_id')} fullWidth label="Employee ID" />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('uhid')} fullWidth label="UHID" />
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  {...register('uhid')}
+                  fullWidth
+                  label="UHID"
+                  helperText="One of UHID/Contact No./Email required"
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('cug_name')} fullWidth label="CUG Name" />
               </Grid>
 
               {/* Location */}
@@ -254,7 +309,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('user_facility')} fullWidth label="User Facility" />
+                <TextField {...register('user_facility')} fullWidth label="Facility Name" />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -322,23 +377,20 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               )}
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('package_requested')} fullWidth label="Package Requested" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <DateTimePicker
-                  label="Follow Up Date"
-                  value={followUpDate}
-                  onChange={setFollowUpDate}
-                  slotProps={{ textField: { fullWidth: true } }}
+                <Controller
+                  name="package_requested"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Package Requested">
+                      <MenuItem value="">None</MenuItem>
+                      {PACKAGE_OPTIONS.map((pkg) => (
+                        <MenuItem key={pkg} value={pkg}>
+                          {pkg}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
                 />
-              </Grid>
-
-              {/* Service Details */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
-                  Service Details
-                </Typography>
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -346,7 +398,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   name="service_enrolled"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Enrolled">
+                    <TextField {...field} fullWidth select label="Service Requested">
                       <MenuItem value="">None</MenuItem>
                       {SERVICE_ENROLLED_OPTIONS.map((service) => (
                         <MenuItem key={service} value={service}>
@@ -359,47 +411,15 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField
-                  {...register('package_name_enrolled')}
-                  fullWidth
-                  label="Package Name Enrolled"
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  {...register('service_partner')}
-                  fullWidth
-                  select
-                  label="Service (Partner)"
-                >
-                  <MenuItem value="">Select Partner</MenuItem>
-                  {SERVICE_PARTNER_OPTIONS.map((partner) => (
-                    <MenuItem key={partner} value={partner}>
-                      {partner}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('provider_location')} fullWidth label="Provider Location" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField {...register('hclhc_spoc')} fullWidth label="HCLHC SPOC" />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
                 <Controller
-                  name="reason_for_no_sale"
+                  name="package_name_enrolled"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Reason for No Sale">
+                    <TextField {...field} fullWidth select label="Package Name Enrolled">
                       <MenuItem value="">None</MenuItem>
-                      {REASON_FOR_NO_SALE_OPTIONS.map((reason) => (
-                        <MenuItem key={reason} value={reason}>
-                          {reason}
+                      {PACKAGE_OPTIONS.map((pkg) => (
+                        <MenuItem key={pkg} value={pkg}>
+                          {pkg}
                         </MenuItem>
                       ))}
                     </TextField>
@@ -408,16 +428,115 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('doctor_name')} fullWidth label="Doctor Name" />
+                <Controller
+                  name="service_partner"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      select
+                      label="Service Partner"
+                      value={field.value ? (typeof field.value === 'string' ? field.value.split(', ').filter(Boolean) : field.value) : []}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        field.onChange(Array.isArray(value) ? value.join(', ') : value);
+                      }}
+                      SelectProps={{
+                        multiple: true,
+                        renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
+                      }}
+                    >
+                      {SERVICE_PARTNER_OPTIONS.map((partner) => (
+                        <MenuItem key={partner} value={partner}>
+                          {partner}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
+                <TextField {...register('provider_location')} fullWidth label="Partner Center" />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <DateTimePicker
+                  label="Follow Up Date (IST)"
+                  value={followUpDate}
+                  onChange={setFollowUpDate}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Grid>
+
+              {/* Medical/Clinical Details */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                  Medical/Clinical Details
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('doctor_name')} fullWidth label="Treating Doctor Name" />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('doctor_speciality')} fullWidth label="Doctor Speciality/Department" />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
                 <DatePicker
                   label="Consult Date"
                   value={consultDate}
                   onChange={setConsultDate}
                   slotProps={{ textField: { fullWidth: true } }}
                 />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('visit_id')} fullWidth label="Visit ID" />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  {...register('age')}
+                  fullWidth
+                  label="Age"
+                  type="number"
+                  inputProps={{ min: 0, max: 120 }}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <Controller
+                  name="gender"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField {...field} fullWidth select label="Gender">
+                      <MenuItem value="">Select</MenuItem>
+                      <MenuItem value="Male">Male</MenuItem>
+                      <MenuItem value="Female">Female</MenuItem>
+                      <MenuItem value="Other">Other</MenuItem>
+                    </TextField>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('icd_code')} fullWidth label="ICD Code" />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('diagnosis')} fullWidth label="Diagnosis" />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField {...register('investigation_item_name')} fullWidth label="Investigation Item Name" />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField {...register('investigation_service_type')} fullWidth label="Investigation Service Type" />
               </Grid>
             </Grid>
           </DialogContent>

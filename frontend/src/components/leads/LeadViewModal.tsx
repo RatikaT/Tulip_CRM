@@ -25,11 +25,12 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { format } from 'date-fns';
+import { startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
+import { formatDateTimeIST, toISTForPicker, fromISTPickerToUTC } from '../../utils/dateUtils';
 import { leadService } from '../../services/leadService';
-import { Lead, LeadSource, Trimester, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TRIMESTER_OPTIONS } from '../../types/lead.types';
+import { Lead, LeadSource, Trimester, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TRIMESTER_OPTIONS, PACKAGE_OPTIONS } from '../../types/lead.types';
 
 interface LocalCallEntry {
   call_number: number;
@@ -83,16 +84,26 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
     trimester: lead.trimester || '',
     lead_source: lead.lead_source || '',
     doctor_name: lead.doctor_name || '',
+    doctor_speciality: lead.doctor_speciality || '',
     package_requested: lead.package_requested || '',
     status: lead.status,
-    follow_up_date: lead.follow_up_date ? new Date(lead.follow_up_date) : null,
+    follow_up_date: toISTForPicker(lead.follow_up_date),
+    // Medical/Clinical Details
+    visit_id: lead.visit_id || '',
+    age: lead.age?.toString() || '',
+    gender: lead.gender || '',
+    icd_code: lead.icd_code || '',
+    diagnosis: lead.diagnosis || '',
+    investigation_item_name: lead.investigation_item_name || '',
+    investigation_service_type: lead.investigation_service_type || '',
+    cug_name: lead.cug_name || '',
   });
 
   const [calls, setCalls] = useState<LocalCallEntry[]>(
     lead.calls && lead.calls.length > 0
       ? lead.calls.map((c, idx) => ({
           call_number: c.call_number || idx + 1,
-          date_time: c.date_time ? new Date(c.date_time) : new Date(),
+          date_time: toISTForPicker(c.date_time) || new Date(),
           summary: c.summary || '',
         }))
       : [{ call_number: 1, date_time: new Date(), summary: '' }]
@@ -121,6 +132,15 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
   };
 
   const handleCallChange = (index: number, field: string, value: unknown) => {
+    // Prevent setting past dates for calls
+    if (field === 'date_time' && value instanceof Date) {
+      const today = startOfDay(new Date());
+      const selectedDate = startOfDay(value);
+      if (selectedDate < today) {
+        toast.error('Cannot select a past date for calls');
+        return;
+      }
+    }
     setCalls((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
@@ -148,13 +168,14 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
         ...formData,
         lead_source: formData.lead_source ? (formData.lead_source as LeadSource) : undefined,
         trimester: formData.trimester ? (formData.trimester as Trimester) : undefined,
-        follow_up_date: formData.follow_up_date instanceof Date ? formData.follow_up_date.toISOString() : null,
+        follow_up_date: fromISTPickerToUTC(formData.follow_up_date),
         number_of_calls: calls.length,
         calls: calls.map((c) => ({
           call_number: c.call_number,
-          date_time: c.date_time instanceof Date ? c.date_time.toISOString() : new Date().toISOString(),
+          date_time: fromISTPickerToUTC(c.date_time) || new Date().toISOString(),
           summary: c.summary || '',
         })),
+        age: formData.age ? parseInt(formData.age) : undefined,
       };
 
       await leadService.updateLead(lead.id, updateData);
@@ -216,7 +237,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                 Created
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                {format(new Date(lead.created_at), 'dd/MM/yyyy hh:mm a')}
+                {formatDateTimeIST(lead.created_at)}
               </Typography>
             </Grid>
           </Grid>
@@ -253,19 +274,32 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                 <DatePicker
                   label="Follow Up Date"
                   value={formData.follow_up_date}
-                  onChange={(date) => handleFieldChange('follow_up_date', date)}
+                  onChange={(date) => {
+                    if (date && startOfDay(date) < startOfDay(new Date())) {
+                      toast.error('Cannot select a past date for follow up');
+                      return;
+                    }
+                    handleFieldChange('follow_up_date', date);
+                  }}
+                  minDate={new Date()}
                   slotProps={{ textField: { fullWidth: true } }}
                 />
               </Grid>
 
-              {/* Admin-only fields */}
+              {/* User Details Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1, mb: 1, fontWeight: 600 }}>
+                  User Details
+                </Typography>
+              </Grid>
+
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Phone Number"
+                  label="Contact No."
                   value={formData.phone_number}
                   onChange={(e) => handleFieldChange('phone_number', e.target.value)}
-                  disabled={!isAdmin}
+                  disabled={false}
                 />
               </Grid>
 
@@ -275,8 +309,94 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   label="Email"
                   value={formData.email}
                   onChange={(e) => handleFieldChange('email', e.target.value)}
-                  disabled={!isAdmin}
+                  disabled={false}
                 />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="UHID"
+                  value={formData.uhid}
+                  onChange={(e) => handleFieldChange('uhid', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="Employee ID"
+                  value={formData.employee_id}
+                  onChange={(e) => handleFieldChange('employee_id', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="CUG Name"
+                  value={formData.cug_name}
+                  onChange={(e) => handleFieldChange('cug_name', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              {/* Location Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1, mb: 1, fontWeight: 600 }}>
+                  Location
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Facility Name"
+                  value={formData.user_facility}
+                  onChange={(e) => handleFieldChange('user_facility', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="City"
+                  value={formData.city}
+                  onChange={(e) => handleFieldChange('city', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="PIN Code"
+                  value={formData.pin_code}
+                  onChange={(e) => handleFieldChange('pin_code', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Address"
+                  value={formData.address}
+                  onChange={(e) => handleFieldChange('address', e.target.value)}
+                  multiline
+                  rows={2}
+                  disabled={false}
+                />
+              </Grid>
+
+              {/* Lead Information Section */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1, mb: 1, fontWeight: 600 }}>
+                  Lead Information
+                </Typography>
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -286,7 +406,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   label="Lead Source"
                   value={formData.lead_source}
                   onChange={(e) => handleFieldChange('lead_source', e.target.value)}
-                  disabled={!isAdmin}
+                  disabled={false}
                 >
                   {LEAD_SOURCE_OPTIONS.map((source) => (
                     <MenuItem key={source} value={source}>
@@ -299,41 +419,11 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="City"
-                  value={formData.city}
-                  onChange={(e) => handleFieldChange('city', e.target.value)}
-                  disabled={!isAdmin}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="User Facility"
-                  value={formData.user_facility}
-                  onChange={(e) => handleFieldChange('user_facility', e.target.value)}
-                  disabled={!isAdmin}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Doctor Name"
-                  value={formData.doctor_name}
-                  onChange={(e) => handleFieldChange('doctor_name', e.target.value)}
-                  disabled={!isAdmin}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
                   select
                   label="Trimester"
                   value={formData.trimester}
                   onChange={(e) => handleFieldChange('trimester', e.target.value)}
-                  disabled={!isAdmin}
+                  disabled={false}
                 >
                   <MenuItem value="">None</MenuItem>
                   {TRIMESTER_OPTIONS.map((t: string) => (
@@ -347,52 +437,123 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
+                  select
                   label="Package Requested"
                   value={formData.package_requested}
                   onChange={(e) => handleFieldChange('package_requested', e.target.value)}
-                  disabled={!isAdmin}
-                />
+                  disabled={false}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  {PACKAGE_OPTIONS.map((pkg) => (
+                    <MenuItem key={pkg} value={pkg}>
+                      {pkg}
+                    </MenuItem>
+                  ))}
+                </TextField>
               </Grid>
 
+              {/* Medical/Clinical Details Section */}
               <Grid item xs={12}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1, mb: 1, fontWeight: 600 }}>
+                  Medical/Clinical Details
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
-                  label="Address"
-                  value={formData.address}
-                  onChange={(e) => handleFieldChange('address', e.target.value)}
-                  multiline
-                  rows={2}
-                  disabled={!isAdmin}
+                  label="Treating Doctor Name"
+                  value={formData.doctor_name}
+                  onChange={(e) => handleFieldChange('doctor_name', e.target.value)}
+                  disabled={false}
                 />
               </Grid>
 
               <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
-                  label="PIN Code"
-                  value={formData.pin_code}
-                  onChange={(e) => handleFieldChange('pin_code', e.target.value)}
-                  disabled={!isAdmin}
+                  label="Doctor Speciality/Department"
+                  value={formData.doctor_speciality}
+                  onChange={(e) => handleFieldChange('doctor_speciality', e.target.value)}
+                  disabled={false}
                 />
               </Grid>
 
               <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
-                  label="UHID"
-                  value={formData.uhid}
-                  onChange={(e) => handleFieldChange('uhid', e.target.value)}
-                  disabled={!isAdmin}
+                  label="Visit ID"
+                  value={formData.visit_id}
+                  onChange={(e) => handleFieldChange('visit_id', e.target.value)}
+                  disabled={false}
                 />
               </Grid>
 
               <Grid item xs={12} sm={4}>
                 <TextField
                   fullWidth
-                  label="Employee ID"
-                  value={formData.employee_id}
-                  onChange={(e) => handleFieldChange('employee_id', e.target.value)}
-                  disabled={!isAdmin}
+                  label="Age"
+                  type="number"
+                  value={formData.age}
+                  onChange={(e) => handleFieldChange('age', e.target.value)}
+                  disabled={false}
+                  inputProps={{ min: 0, max: 120 }}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  select
+                  label="Gender"
+                  value={formData.gender}
+                  onChange={(e) => handleFieldChange('gender', e.target.value)}
+                  disabled={false}
+                >
+                  <MenuItem value="">Select</MenuItem>
+                  <MenuItem value="Male">Male</MenuItem>
+                  <MenuItem value="Female">Female</MenuItem>
+                  <MenuItem value="Other">Other</MenuItem>
+                </TextField>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  label="ICD Code"
+                  value={formData.icd_code}
+                  onChange={(e) => handleFieldChange('icd_code', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Diagnosis"
+                  value={formData.diagnosis}
+                  onChange={(e) => handleFieldChange('diagnosis', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Investigation Item Name"
+                  value={formData.investigation_item_name}
+                  onChange={(e) => handleFieldChange('investigation_item_name', e.target.value)}
+                  disabled={false}
+                />
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Investigation Service Type"
+                  value={formData.investigation_service_type}
+                  onChange={(e) => handleFieldChange('investigation_service_type', e.target.value)}
+                  disabled={false}
                 />
               </Grid>
             </Grid>
@@ -413,34 +574,58 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
               </Box>
             </Box>
 
-            {calls.map((call, index) => (
-              <Paper key={index} sx={{ p: 2, mb: 2, backgroundColor: '#fafafa' }}>
-                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                  Call {call.call_number}
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <DateTimePicker
-                      label="Date & Time"
-                      value={call.date_time}
-                      onChange={(date) => handleCallChange(index, 'date_time', date)}
-                      slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-                    />
+            {calls.map((call, index) => {
+              // A call is "past" if its date is strictly before today (excluding today)
+              const isCallDatePast = call.date_time
+                ? startOfDay(new Date(call.date_time)) < startOfDay(new Date())
+                : false;
+              return (
+                <Paper
+                  key={index}
+                  sx={{
+                    p: 2,
+                    mb: 2,
+                    backgroundColor: isCallDatePast ? '#e0e0e0' : '#fafafa',
+                    opacity: isCallDatePast ? 0.6 : 1,
+                    border: isCallDatePast ? '1px solid #bdbdbd' : 'none',
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: isCallDatePast ? 'text.secondary' : 'inherit' }}>
+                    Call {call.call_number}
+                    {isCallDatePast && (
+                      <Typography component="span" sx={{ fontSize: '0.7rem', color: 'error.main', ml: 1, fontWeight: 500 }}>
+                        (Past - Read Only)
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                      <DateTimePicker
+                        label="Date & Time (IST)"
+                        value={call.date_time}
+                        onChange={(date) => handleCallChange(index, 'date_time', date)}
+                        minDateTime={new Date()}
+                        disabled={isCallDatePast}
+                        slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label="Summary"
+                        value={call.summary}
+                        onChange={(e) => handleCallChange(index, 'summary', e.target.value)}
+                        multiline
+                        rows={2}
+                        size="small"
+                        disabled={isCallDatePast}
+                        helperText={isCallDatePast ? 'Cannot edit summary for past dates' : ''}
+                      />
+                    </Grid>
                   </Grid>
-                  <Grid item xs={12}>
-                    <TextField
-                      fullWidth
-                      label="Summary"
-                      value={call.summary}
-                      onChange={(e) => handleCallChange(index, 'summary', e.target.value)}
-                      multiline
-                      rows={2}
-                      size="small"
-                    />
-                  </Grid>
-                </Grid>
-              </Paper>
-            ))}
+                </Paper>
+              );
+            })}
           </TabPanel>
 
           {isAdmin && (
@@ -465,7 +650,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                             {audit.action}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {format(new Date(audit.timestamp), 'dd/MM/yyyy hh:mm a')}
+                            {formatDateTimeIST(audit.timestamp)}
                           </Typography>
                         </Box>
                         <Typography variant="body2" color="text.secondary">

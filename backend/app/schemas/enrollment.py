@@ -1,10 +1,10 @@
 """
 Enrollment Schemas for request/response validation
 """
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-from app.models.lead import Trimester, ServicePartner
+from app.models.lead import Trimester, ServicePartner, ServiceEnrolled
 from app.models.enrollment import ConnectStatus, ActionTaken
 
 
@@ -32,29 +32,34 @@ class FollowUpCreateRequest(BaseModel):
 
 class EnrollmentCreateRequest(BaseModel):
     """Enrollment creation request schema"""
-    # Mandatory fields
-    subscriber_name: str = Field(..., min_length=1, max_length=200)
-    employee_code: str = Field(..., min_length=1, max_length=50)
-    phone_number: str = Field(..., min_length=10, max_length=10)
+    # Optional - subscriber name
+    subscriber_name: Optional[str] = Field(None, max_length=200)
+
+    # At least one of these must be provided: email, uhid, or phone_number
+    email: Optional[EmailStr] = None
+    uhid: Optional[str] = Field(None, max_length=50)
+    phone_number: Optional[str] = Field(None, min_length=10, max_length=10)
 
     # Optional fields
-    email: Optional[EmailStr] = None
+    employee_id: Optional[str] = Field(None, max_length=50)
     billed_date: Optional[date] = None
     package_billed: Optional[str] = None
     hclhc_spoc: Optional[str] = None
-    hcl_location: Optional[str] = None
-    hclhc_doctor: Optional[str] = None
-    uhid: Optional[str] = None
+    hcl_facility: Optional[str] = None
+    doctor_name: Optional[str] = None
     dob: Optional[date] = None
-    employee_name: Optional[str] = None
+    name: Optional[str] = None
     address: Optional[str] = None
     trimester: Optional[Trimester] = None
-    service_partner: Optional[ServicePartner] = None
+    service_enrolled: Optional[str] = None
+    package_name_enrolled: Optional[str] = None
+    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
     connect_status: Optional[ConnectStatus] = None
     action_taken: Optional[ActionTaken] = None
     follow_up_date: Optional[datetime] = None
+    next_follow_up_date: Optional[datetime] = None
     customer_feedback: Optional[str] = None
     remarks: Optional[str] = None
     assigned_to: Optional[str] = None
@@ -62,6 +67,8 @@ class EnrollmentCreateRequest(BaseModel):
     @field_validator("phone_number")
     @classmethod
     def validate_phone(cls, v):
+        if v is None:
+            return v
         if not v.isdigit():
             raise ValueError("Phone number must contain only digits")
         if len(v) != 10:
@@ -70,30 +77,40 @@ class EnrollmentCreateRequest(BaseModel):
             raise ValueError("Phone number must start with 6, 7, 8, or 9")
         return v
 
+    @model_validator(mode='after')
+    def check_at_least_one_identifier(self):
+        """Ensure at least one of email, uhid, or phone_number is provided"""
+        if not self.email and not self.uhid and not self.phone_number:
+            raise ValueError("At least one of Email, UHID, or Phone Number must be provided")
+        return self
+
 
 class EnrollmentUpdateRequest(BaseModel):
     """Enrollment update request schema"""
     # All fields optional for partial updates
     subscriber_name: Optional[str] = None
-    employee_code: Optional[str] = None
+    employee_id: Optional[str] = None
     phone_number: Optional[str] = None
     email: Optional[EmailStr] = None
     billed_date: Optional[date] = None
     package_billed: Optional[str] = None
     hclhc_spoc: Optional[str] = None
-    hcl_location: Optional[str] = None
-    hclhc_doctor: Optional[str] = None
+    hcl_facility: Optional[str] = None
+    doctor_name: Optional[str] = None
     uhid: Optional[str] = None
     dob: Optional[date] = None
-    employee_name: Optional[str] = None
+    name: Optional[str] = None
     address: Optional[str] = None
     trimester: Optional[Trimester] = None
-    service_partner: Optional[ServicePartner] = None
+    service_enrolled: Optional[str] = None
+    package_name_enrolled: Optional[str] = None
+    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
     connect_status: Optional[ConnectStatus] = None
     action_taken: Optional[ActionTaken] = None
     follow_up_date: Optional[datetime] = None
+    next_follow_up_date: Optional[datetime] = None
     customer_feedback: Optional[str] = None
     remarks: Optional[str] = None
     assigned_to: Optional[str] = None
@@ -116,21 +133,23 @@ class EnrollmentResponse(BaseModel):
 
     # HCLH Details
     hclhc_spoc: Optional[str] = None
-    hcl_location: Optional[str] = None
-    hclhc_doctor: Optional[str] = None
+    hcl_facility: Optional[str] = None
+    doctor_name: Optional[str] = None
 
     # User Details
     uhid: Optional[str] = None
-    subscriber_name: str
+    subscriber_name: Optional[str] = None
     dob: Optional[date] = None
-    employee_code: Optional[str] = None
-    employee_name: Optional[str] = None
-    phone_number: str
+    employee_id: Optional[str] = None
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
 
     # Service Details
     trimester: Optional[str] = None
+    service_enrolled: Optional[str] = None
+    package_name_enrolled: Optional[str] = None
     service_partner: Optional[str] = None
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
@@ -141,6 +160,7 @@ class EnrollmentResponse(BaseModel):
 
     # Follow-up Tracking
     follow_up_date: Optional[datetime] = None
+    next_follow_up_date: Optional[datetime] = None
     customer_feedback: Optional[str] = None
     remarks: Optional[str] = None
 
@@ -150,6 +170,10 @@ class EnrollmentResponse(BaseModel):
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None
+    assigned_date: Optional[datetime] = None
+    reassigned_to: Optional[str] = None
+    reassigned_to_name: Optional[str] = None
+    reassigned_date: Optional[datetime] = None
 
     # System
     created_by: Optional[str] = None
@@ -171,6 +195,9 @@ class EnrollmentListResponse(BaseModel):
 class EnrollmentStatsResponse(BaseModel):
     """Enrollment stats response"""
     total: int
+    new_today: int = 0
+    assigned_today: int = 0  # For agents: enrollments assigned/reassigned to them today
+    follow_up_today: int = 0  # For agents: enrollments with follow-up required today
     by_partner: Dict[str, int]
     by_status: Dict[str, int]
 

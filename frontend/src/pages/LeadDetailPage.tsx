@@ -29,9 +29,10 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
+import { formatFullDateTimeIST, toISTForPicker, fromISTPickerToUTC } from '../utils/dateUtils';
 import { leadService } from '../services/leadService';
 import {
   Lead,
@@ -46,6 +47,7 @@ import {
   SERVICE_ENROLLED_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
+  PACKAGE_OPTIONS,
 } from '../types/lead.types';
 import { brandColors } from '../theme';
 import api from '../services/api';
@@ -103,17 +105,19 @@ export default function LeadDetailPage() {
     'user-details',
     'location',
     'lead-info',
-    'service-details',
+    'medical-details',
   ]);
 
   // Users list for Assigned To dropdown
   const [users, setUsers] = useState<UserOption[]>([]);
 
-  // Fetch users for Assigned To and Reassign dropdowns
+  // Fetch users for Assigned To and Reassign dropdowns - only users with Tulip CRM access
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await api.get<{ users: UserOption[] }>('/users');
+        const response = await api.get<{ users: UserOption[] }>('/users/dropdown', {
+          params: { crm_type: 'tulip' }
+        });
         setUsers(response.data.users || []);
       } catch (error) {
         console.error('Failed to fetch users:', error);
@@ -147,6 +151,7 @@ export default function LeadDetailPage() {
         alternate_mobile_number: data.alternate_mobile_number || undefined,
         employee_id: data.employee_id || undefined,
         uhid: data.uhid || undefined,
+        cug_name: data.cug_name || undefined,
         user_facility: data.user_facility || undefined,
         city: data.city || undefined,
         pin_code: data.pin_code || undefined,
@@ -161,8 +166,17 @@ export default function LeadDetailPage() {
         provider_location: data.provider_location || undefined,
         hclhc_spoc: data.hclhc_spoc || undefined,
         reason_for_no_sale: data.reason_for_no_sale || undefined,
+        // Medical/Clinical Details
         doctor_name: data.doctor_name || undefined,
+        doctor_speciality: data.doctor_speciality || undefined,
         consult_date: data.consult_date || undefined,
+        visit_id: data.visit_id || undefined,
+        age: data.age || undefined,
+        gender: data.gender || undefined,
+        icd_code: data.icd_code || undefined,
+        diagnosis: data.diagnosis || undefined,
+        investigation_item_name: data.investigation_item_name || undefined,
+        investigation_service_type: data.investigation_service_type || undefined,
         assigned_to: data.assigned_to || undefined,
         assigned_to_name: data.assigned_to_name || undefined,
         reassign_to: data.reassign_to || data.assigned_to || undefined,
@@ -247,41 +261,34 @@ export default function LeadDetailPage() {
   };
 
   const handleCallChange = (index: number, field: keyof CallEntry, value: unknown) => {
+    // Prevent setting past dates for calls
+    if (field === 'date_time' && value) {
+      const selectedDate = startOfDay(new Date(value as string));
+      const today = startOfDay(new Date());
+      if (selectedDate < today) {
+        toast.error('Cannot select a past date for calls');
+        return;
+      }
+    }
     const updatedCalls = [...(formData.calls || [])];
     updatedCalls[index] = { ...updatedCalls[index], [field]: value };
     handleInputChange('calls', updatedCalls);
   };
 
+  // Helper to check if a call date is in the past
+  const isCallDatePast = (dateTime: string | null | undefined): boolean => {
+    if (!dateTime) return false;
+    const callDate = startOfDay(new Date(dateTime));
+    const today = startOfDay(new Date());
+    return callDate < today;
+  };
+
   const canEdit = (field: string): boolean => {
-    if (isAdmin) return true;
-    const agentEditableFields = [
-      // Basic fields
-      'lead_source',
-      'lead_creation_date',
-      'status',
-      'calls',
-      'follow_up_date',
-      // Location fields
-      'user_facility',
-      'city',
-      'pin_code',
-      'address',
-      // Healthcare fields
-      'trimester',
-      'looking_for',
-      'family_member_relation',
-      'package_requested',
-      'service_enrolled',
-      'package_name_enrolled',
-      'service_partner',
-      'provider_location',
-      'doctor_name',
-      'consult_date',
-      'hclhc_spoc',
-      'reason_for_no_sale',
-      'reassign_to',
-    ];
-    return agentEditableFields.includes(field);
+    // Agents cannot edit assigned_to field
+    if (!isAdmin && (field === 'assigned_to' || field === 'assigned_to_name')) {
+      return false;
+    }
+    return true;
   };
 
   if (loading) {
@@ -319,7 +326,7 @@ export default function LeadDetailPage() {
         {/* Lead Header Card */}
         <Paper sx={{ p: 3, mb: 3 }}>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <Typography variant="caption" color="text.secondary">
                 Lead ID
               </Typography>
@@ -327,7 +334,7 @@ export default function LeadDetailPage() {
                 {lead.lead_id}
               </Typography>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <Typography variant="caption" color="text.secondary">
                 Name
               </Typography>
@@ -363,10 +370,32 @@ export default function LeadDetailPage() {
             </Grid>
             <Grid item xs={12} md={3}>
               <Typography variant="caption" color="text.secondary">
+                Reason for No Sale
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>
+                <TextField
+                  select
+                  size="small"
+                  fullWidth
+                  value={formData.reason_for_no_sale || ''}
+                  onChange={(e) => handleInputChange('reason_for_no_sale', e.target.value)}
+                  disabled={!canEdit('reason_for_no_sale')}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  {REASON_FOR_NO_SALE_OPTIONS.map((reason) => (
+                    <MenuItem key={reason} value={reason}>
+                      {reason}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <Typography variant="caption" color="text.secondary">
                 Created
               </Typography>
               <Typography variant="body1">
-                {format(new Date(lead.created_at), 'dd MMM yyyy, hh:mm a')}
+                {formatFullDateTimeIST(lead.created_at)}
               </Typography>
             </Grid>
           </Grid>
@@ -408,7 +437,7 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="Phone Number"
+                    label="Contact No."
                     size="small"
                     value={formData.phone_number || ''}
                     onChange={(e) => handleInputChange('phone_number', e.target.value)}
@@ -447,6 +476,16 @@ export default function LeadDetailPage() {
                     disabled={!canEdit('uhid')}
                   />
                 </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="CUG Name"
+                    size="small"
+                    value={formData.cug_name || ''}
+                    onChange={(e) => handleInputChange('cug_name', e.target.value)}
+                    disabled={!canEdit('cug_name')}
+                  />
+                </Grid>
               </Grid>
             </AccordionDetails>
           </Accordion>
@@ -464,7 +503,7 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="User Facility"
+                    label="Facility Name"
                     size="small"
                     value={formData.user_facility || ''}
                     onChange={(e) => handleInputChange('user_facility', e.target.value)}
@@ -597,77 +636,26 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
+                    select
                     label="Package Requested"
                     size="small"
                     value={formData.package_requested || ''}
                     onChange={(e) => handleInputChange('package_requested', e.target.value)}
                     disabled={!canEdit('package_requested')}
-                  />
-                </Grid>
-                {isAdmin && (
-                  <Grid item xs={12} md={4}>
-                    <TextField
-                      fullWidth
-                      select
-                      label="Assigned To"
-                      size="small"
-                      value={formData.assigned_to || ''}
-                      onChange={(e) => {
-                        const selectedUser = users.find(u => u.id === e.target.value);
-                        handleInputChange('assigned_to', e.target.value);
-                        handleInputChange('assigned_to_name', selectedUser?.full_name || '');
-                      }}
-                    >
-                      <MenuItem value="">Unassigned</MenuItem>
-                      {users.map((user) => (
-                        <MenuItem key={user.id} value={user.id}>
-                          {user.full_name} ({user.role})
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </Grid>
-                )}
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    select
-                    label="Reassign To"
-                    size="small"
-                    value={formData.reassign_to || ''}
-                    onChange={(e) => {
-                      const selectedUser = users.find(u => u.id === e.target.value);
-                      handleInputChange('reassign_to', e.target.value);
-                      handleInputChange('reassign_to_name', selectedUser?.full_name || '');
-                    }}
-                    disabled={!canEdit('reassign_to')}
                   >
                     <MenuItem value="">None</MenuItem>
-                    {users.map((user) => (
-                      <MenuItem key={user.id} value={user.id}>
-                        {user.full_name} ({user.role})
+                    {PACKAGE_OPTIONS.map((pkg) => (
+                      <MenuItem key={pkg} value={pkg}>
+                        {pkg}
                       </MenuItem>
                     ))}
                   </TextField>
                 </Grid>
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-
-          {/* Service Details */}
-          <Accordion
-            expanded={expandedSections.includes('service-details')}
-            onChange={handleAccordionChange('service-details')}
-          >
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography sx={{ fontWeight: 600 }}>Service Details</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Grid container spacing={2}>
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
                     select
-                    label="Service Enrolled"
+                    label="Service Requested"
                     size="small"
                     value={formData.service_enrolled || ''}
                     onChange={(e) => handleInputChange('service_enrolled', e.target.value)}
@@ -684,24 +672,20 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="Package Name Enrolled"
-                    size="small"
-                    value={formData.package_name_enrolled || ''}
-                    onChange={(e) => handleInputChange('package_name_enrolled', e.target.value)}
-                    disabled={!canEdit('package_name_enrolled')}
-                  />
-                </Grid>
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
                     select
-                    label="Service (Partner)"
+                    label="Service Partner"
                     size="small"
-                    value={formData.service_partner || ''}
-                    onChange={(e) => handleInputChange('service_partner', e.target.value)}
+                    value={formData.service_partner ? (typeof formData.service_partner === 'string' ? formData.service_partner.split(', ').filter(Boolean) : formData.service_partner) : []}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      handleInputChange('service_partner', Array.isArray(value) ? value.join(', ') : value);
+                    }}
                     disabled={!canEdit('service_partner')}
+                    SelectProps={{
+                      multiple: true,
+                      renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
+                    }}
                   >
-                    <MenuItem value="">Select Partner</MenuItem>
                     {SERVICE_PARTNER_OPTIONS.map((partner) => (
                       <MenuItem key={partner} value={partner}>
                         {partner}
@@ -712,7 +696,7 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="Provider Location"
+                    label="Partner Center"
                     size="small"
                     value={formData.provider_location || ''}
                     onChange={(e) => handleInputChange('provider_location', e.target.value)}
@@ -722,27 +706,21 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="HCLHC SPOC"
-                    size="small"
-                    value={formData.hclhc_spoc || ''}
-                    onChange={(e) => handleInputChange('hclhc_spoc', e.target.value)}
-                    disabled={!canEdit('hclhc_spoc')}
-                  />
-                </Grid>
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
                     select
-                    label="Reason for No Sale"
+                    label="Assigned To"
                     size="small"
-                    value={formData.reason_for_no_sale || ''}
-                    onChange={(e) => handleInputChange('reason_for_no_sale', e.target.value)}
-                    disabled={!canEdit('reason_for_no_sale')}
+                    value={formData.assigned_to || ''}
+                    onChange={(e) => {
+                      const selectedUser = users.find(u => u.id === e.target.value);
+                      handleInputChange('assigned_to', e.target.value);
+                      handleInputChange('assigned_to_name', selectedUser?.full_name || '');
+                    }}
+                    disabled={!canEdit('assigned_to')}
                   >
-                    <MenuItem value="">None</MenuItem>
-                    {REASON_FOR_NO_SALE_OPTIONS.map((reason) => (
-                      <MenuItem key={reason} value={reason}>
-                        {reason}
+                    <MenuItem value="">Unassigned</MenuItem>
+                    {users.map((user) => (
+                      <MenuItem key={user.id} value={user.id}>
+                        {user.full_name} ({user.role})
                       </MenuItem>
                     ))}
                   </TextField>
@@ -750,11 +728,58 @@ export default function LeadDetailPage() {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
-                    label="Doctor Name"
+                    select
+                    label="Reassign To"
+                    size="small"
+                    value={formData.reassign_to || ''}
+                    onChange={(e) => {
+                      const selectedUser = users.find(u => u.id === e.target.value);
+                      handleInputChange('reassign_to', e.target.value);
+                      handleInputChange('reassign_to_name', selectedUser?.full_name || '');
+                    }}
+                    disabled={!canEdit('reassign_to') || !formData.assigned_to}
+                    helperText={!formData.assigned_to ? 'Set Assigned To first' : ''}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {users.map((user) => (
+                      <MenuItem key={user.id} value={user.id}>
+                        {user.full_name} ({user.role})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* Medical/Clinical Details */}
+          <Accordion
+            expanded={expandedSections.includes('medical-details')}
+            onChange={handleAccordionChange('medical-details')}
+          >
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography sx={{ fontWeight: 600 }}>Medical/Clinical Details</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Treating Doctor Name"
                     size="small"
                     value={formData.doctor_name || ''}
                     onChange={(e) => handleInputChange('doctor_name', e.target.value)}
                     disabled={!canEdit('doctor_name')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Doctor Speciality/Department"
+                    size="small"
+                    value={formData.doctor_speciality || ''}
+                    onChange={(e) => handleInputChange('doctor_speciality', e.target.value)}
+                    disabled={!canEdit('doctor_speciality')}
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
@@ -766,6 +791,84 @@ export default function LeadDetailPage() {
                     }
                     disabled={!canEdit('consult_date')}
                     slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Visit ID"
+                    size="small"
+                    value={formData.visit_id || ''}
+                    onChange={(e) => handleInputChange('visit_id', e.target.value)}
+                    disabled={!canEdit('visit_id')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Age"
+                    size="small"
+                    type="number"
+                    value={formData.age || ''}
+                    onChange={(e) => handleInputChange('age', e.target.value ? parseInt(e.target.value) : undefined)}
+                    disabled={!canEdit('age')}
+                    inputProps={{ min: 0, max: 120 }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    select
+                    label="Gender"
+                    size="small"
+                    value={formData.gender || ''}
+                    onChange={(e) => handleInputChange('gender', e.target.value)}
+                    disabled={!canEdit('gender')}
+                  >
+                    <MenuItem value="">Select</MenuItem>
+                    <MenuItem value="Male">Male</MenuItem>
+                    <MenuItem value="Female">Female</MenuItem>
+                    <MenuItem value="Other">Other</MenuItem>
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="ICD Code"
+                    size="small"
+                    value={formData.icd_code || ''}
+                    onChange={(e) => handleInputChange('icd_code', e.target.value)}
+                    disabled={!canEdit('icd_code')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Diagnosis"
+                    size="small"
+                    value={formData.diagnosis || ''}
+                    onChange={(e) => handleInputChange('diagnosis', e.target.value)}
+                    disabled={!canEdit('diagnosis')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Investigation Item Name"
+                    size="small"
+                    value={formData.investigation_item_name || ''}
+                    onChange={(e) => handleInputChange('investigation_item_name', e.target.value)}
+                    disabled={!canEdit('investigation_item_name')}
+                  />
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    fullWidth
+                    label="Investigation Service Type"
+                    size="small"
+                    value={formData.investigation_service_type || ''}
+                    onChange={(e) => handleInputChange('investigation_service_type', e.target.value)}
+                    disabled={!canEdit('investigation_service_type')}
                   />
                 </Grid>
               </Grid>
@@ -789,25 +892,36 @@ export default function LeadDetailPage() {
           <Box sx={{ p: 2 }}>
             {/* Calls Tab */}
             <TabPanel value={tabValue} index={0}>
-              <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <TextField
-                  label="Number of Calls"
-                  type="number"
-                  size="small"
-                  value={formData.number_of_calls || 0}
-                  disabled
-                  helperText="Auto-updates on Add Call"
-                  sx={{ width: 180 }}
-                />
+              <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                <Box>
+                  <TextField
+                    label="Number of Calls"
+                    type="number"
+                    size="small"
+                    value={formData.number_of_calls || 0}
+                    disabled
+                    sx={{ width: 140 }}
+                  />
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    Auto-updates on Add Call
+                  </Typography>
+                </Box>
                 <DateTimePicker
-                  label="Follow Up Date"
-                  value={formData.follow_up_date ? new Date(formData.follow_up_date) : null}
-                  onChange={(date) => handleInputChange('follow_up_date', date?.toISOString() || null)}
+                  label="Follow Up Date (IST)"
+                  value={toISTForPicker(formData.follow_up_date)}
+                  onChange={(date) => {
+                    if (date && startOfDay(date) < startOfDay(new Date())) {
+                      toast.error('Cannot select a past date for follow up');
+                      return;
+                    }
+                    handleInputChange('follow_up_date', fromISTPickerToUTC(date));
+                  }}
+                  minDateTime={new Date()}
                   disabled={!canEdit('follow_up_date')}
-                  slotProps={{ textField: { size: 'small' } }}
+                  slotProps={{ textField: { size: 'small', sx: { width: 220 } } }}
                 />
                 {canEdit('calls') && (
-                  <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddCall}>
+                  <Button variant="outlined" startIcon={<AddIcon />} onClick={handleAddCall} sx={{ height: 40 }}>
                     Add Call
                   </Button>
                 )}
@@ -815,40 +929,59 @@ export default function LeadDetailPage() {
 
               <Divider sx={{ my: 2 }} />
 
-              {(formData.calls || []).map((call, index) => (
-                <Paper key={index} variant="outlined" sx={{ p: 2, mb: 2 }}>
-                  <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} md={1}>
-                      <Typography variant="subtitle2" color="primary">
-                        Call {call.call_number}
-                      </Typography>
+              {(formData.calls || []).map((call, index) => {
+                const isPastCall = isCallDatePast(call.date_time);
+                return (
+                  <Paper
+                    key={index}
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      mb: 2,
+                      bgcolor: isPastCall ? '#f5f5f5' : 'inherit',
+                      opacity: isPastCall ? 0.7 : 1,
+                    }}
+                  >
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} md={1}>
+                        <Typography variant="subtitle2" color={isPastCall ? 'text.secondary' : 'primary'}>
+                          Call {call.call_number}
+                          {isPastCall && (
+                            <Typography variant="caption" display="block" color="text.secondary">
+                              (Past)
+                            </Typography>
+                          )}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <DateTimePicker
+                          label="Date & Time (IST)"
+                          value={toISTForPicker(call.date_time)}
+                          onChange={(date) =>
+                            handleCallChange(index, 'date_time', fromISTPickerToUTC(date))
+                          }
+                          minDateTime={new Date()}
+                          disabled={!canEdit('calls') || isPastCall}
+                          slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={7}>
+                        <TextField
+                          fullWidth
+                          label="Summary"
+                          size="small"
+                          multiline
+                          rows={2}
+                          value={call.summary || ''}
+                          onChange={(e) => handleCallChange(index, 'summary', e.target.value)}
+                          disabled={!canEdit('calls') || isPastCall}
+                          helperText={isPastCall ? 'Cannot edit past call summary' : ''}
+                        />
+                      </Grid>
                     </Grid>
-                    <Grid item xs={12} md={4}>
-                      <DateTimePicker
-                        label="Date & Time"
-                        value={call.date_time ? new Date(call.date_time) : null}
-                        onChange={(date) =>
-                          handleCallChange(index, 'date_time', date?.toISOString() || null)
-                        }
-                        disabled={!canEdit('calls')}
-                        slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={7}>
-                      <TextField
-                        fullWidth
-                        label="Summary"
-                        size="small"
-                        multiline
-                        rows={2}
-                        value={call.summary || ''}
-                        onChange={(e) => handleCallChange(index, 'summary', e.target.value)}
-                        disabled={!canEdit('calls')}
-                      />
-                    </Grid>
-                  </Grid>
-                </Paper>
-              ))}
+                  </Paper>
+                );
+              })}
 
               {(!formData.calls || formData.calls.length === 0) && (
                 <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
@@ -891,7 +1024,7 @@ export default function LeadDetailPage() {
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {comment.created_at
-                          ? format(new Date(comment.created_at), 'dd MMM yyyy, hh:mm a')
+                          ? formatFullDateTimeIST(comment.created_at)
                           : ''}
                       </Typography>
                     </Box>
@@ -937,7 +1070,7 @@ export default function LeadDetailPage() {
                           />
                         </Box>
                         <Typography variant="caption" color="text.secondary">
-                          {format(new Date(log.timestamp), 'dd MMM yyyy, hh:mm a')}
+                          {formatFullDateTimeIST(log.timestamp)}
                         </Typography>
                       </Box>
                       {log.changes && log.changes.length > 0 && (

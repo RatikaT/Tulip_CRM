@@ -8,7 +8,7 @@ from pydantic import Field, EmailStr, BaseModel
 from enum import Enum
 
 # Import shared enums from lead model
-from app.models.lead import Trimester, ServicePartner
+from app.models.lead import Trimester, ServicePartner, ServiceEnrolled
 
 
 class ConnectStatus(str, Enum):
@@ -57,24 +57,26 @@ class Enrollment(Document):
 
     # HCLH Details
     hclhc_spoc: Optional[str] = None
-    hcl_location: Optional[str] = None
+    hcl_facility: Optional[str] = None
 
-    # HCLH Doctor
-    hclhc_doctor: Optional[str] = None
+    # Doctor Name
+    doctor_name: Optional[str] = None
 
-    # User Details (mandatory: subscriber_name, employee_code, phone_number)
+    # User Details (at least one of: email, uhid, phone_number required)
     uhid: Optional[str] = None
-    subscriber_name: str
+    subscriber_name: Optional[str] = None
     dob: Optional[date] = None
-    employee_code: Optional[str] = None  # Primary identifier (can have multiple enrollments)
-    employee_name: Optional[str] = None  # Employee/User Name
-    phone_number: str
+    employee_id: Optional[str] = None  # Primary identifier (can have multiple enrollments)
+    name: Optional[str] = None  # Employee/User Name
+    phone_number: Optional[str] = None  # At least one of: email, uhid, phone_number required
     email: Optional[EmailStr] = None
     address: Optional[str] = None
 
     # Service Details
     trimester: Optional[Trimester] = None
-    service_partner: Optional[ServicePartner] = None
+    service_enrolled: Optional[str] = None
+    package_name_enrolled: Optional[str] = None
+    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
 
@@ -84,6 +86,7 @@ class Enrollment(Document):
 
     # Current Follow-up Tracking
     follow_up_date: Optional[datetime] = None
+    next_follow_up_date: Optional[datetime] = None  # Next scheduled follow-up date
     customer_feedback: Optional[str] = None
     remarks: Optional[str] = None
 
@@ -93,6 +96,10 @@ class Enrollment(Document):
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None
+    assigned_date: Optional[datetime] = None  # Date when first assigned
+    reassigned_to: Optional[str] = None  # User ID if reassigned
+    reassigned_to_name: Optional[str] = None  # User name if reassigned
+    reassigned_date: Optional[datetime] = None  # Date when reassigned
 
     # System fields
     created_by: Optional[str] = None
@@ -112,17 +119,16 @@ class Enrollment(Document):
                 "billed_date": "2025-12-27",
                 "package_billed": "Maternity Premium",
                 "hclhc_spoc": "Dr. Smith",
-                "hcl_location": "Delhi",
+                "hcl_facility": "Delhi",
                 "uhid": "UH12345",
                 "subscriber_name": "Jane Doe",
                 "dob": "1990-05-15",
-                "employee_code": "EMP001",
-                "employee_name": "Jane Doe",
+                "employee_id": "EMP001",
+                "name": "Jane Doe",
                 "phone_number": "9876543210",
                 "email": "jane@example.com",
                 "address": "123 Street, Delhi 110001",
                 "trimester": "Trimester 2",
-                "doctor_name": "Dr. Sharma",
                 "service_partner": "Motherhood",
                 "partner_centre_selected": "Motherhood Noida",
                 "partner_gynaecologist": "Dr. Kapoor",
