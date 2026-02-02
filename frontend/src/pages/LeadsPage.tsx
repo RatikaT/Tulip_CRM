@@ -469,7 +469,7 @@ export default function LeadsPage() {
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
     },
     {
-      field: 'service_enrolled',
+      field: 'service_requested',
       headerName: 'Service',
       flex: 0.9,
       minWidth: 85,
@@ -1586,7 +1586,7 @@ export default function LeadsPage() {
                               ) : '-'}
                             </TableCell>
                             <TableCell sx={{ fontSize: '0.8rem' }}>
-                              {lead.service_enrolled || '-'}
+                              {lead.service_requested || '-'}
                             </TableCell>
                             <TableCell sx={{ fontSize: '0.8rem' }}>
                               {lead.assigned_to_name || '-'}

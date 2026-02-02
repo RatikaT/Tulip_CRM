@@ -45,7 +45,7 @@ import {
   LEAD_SOURCE_OPTIONS,
   TRIMESTER_OPTIONS,
   LOOKING_FOR_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
+  SERVICE_REQUESTED_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
   PACKAGE_OPTIONS,
@@ -166,7 +166,7 @@ export default function LeadDetailPage() {
         looking_for: data.looking_for || undefined,
         family_member_relation: data.looking_for === 'Family Member' ? (data.family_member_relation || undefined) : undefined,
         package_requested: data.package_requested || undefined,
-        service_enrolled: data.service_enrolled || undefined,
+        service_requested: data.service_requested || undefined,
         package_name_enrolled: data.package_name_enrolled || undefined,
         service_partner: data.service_partner || undefined,
         provider_location: data.provider_location || undefined,
@@ -238,7 +238,7 @@ export default function LeadDetailPage() {
         uhid: enrollmentData.uhid,
         trimester: enrollmentData.trimester || undefined,
         doctor_name: enrollmentData.doctor_name,
-        service_enrolled: enrollmentData.service_enrolled,
+        service_requested: enrollmentData.service_enrolled,
         package_requested: enrollmentData.package_name_enrolled,
         service_partner: enrollmentData.service_partner,
         provider_location: enrollmentData.partner_centre_selected,
@@ -777,12 +777,12 @@ export default function LeadDetailPage() {
                     select
                     label="Service Requested"
                     size="small"
-                    value={formData.service_enrolled || ''}
-                    onChange={(e) => handleInputChange('service_enrolled', e.target.value)}
-                    disabled={!canEdit('service_enrolled')}
+                    value={formData.service_requested || ''}
+                    onChange={(e) => handleInputChange('service_requested', e.target.value)}
+                    disabled={!canEdit('service_requested')}
                   >
                     <MenuItem value="">None</MenuItem>
-                    {SERVICE_ENROLLED_OPTIONS.map((service) => (
+                    {SERVICE_REQUESTED_OPTIONS.map((service) => (
                       <MenuItem key={service} value={service}>
                         {service}
                       </MenuItem>

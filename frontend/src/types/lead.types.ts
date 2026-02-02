@@ -34,7 +34,7 @@ export type Trimester =
 
 export type LookingFor = 'Self' | 'Family Member';
 
-export type ServiceEnrolled = 'PreConception' | 'Antenatal' | 'MaternityWellness';
+export type ServiceRequested = 'PreConception' | 'Antenatal' | 'MaternityWellness';
 
 export type ServicePartner =
   | 'Apollo Cradle'
@@ -106,7 +106,7 @@ export interface Lead {
   package_requested: string | null;
 
   // Service Details
-  service_enrolled: ServiceEnrolled | null;
+  service_requested: ServiceRequested | null;
   package_name_enrolled: string | null;
   service_partner: ServicePartner | null;
   provider_location: string | null;
@@ -159,14 +159,15 @@ export interface LeadListResponse {
 }
 
 export interface LeadCreateRequest {
-  // Mandatory fields
-  lead_source: LeadSource;
-  name: string;
-  phone_number: string;
+  // At least one of uhid, phone_number, or email is required
+  // All other fields are optional
+  lead_source?: LeadSource;
+  name?: string;
+  phone_number?: string;
+  email?: string;
 
   // Optional fields
   lead_creation_date?: string;
-  email?: string;
   alternate_mobile_number?: string;
   employee_id?: string;
   uhid?: string;
@@ -178,7 +179,7 @@ export interface LeadCreateRequest {
   looking_for?: LookingFor;
   family_member_relation?: string;
   package_requested?: string;
-  service_enrolled?: ServiceEnrolled;
+  service_requested?: ServiceRequested;
   package_name_enrolled?: string;
   service_partner?: ServicePartner;
   provider_location?: string;
@@ -225,7 +226,7 @@ export interface LeadUpdateRequest {
   looking_for?: LookingFor;
   family_member_relation?: string;
   package_requested?: string;
-  service_enrolled?: ServiceEnrolled;
+  service_requested?: ServiceRequested;
   package_name_enrolled?: string;
   service_partner?: ServicePartner;
   provider_location?: string;
@@ -305,7 +306,7 @@ export const TRIMESTER_OPTIONS: Trimester[] = [
 
 export const LOOKING_FOR_OPTIONS: LookingFor[] = ['Self', 'Family Member'];
 
-export const SERVICE_ENROLLED_OPTIONS: string[] = [
+export const SERVICE_REQUESTED_OPTIONS: string[] = [
   'Tulip Pre-Conception',
   'Tulip Antenatal',
   'Tulip Wellness',

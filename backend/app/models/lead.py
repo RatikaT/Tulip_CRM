@@ -130,7 +130,7 @@ class Lead(Document):
     package_requested: Optional[str] = None
 
     # Service Details
-    service_enrolled: Optional[str] = None
+    service_requested: Optional[str] = None
     package_name_enrolled: Optional[str] = None
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None
@@ -200,7 +200,7 @@ class Lead(Document):
                 "trimester": "Trimester 2",
                 "looking_for": "Self",
                 "package_requested": "Maternity Package",
-                "service_enrolled": "Antenatal",
+                "service_requested": "Antenatal",
                 "package_name_enrolled": "Premium Care",
                 "service_partner": "Motherhood",
                 "provider_location": "South Delhi",

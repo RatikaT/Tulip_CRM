@@ -48,7 +48,7 @@ class LeadCreateRequest(BaseModel):
     looking_for: Optional[LookingFor] = None
     family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
-    service_enrolled: Optional[str] = None
+    service_requested: Optional[str] = None
     package_name_enrolled: Optional[str] = None
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None
@@ -116,7 +116,7 @@ class LeadUpdateRequest(BaseModel):
     looking_for: Optional[LookingFor] = None
     family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
-    service_enrolled: Optional[str] = None
+    service_requested: Optional[str] = None
     package_name_enrolled: Optional[str] = None
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None
@@ -176,7 +176,7 @@ class LeadResponse(BaseModel):
     package_requested: Optional[str] = None
 
     # Service Details
-    service_enrolled: Optional[str] = None
+    service_requested: Optional[str] = None
     package_name_enrolled: Optional[str] = None
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None

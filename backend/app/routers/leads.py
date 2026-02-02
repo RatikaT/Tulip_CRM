@@ -69,7 +69,7 @@ def lead_to_response(lead: Lead) -> dict:
         "package_requested": lead.package_requested,
 
         # Service Details
-        "service_enrolled": lead.service_enrolled if lead.service_enrolled else None,
+        "service_requested": lead.service_requested if lead.service_requested else None,
         "package_name_enrolled": lead.package_name_enrolled,
         "service_partner": lead.service_partner if lead.service_partner else None,
         "provider_location": lead.provider_location,
@@ -205,7 +205,7 @@ async def get_bulk_upload_template(
         "name", "phone_number", "email", "uhid", "employee_id",
         "lead_source", "status", "trimester", "looking_for",
         "city", "address", "pin_code", "service_partner", "provider_location",
-        "service_enrolled", "package_name_enrolled", "hclhc_spoc",
+        "service_requested", "package_name_enrolled", "hclhc_spoc",
         "doctor_name", "doctor_speciality", "follow_up_date", "alternate_mobile_number"
     ]
 
@@ -356,9 +356,9 @@ async def bulk_upload_leads(
                     elif 'family' in looking_for_str.lower():
                         looking_for = LookingFor.FAMILY_MEMBER
 
-                # Parse service_enrolled
-                service_str = row.get('service_enrolled', '').strip()
-                service_enrolled = None
+                # Parse service_requested
+                service_str = row.get('service_requested', '').strip()
+                service_requested = None
                 if service_str:
                     service_map = {
                         'preconception': ServiceEnrolled.PRE_CONCEPTION,
@@ -367,7 +367,7 @@ async def bulk_upload_leads(
                         'maternitywellness': ServiceEnrolled.MATERNITY_WELLNESS,
                         'maternity wellness': ServiceEnrolled.MATERNITY_WELLNESS,
                     }
-                    service_enrolled = service_map.get(service_str.lower())
+                    service_requested = service_map.get(service_str.lower())
 
                 # Parse service_partner
                 partner_str = row.get('service_partner', '').strip()
@@ -458,7 +458,7 @@ async def bulk_upload_leads(
                     trimester=trimester,
                     looking_for=looking_for,
                     package_requested=row.get('package_requested', '').strip() or None,
-                    service_enrolled=service_enrolled,
+                    service_requested=service_requested,
                     package_name_enrolled=row.get('package_name_enrolled', '').strip() or None,
                     service_partner=service_partner,
                     provider_location=row.get('provider_location', '').strip() or None,
@@ -738,7 +738,7 @@ async def export_leads_excel(
             lead.pin_code,
             lead.address,
             lead.package_requested,
-            lead.service_enrolled if lead.service_enrolled else None,
+            lead.service_requested if lead.service_requested else None,
             lead.package_name_enrolled,
             lead.service_partner if lead.service_partner else None,
             lead.provider_location,
@@ -994,7 +994,7 @@ async def create_lead(
         looking_for=request.looking_for,
         family_member_relation=request.family_member_relation,
         package_requested=request.package_requested,
-        service_enrolled=request.service_enrolled,
+        service_requested=request.service_requested,
         package_name_enrolled=request.package_name_enrolled,
         service_partner=request.service_partner,
         provider_location=request.provider_location,
@@ -1244,7 +1244,7 @@ async def update_lead(
             old_value = old_value.value
 
         # Convert enum strings to enum values for certain fields
-        if field in ["lead_source", "status", "trimester", "looking_for", "service_enrolled", "service_partner", "reason_for_no_sale"] and new_value:
+        if field in ["lead_source", "status", "trimester", "looking_for", "service_requested", "service_partner", "reason_for_no_sale"] and new_value:
             if isinstance(new_value, str):
                 try:
                     if field == "lead_source":
@@ -1255,7 +1255,7 @@ async def update_lead(
                         new_value = Trimester(new_value)
                     elif field == "looking_for":
                         new_value = LookingFor(new_value)
-                    elif field == "service_enrolled":
+                    elif field == "service_requested":
                         new_value = ServiceEnrolled(new_value)
                     elif field == "service_partner":
                         new_value = ServicePartner(new_value)
@@ -1298,7 +1298,7 @@ async def update_lead(
                     pass
 
             # Log lead values being mapped to enrollment
-            logger.info(f"Creating enrollment from lead {lead_id} with values: uhid={lead.uhid}, service_enrolled={lead.service_enrolled}, package_requested={lead.package_requested}, provider_location={lead.provider_location}")
+            logger.info(f"Creating enrollment from lead {lead_id} with values: uhid={lead.uhid}, service_requested={lead.service_requested}, package_requested={lead.package_requested}, provider_location={lead.provider_location}")
 
             enrollment = Enrollment(
                 enrollment_id=enrollment_id,
@@ -1310,7 +1310,7 @@ async def update_lead(
                 uhid=lead.uhid,
                 trimester=trimester_value,
                 doctor_name=lead.doctor_name,
-                service_enrolled=lead.service_enrolled,
+                service_enrolled=lead.service_requested,
                 package_name_enrolled=lead.package_requested,
                 service_partner=service_partner_value,
                 partner_centre_selected=lead.provider_location,

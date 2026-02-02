@@ -138,7 +138,7 @@ export default function EnrollmentConfirmModal({
         hcl_facility: data.user_facility || lead?.user_facility || '',
         trimester: data.trimester || lead?.trimester || '',
         doctor_name: data.doctor_name || lead?.doctor_name || '',
-        service_enrolled: data.service_enrolled || lead?.service_enrolled || '',
+        service_enrolled: data.service_requested || lead?.service_requested || '',
         package_name_enrolled: data.package_requested || lead?.package_requested || '',
         service_partner: data.service_partner || lead?.service_partner || '',
         partner_centre_selected: data.provider_location || lead?.provider_location || '',

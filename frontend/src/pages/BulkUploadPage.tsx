@@ -130,7 +130,7 @@ export default function BulkUploadPage() {
       'address',
       'user_facility',
       'package_requested',
-      'service_enrolled',
+      'service_requested',
       'service_partner',
       'provider_location',
       'reason_for_no_sale',
@@ -457,7 +457,7 @@ export default function BulkUploadPage() {
           <li><Typography variant="body2"><strong>address</strong> - Full address</Typography></li>
           <li><Typography variant="body2"><strong>user_facility</strong> - Facility Name</Typography></li>
           <li><Typography variant="body2"><strong>package_requested</strong> - Package name requested</Typography></li>
-          <li><Typography variant="body2"><strong>service_enrolled</strong> - Service Requested (PreConception, Antenatal, MaternityWellness)</Typography></li>
+          <li><Typography variant="body2"><strong>service_requested</strong> - Service Requested (PreConception, Antenatal, MaternityWellness)</Typography></li>
           <li><Typography variant="body2"><strong>service_partner</strong> - Service Partner (Motherhood, Rainbow, Fortis, Apollo Cradle, Cloud 9, HCL Healthcare, Mamily, Others)</Typography></li>
           <li><Typography variant="body2"><strong>provider_location</strong> - Partner Center location</Typography></li>
           <li><Typography variant="body2"><strong>reason_for_no_sale</strong> - Already Taking Service outside, Location not suitable, Different Service Provider Required-Brand, Travelling to Native Place for delivery, Package Cost, Only Delivery Package required, Package inadequate, Miscarriage, Looking for other HCLH services, Others</Typography></li>

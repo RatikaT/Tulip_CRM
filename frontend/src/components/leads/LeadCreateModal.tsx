@@ -31,7 +31,7 @@ import {
   LEAD_SOURCE_OPTIONS,
   TRIMESTER_OPTIONS,
   LOOKING_FOR_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
+  SERVICE_REQUESTED_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
   PACKAGE_OPTIONS,
@@ -60,7 +60,7 @@ const createLeadSchema = z.object({
   looking_for: z.string().optional(),
   family_member_relation: z.string().optional(),
   package_requested: z.string().optional(),
-  service_enrolled: z.string().optional(),
+  service_requested: z.string().optional(),
   package_name_enrolled: z.string().optional(),
   service_partner: z.string().optional(),
   provider_location: z.string().optional(),
@@ -135,6 +135,9 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
       // Filter out empty strings for optional enum fields
       const cleanData = {
         ...data,
+        lead_source: data.lead_source || undefined,
+        name: data.name || undefined,
+        phone_number: data.phone_number || undefined,
         email: data.email || undefined,
         alternate_mobile_number: data.alternate_mobile_number || undefined,
         employee_id: data.employee_id || undefined,
@@ -147,7 +150,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
         looking_for: data.looking_for || undefined,
         family_member_relation: data.looking_for === 'Family Member' ? data.family_member_relation : undefined,
         package_requested: data.package_requested || undefined,
-        service_enrolled: data.service_enrolled || undefined,
+        service_requested: data.service_requested || undefined,
         package_name_enrolled: data.package_name_enrolled || undefined,
         service_partner: data.service_partner || undefined,
         provider_location: data.provider_location || undefined,
@@ -174,9 +177,17 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
       handleClose();
       onSuccess();
     } catch (error: unknown) {
-      const message =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        'Failed to create lead';
+      const errorData = (error as { response?: { data?: { detail?: string | Array<{loc: string[], msg: string}> } } })?.response?.data;
+      let message = 'Failed to create lead';
+      if (errorData?.detail) {
+        if (typeof errorData.detail === 'string') {
+          message = errorData.detail;
+        } else if (Array.isArray(errorData.detail)) {
+          // Pydantic validation errors
+          message = errorData.detail.map((err: {loc: string[], msg: string}) => `${err.loc.join('.')}: ${err.msg}`).join(', ');
+        }
+      }
+      console.error('Lead creation error:', errorData);
       toast.error(message);
     } finally {
       setSaving(false);
@@ -401,12 +412,12 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               <Grid item xs={12} sm={6}>
                 <Controller
-                  name="service_enrolled"
+                  name="service_requested"
                   control={control}
                   render={({ field }) => (
                     <TextField {...field} fullWidth select label="Service Requested">
                       <MenuItem value="">None</MenuItem>
-                      {SERVICE_ENROLLED_OPTIONS.map((service) => (
+                      {SERVICE_REQUESTED_OPTIONS.map((service) => (
                         <MenuItem key={service} value={service}>
                           {service}
                         </MenuItem>
