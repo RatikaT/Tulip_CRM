@@ -7,15 +7,20 @@ import {
   EnrollmentStatsResponse,
   FollowUpCreateRequest,
   BulkUploadResponse,
+  EnrollmentAuditTrailResponse,
 } from '../types/enrollment.types';
 
 export interface EnrollmentQueryParams {
   page?: number;
   per_page?: number;
   search?: string;
-  connect_status?: string;
-  action_taken?: string;
-  service_partner?: string;
+  connect_status?: string[];
+  action_taken?: string[];
+  service_partner?: string[];
+  hclhc_spoc?: string;
+  created_date_from?: string;
+  created_date_to?: string;
+  next_follow_up_date?: string;
 }
 
 export const enrollmentService = {
@@ -66,6 +71,11 @@ export const enrollmentService = {
     const response = await api.get('/enrollments/export/excel', {
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  getAuditTrail: async (enrollmentId: string): Promise<EnrollmentAuditTrailResponse> => {
+    const response = await api.get<EnrollmentAuditTrailResponse>(`/enrollments/${enrollmentId}/audit`);
     return response.data;
   },
 };

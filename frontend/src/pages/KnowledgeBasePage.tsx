@@ -66,6 +66,7 @@ import DocumentUploadDialog from '../components/knowledge-base/DocumentUploadDia
 import DocumentEditDialog from '../components/knowledge-base/DocumentEditDialog';
 import { brandColors } from '../theme';
 import { useAuthStore } from '../stores/authStore';
+import { toIST } from '../utils/dateUtils';
 
 interface Message {
   id: string;
@@ -371,19 +372,18 @@ export default function KnowledgeBasePage() {
   };
 
   const formatSessionDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const date = toIST(dateStr);
+    const today = toIST(new Date());
+    const yesterday = toIST(new Date(Date.now() - 86400000));
 
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     if (date.toDateString() === today.toDateString()) {
       return `Today, ${timeStr}`;
     } else if (date.toDateString() === yesterday.toDateString()) {
       return `Yesterday, ${timeStr}`;
     } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + `, ${timeStr}`;
+      return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) + `, ${timeStr}`;
     }
   };
 

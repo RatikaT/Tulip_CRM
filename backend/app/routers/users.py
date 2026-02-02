@@ -22,6 +22,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/dropdown")
+async def list_users_for_dropdown(
+    crm_type: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get a simplified list of users for dropdown menus.
+    Available to all authenticated users (including agents).
+    Returns only id, full_name, and role.
+    """
+    query = {"is_active": True}
+
+    if crm_type:
+        query["crm_types"] = crm_type
+
+    users = await User.find(query).to_list()
+
+    return {
+        "users": [
+            {
+                "id": str(u.id),
+                "full_name": u.full_name,
+                "role": u.role,
+            }
+            for u in users
+        ]
+    }
+
+
 @router.get("", response_model=UserListResponse)
 async def list_users(
     page: int = Query(1, ge=1),
@@ -29,6 +58,7 @@ async def list_users(
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
+    crm_type: Optional[str] = None,
     current_user: dict = Depends(require_admin)
 ):
     """
@@ -41,6 +71,8 @@ async def list_users(
         query["role"] = role
     if is_active is not None:
         query["is_active"] = is_active
+    if crm_type:
+        query["crm_types"] = crm_type
 
     # Get total count
     if query:

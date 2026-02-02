@@ -39,6 +39,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import GroupIcon from '@mui/icons-material/Group';
 import TuneIcon from '@mui/icons-material/Tune';
+import ListIcon from '@mui/icons-material/List';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { User } from '../types/user.types';
@@ -51,6 +52,7 @@ import {
 } from '../types/custom-field.types';
 import UserCreateModal from '../components/users/UserCreateModal';
 import UserEditModal from '../components/users/UserEditModal';
+import DropdownOptionsTab from '../components/configurations/DropdownOptionsTab';
 import { brandColors } from '../theme';
 
 const colors = {
@@ -422,6 +424,13 @@ export default function ConfigurationsPage() {
               id="config-tab-1"
               aria-controls="config-tabpanel-1"
             />
+            <Tab
+              icon={<ListIcon />}
+              iconPosition="start"
+              label="Dropdown Options"
+              id="config-tab-2"
+              aria-controls="config-tabpanel-2"
+            />
           </Tabs>
         </Box>
 
@@ -606,6 +615,11 @@ export default function ConfigurationsPage() {
               </TableContainer>
             )}
           </Box>
+        </TabPanel>
+
+        {/* Dropdown Options Tab */}
+        <TabPanel value={tabValue} index={2}>
+          <DropdownOptionsTab />
         </TabPanel>
       </Paper>
 

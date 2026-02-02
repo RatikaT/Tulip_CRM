@@ -1,0 +1,45 @@
+Field Name,Display Name,Data Type,Required,Editable By,Dropdown Values (if fixed),Source File,Notes
+lead_id,Lead ID,String,Auto-generated,System Only,N/A,backend/app/models/lead.py,Format: Tulip_DDMMYYYY_XXX - Auto-generated on creation
+name,Name,String,No (defaults to Unknown),Admin Only,N/A,backend/app/models/lead.py,Lead's full name - optional
+phone_number,Contact No.,String,IDENTIFIER (at least one required),Admin Only,N/A,backend/app/models/lead.py,10 digits starting with 6-9. At least one of UHID/Contact No./Email required
+email,Email,String,IDENTIFIER (at least one required),Admin Only,N/A,backend/app/models/lead.py,Valid email format. At least one of UHID/Contact No./Email required
+uhid,UHID,String,IDENTIFIER (at least one required),Admin Only,N/A,backend/app/models/lead.py,Unique Health ID. At least one of UHID/Contact No./Email required
+lead_source,Lead Source,Enum,No,Admin + Agent,"Prescription Dump | In Clinic-Gynae Consult | In Clinic-Other Consults | In Clinic-Walk In | AMA | BEWELL | Events | Call | Others | Bump Day | WhatsApp | Mail | Tele-Consultation | Website | Habit Banner",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Source of the lead
+lead_creation_date,Lead Creation Date,Date,No,Admin + Agent,N/A (Date picker),backend/app/models/lead.py,Format: YYYY-MM-DD
+status,Status,Enum,No (default: Enquiry Lead),Admin + Agent,"Not Interested | Enquiry Lead | Lead Closed-No Response | Enrolled | Follow up-In Process | Follow up-No Response | Duplicate",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Current status of the lead
+trimester,Trimester,Enum,No,Admin Only,"Trimester 1 | Trimester 2 | Trimester 3 | Not Conceived",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Pregnancy trimester
+looking_for,Looking For,Enum,No,Admin Only,"Self | Family Member",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Who the service is for
+family_member_relation,Relation,String,No,Admin Only,N/A,backend/app/models/lead.py,Free text for relation (Mother/Daughter/Sister/Wife etc.) - shown when Looking For is Family Member
+alternate_mobile_number,Alternate Mobile Number,String,No,Admin Only,N/A,backend/app/models/lead.py,Alternative contact number for family member inquiries
+employee_id,Employee ID,String,No,Admin Only,N/A,backend/app/models/lead.py,Employee identifier
+city,City,String,No,Admin Only,N/A,backend/app/models/lead.py,City name
+pin_code,PIN Code,String,No,Admin Only,N/A,backend/app/models/lead.py,Postal PIN code
+address,Address,String,No,Admin Only,N/A,backend/app/models/lead.py,Full address
+user_facility,Facility Name,String,No,Admin Only,N/A,backend/app/models/lead.py,HCL facility name
+package_requested,Package Requested,String,No,Admin Only,N/A,backend/app/models/lead.py,Package name requested by lead
+service_enrolled,Service Requested,Enum,No,Admin Only,"PreConception | Antenatal | MaternityWellness",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Type of service requested
+service_partner,Service Partner,Enum,No,Admin Only,"Motherhood | Rainbow | Fortis | Apollo Cradle | Cloud 9 | HCL Healthcare | Mamily | Others",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Healthcare service partner
+provider_location,Partner Center,String,No,Admin Only,N/A,backend/app/models/lead.py,Location/center of service partner
+reason_for_no_sale,Reason for No Sale,Enum,No,Admin + Agent,"Already Taking Service outside | Location not suitable | Different Service Provider Required-Brand | Travelling to Native Place for delivery | Package Cost | Only Delivery Package required | Package inadequate | Miscarriage | Looking for other HCLH services | Others",backend/app/models/lead.py & frontend/src/types/lead.types.ts,Reason if lead did not convert
+doctor_name,Treating Doctor Name,String,No,Admin Only,N/A,backend/app/models/lead.py,Treating doctor's name
+doctor_speciality,Doctor Speciality/Department,String,No,Admin Only,N/A,backend/app/models/lead.py,Treating doctor's speciality/department
+consult_date,Consult Date,Date,No,Admin Only,N/A (Date picker),backend/app/models/lead.py,Format: YYYY-MM-DD
+visit_id,Visit ID,String,No,Admin Only,N/A,backend/app/models/lead.py,Unique visit identifier
+age,Age,Integer,No,Admin Only,N/A,backend/app/models/lead.py,Patient's age in years
+gender,Gender,String,No,Admin Only,"Male | Female | Other",backend/app/models/lead.py,Patient's gender
+icd_code,ICD Code,String,No,Admin Only,N/A,backend/app/models/lead.py,International Classification of Diseases code
+diagnosis,Diagnosis,String,No,Admin Only,N/A,backend/app/models/lead.py,Medical diagnosis
+investigation_item_name,Investigation Item Name,String,No,Admin Only,N/A,backend/app/models/lead.py,Name of investigation/test
+investigation_service_type,Investigation Service Type,String,No,Admin Only,N/A,backend/app/models/lead.py,Type of investigation service
+cug_name,CUG Name,String,No,Admin Only,N/A,backend/app/models/lead.py,Closed User Group name
+follow_up_date,Follow Up Date,DateTime,No,Admin + Agent,N/A (DateTime picker),backend/app/models/lead.py,Format: YYYY-MM-DDTHH:MM:SS
+number_of_calls,Number of Calls,Integer,No,Admin + Agent,N/A,backend/app/models/lead.py,Total call count - auto-incremented
+calls,Calls,Array,No,Admin + Agent,N/A,backend/app/models/lead.py,"Array of {call_number, date_time, summary}"
+assigned_to,Assigned To,String (User ID),No,Admin Only,N/A (User dropdown),backend/app/models/lead.py,User ID of assigned agent
+assigned_to_name,Assigned To Name,String,No,Admin Only,N/A,backend/app/models/lead.py,Display name of assigned agent
+reassign_to,Reassign To,String (User ID),No,Admin + Agent,N/A (User dropdown),backend/app/models/lead.py,User ID for reassignment request
+reassign_to_name,Reassign To Name,String,No,Admin + Agent,N/A,backend/app/models/lead.py,Display name for reassignment
+comments,Comments,Array,No,Admin + Agent,N/A,backend/app/models/lead.py,"Array of {text, created_at, created_by, created_by_name}"
+created_at,Created At,DateTime,Auto-generated,System Only,N/A,backend/app/models/lead.py,Timestamp of creation
+updated_at,Updated At,DateTime,Auto-generated,System Only,N/A,backend/app/models/lead.py,Timestamp of last update
+created_by,Created By,String,Auto-generated,System Only,N/A,backend/app/models/lead.py,User ID who created the lead

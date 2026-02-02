@@ -12,12 +12,15 @@ import {
   Button,
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
-import PersonIcon from '@mui/icons-material/Person';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import EventIcon from '@mui/icons-material/Event';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import TodayIcon from '@mui/icons-material/Today';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import EventNoteIcon from '@mui/icons-material/EventNote';
 import {
   PieChart,
   Pie,
@@ -49,10 +52,18 @@ interface DashboardMetrics {
   total_enrollments: number;
   enrollments_by_partner: Record<string, number>;
   enrollments_by_action: Record<string, number>;
+  // Enrollment stats for agents
+  new_enrollments_today: number;
+  enrollments_assigned_today: number;
+  enrollments_followup_today: number;
+  // New admin metrics
+  leads_enrolled_today: number;
+  leads_followup_today: number;
 }
 
 interface MetricCardProps {
   title: string;
+  subtitle?: string;
   value: number | string;
   icon: React.ReactNode;
   color: string;
@@ -60,7 +71,7 @@ interface MetricCardProps {
 
 const COLORS = ['#1E4088', '#E84A8A', '#7B4B94', '#4CAF50', '#FF9800', '#2196F3', '#9C27B0'];
 
-function MetricCard({ title, value, icon, color }: MetricCardProps) {
+function MetricCard({ title, subtitle, value, icon, color }: MetricCardProps) {
   return (
     <Card sx={{ height: '100%' }}>
       <CardContent sx={{ py: 2 }}>
@@ -69,6 +80,11 @@ function MetricCard({ title, value, icon, color }: MetricCardProps) {
             <Typography color="text.secondary" variant="body2" gutterBottom>
               {title}
             </Typography>
+            {subtitle && (
+              <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
+                {subtitle}
+              </Typography>
+            )}
             <Typography variant="h4" component="div" sx={{ fontWeight: 700 }}>
               {value}
             </Typography>
@@ -124,6 +140,11 @@ export default function DashboardPage() {
         total_enrollments: 0,
         enrollments_by_partner: {},
         enrollments_by_action: {},
+        new_enrollments_today: 0,
+        enrollments_assigned_today: 0,
+        enrollments_followup_today: 0,
+        leads_enrolled_today: 0,
+        leads_followup_today: 0,
       });
       if (showRefreshing) toast.error('Failed to refresh data');
     } finally {
@@ -242,49 +263,120 @@ Keep it concise - this is for a dashboard quick view.`;
         </Tooltip>
       </Box>
 
-      {/* Metric Cards - 5 horizontal */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={6} sm={4} md={2.4}>
-          <MetricCard
-            title="Total Leads"
-            value={metrics?.total_leads || 0}
-            icon={<PeopleIcon fontSize="large" />}
-            color="#1E4088"
-          />
+      {/* Agent View: 4 Enrollment Stats Cards */}
+      {!isAdmin && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={6} sm={6} md={3}>
+            <MetricCard
+              title="Total Enrollments"
+              subtitle="Assigned or Reassigned"
+              value={metrics?.total_enrollments || 0}
+              icon={<AssignmentTurnedInIcon fontSize="large" />}
+              color="#1E4088"
+            />
+          </Grid>
+          <Grid item xs={6} sm={6} md={3}>
+            <MetricCard
+              title="New Enrollments Today"
+              subtitle="Assigned Today"
+              value={metrics?.new_enrollments_today || 0}
+              icon={<TodayIcon fontSize="large" />}
+              color="#4CAF50"
+            />
+          </Grid>
+          <Grid item xs={6} sm={6} md={3}>
+            <MetricCard
+              title="Enrollments Assigned Today"
+              subtitle="All Assignments"
+              value={metrics?.enrollments_assigned_today || 0}
+              icon={<AssignmentIcon fontSize="large" />}
+              color="#FF9800"
+            />
+          </Grid>
+          <Grid item xs={6} sm={6} md={3}>
+            <MetricCard
+              title="Follow-ups Today"
+              subtitle="Enrollments"
+              value={metrics?.enrollments_followup_today || 0}
+              icon={<NotificationsActiveIcon fontSize="large" />}
+              color="#E84A8A"
+            />
+          </Grid>
         </Grid>
-        <Grid item xs={6} sm={4} md={2.4}>
-          <MetricCard
-            title="Unique Users"
-            value={metrics?.unique_users || 0}
-            icon={<PersonIcon fontSize="large" />}
-            color="#7B4B94"
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2.4}>
-          <MetricCard
-            title="New Today"
-            value={metrics?.new_leads_today || 0}
-            icon={<TrendingUpIcon fontSize="large" />}
-            color="#4CAF50"
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2.4}>
-          <MetricCard
-            title="Follow-ups Today"
-            value={metrics?.follow_ups_today || 0}
-            icon={<EventIcon fontSize="large" />}
-            color="#E84A8A"
-          />
-        </Grid>
-        <Grid item xs={6} sm={4} md={2.4}>
-          <MetricCard
-            title="Total Enrollments"
-            value={metrics?.total_enrollments || 0}
-            icon={<AssignmentTurnedInIcon fontSize="large" />}
-            color="#FF9800"
-          />
-        </Grid>
-      </Grid>
+      )}
+
+      {/* Admin View: 7 Metric Cards */}
+      {isAdmin && (
+        <>
+          {/* First Row - 4 cards */}
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={6} sm={6} md={3}>
+              <MetricCard
+                title="Total Enrollments"
+                value={metrics?.total_enrollments || 0}
+                icon={<AssignmentTurnedInIcon fontSize="large" />}
+                color="#1E4088"
+              />
+            </Grid>
+            <Grid item xs={6} sm={6} md={3}>
+              <MetricCard
+                title="Total Leads"
+                value={metrics?.total_leads || 0}
+                icon={<PeopleIcon fontSize="large" />}
+                color="#7B4B94"
+              />
+            </Grid>
+            <Grid item xs={6} sm={6} md={3}>
+              <MetricCard
+                title="New Leads"
+                subtitle="Created Today"
+                value={metrics?.new_leads_today || 0}
+                icon={<TrendingUpIcon fontSize="large" />}
+                color="#4CAF50"
+              />
+            </Grid>
+            <Grid item xs={6} sm={6} md={3}>
+              <MetricCard
+                title="New Enrollments"
+                subtitle="Created Today"
+                value={metrics?.new_enrollments_today || 0}
+                icon={<TodayIcon fontSize="large" />}
+                color="#FF9800"
+              />
+            </Grid>
+          </Grid>
+          {/* Second Row - 3 new cards */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={6} sm={6} md={4}>
+              <MetricCard
+                title="Leads Enrolled Today"
+                subtitle="Status changed to Enrolled"
+                value={metrics?.leads_enrolled_today || 0}
+                icon={<CheckCircleIcon fontSize="large" />}
+                color="#2196F3"
+              />
+            </Grid>
+            <Grid item xs={6} sm={6} md={4}>
+              <MetricCard
+                title="Leads Follow-up Today"
+                subtitle="Follow-up scheduled"
+                value={metrics?.leads_followup_today || 0}
+                icon={<EventNoteIcon fontSize="large" />}
+                color="#9C27B0"
+              />
+            </Grid>
+            <Grid item xs={6} sm={6} md={4}>
+              <MetricCard
+                title="Enrollments Follow-up Today"
+                subtitle="Next follow-up date"
+                value={metrics?.enrollments_followup_today || 0}
+                icon={<NotificationsActiveIcon fontSize="large" />}
+                color="#E84A8A"
+              />
+            </Grid>
+          </Grid>
+        </>
+      )}
 
       {/* AI Quick Summary */}
       <Paper sx={{ p: 2, mb: 3, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0' }}>

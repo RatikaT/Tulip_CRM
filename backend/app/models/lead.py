@@ -58,6 +58,7 @@ class ServicePartner(str, Enum):
     MOTHERHOOD = "Motherhood"
     RAINBOW = "Rainbow"
     FORTIS = "Fortis"
+    FORTIS_LA_FEMME = "Fortis La Femme"
     APOLLO_CRADLE = "Apollo Cradle"
     CLOUD_9 = "Cloud 9"
     HCL_HEALTHCARE = "HCL Healthcare"
@@ -131,7 +132,7 @@ class Lead(Document):
     # Service Details
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
 

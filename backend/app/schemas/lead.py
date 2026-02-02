@@ -50,7 +50,7 @@ class LeadCreateRequest(BaseModel):
     package_requested: Optional[str] = None
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
     reason_for_no_sale: Optional[ReasonForNoSale] = None
@@ -118,7 +118,7 @@ class LeadUpdateRequest(BaseModel):
     package_requested: Optional[str] = None
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
     reason_for_no_sale: Optional[ReasonForNoSale] = None

@@ -53,7 +53,7 @@ class EnrollmentCreateRequest(BaseModel):
     trimester: Optional[Trimester] = None
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
     connect_status: Optional[ConnectStatus] = None
@@ -104,7 +104,7 @@ class EnrollmentUpdateRequest(BaseModel):
     trimester: Optional[Trimester] = None
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
     connect_status: Optional[ConnectStatus] = None

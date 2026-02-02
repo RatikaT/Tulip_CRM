@@ -76,7 +76,7 @@ class Enrollment(Document):
     trimester: Optional[Trimester] = None
     service_enrolled: Optional[str] = None
     package_name_enrolled: Optional[str] = None
-    service_partner: Optional[str] = None  # Multi-select, stored as comma-separated string
+    service_partner: Optional[str] = None
     partner_centre_selected: Optional[str] = None
     partner_gynaecologist: Optional[str] = None
 

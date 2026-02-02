@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage';
 import LeadsPage from './pages/LeadsPage';
 import LeadDetailPage from './pages/LeadDetailPage';
 import EnrollmentsPage from './pages/EnrollmentsPage';
+import EnrollmentDetailPage from './pages/EnrollmentDetailPage';
 import SummariesPage from './pages/SummariesPage';
 import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
@@ -33,7 +34,7 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (user?.role !== 'admin' && user?.role !== 'super_admin') {
-    return <Navigate to="/tulip/dashboard" replace />;
+    return <Navigate to="/tulip/leads" replace />;
   }
 
   return <>{children}</>;
@@ -79,11 +80,15 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/tulip/dashboard" replace />,
+        element: <Navigate to="/tulip/leads" replace />,
       },
       {
         path: 'dashboard',
-        element: <DashboardPage />,
+        element: (
+          <AdminRoute>
+            <DashboardPage />
+          </AdminRoute>
+        ),
       },
       {
         path: 'leads',
@@ -96,6 +101,10 @@ export const router = createBrowserRouter([
       {
         path: 'enrollments',
         element: <EnrollmentsPage />,
+      },
+      {
+        path: 'enrollments/:enrollmentId',
+        element: <EnrollmentDetailPage />,
       },
       {
         path: 'bulk-upload',
@@ -146,7 +155,7 @@ export const router = createBrowserRouter([
   // Legacy route redirects (for backwards compatibility)
   {
     path: '/dashboard',
-    element: <Navigate to="/tulip/dashboard" replace />,
+    element: <Navigate to="/tulip/leads" replace />,
   },
   {
     path: '/leads',

@@ -48,6 +48,7 @@ import {
   ConnectStatus,
   ActionTaken,
 } from '../types/enrollment.types';
+import { PARTNER_CENTER_OPTIONS } from '../types/lead.types';
 import { brandColors } from '../theme';
 import api from '../services/api';
 
@@ -688,18 +689,12 @@ export default function EnrollmentDetailPage() {
                   select
                   fullWidth
                   label="Service Partner"
-                  value={formData.service_partner ? (typeof formData.service_partner === 'string' ? formData.service_partner.split(', ').filter(Boolean) : formData.service_partner) : []}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    handleInputChange('service_partner', Array.isArray(value) ? value.join(', ') : value);
-                  }}
+                  value={formData.service_partner || ''}
+                  onChange={(e) => handleInputChange('service_partner', e.target.value || null)}
                   disabled={!canEdit('service_partner')}
                   size="small"
-                  SelectProps={{
-                    multiple: true,
-                    renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
-                  }}
                 >
+                  <MenuItem value="">Select Partner</MenuItem>
                   {SERVICE_PARTNER_OPTIONS.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
@@ -708,13 +703,23 @@ export default function EnrollmentDetailPage() {
                 </TextField>
               </Grid>
               <Grid item xs={12} sm={6} md={4}>
-                <TextField
-                  fullWidth
-                  label="Partner Centre Selected"
+                <Autocomplete
+                  freeSolo
+                  options={formData.service_partner ? PARTNER_CENTER_OPTIONS[formData.service_partner] || [] : []}
                   value={formData.partner_centre_selected || ''}
-                  onChange={(e) => handleInputChange('partner_centre_selected', e.target.value)}
+                  onChange={(_, newValue) => handleInputChange('partner_centre_selected', newValue || '')}
+                  onInputChange={(_, newInputValue) => handleInputChange('partner_centre_selected', newInputValue)}
                   disabled={!canEdit('partner_centre_selected')}
                   size="small"
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      fullWidth
+                      label="Partner Centre Selected"
+                      size="small"
+                      placeholder={formData.service_partner && PARTNER_CENTER_OPTIONS[formData.service_partner]?.length > 0 ? "Select or type..." : "Enter Partner Centre"}
+                    />
+                  )}
                 />
               </Grid>
               <Grid item xs={12} sm={6} md={4}>

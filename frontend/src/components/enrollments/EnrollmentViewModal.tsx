@@ -48,6 +48,7 @@ import {
   SERVICE_ENROLLED_OPTIONS,
   PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
+import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
 
 interface UserOption {
   id: string;
@@ -106,7 +107,11 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
 
-  const { register, handleSubmit, control, setValue } = useForm();
+  const { register, handleSubmit, control, setValue, watch } = useForm();
+
+  // Watch service_partner to show conditional Partner Centre options
+  const servicePartnerValue = watch('service_partner');
+  const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
 
   // Fetch users for HCLHC SPOC dropdown - only users with Tulip CRM access
   useEffect(() => {
@@ -417,22 +422,8 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       name="service_partner"
                       control={control}
                       render={({ field }) => (
-                        <TextField
-                          {...field}
-                          fullWidth
-                          select
-                          label="Service Partner"
-                          size="small"
-                          value={field.value ? (typeof field.value === 'string' ? field.value.split(', ').filter(Boolean) : field.value) : []}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            field.onChange(Array.isArray(value) ? value.join(', ') : value);
-                          }}
-                          SelectProps={{
-                            multiple: true,
-                            renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
-                          }}
-                        >
+                        <TextField {...field} fullWidth select label="Service Partner" size="small">
+                          <MenuItem value="">None</MenuItem>
                           {SERVICE_PARTNER_OPTIONS.map((p) => (
                             <MenuItem key={p} value={p}>{p}</MenuItem>
                           ))}
@@ -441,7 +432,29 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                     />
                   </Grid>
                   <Grid item xs={12} sm={6}>
-                    <TextField {...register('partner_centre_selected')} fullWidth label="Partner Centre" size="small" />
+                    <Controller
+                      name="partner_centre_selected"
+                      control={control}
+                      render={({ field }) => (
+                        <Autocomplete
+                          freeSolo
+                          options={partnerCenterOptions}
+                          value={field.value || ''}
+                          onChange={(_, newValue) => field.onChange(newValue || '')}
+                          onInputChange={(_, newInputValue) => field.onChange(newInputValue)}
+                          size="small"
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              fullWidth
+                              label="Partner Centre"
+                              size="small"
+                              placeholder={partnerCenterOptions.length > 0 ? "Select or type..." : "Enter Partner Centre"}
+                            />
+                          )}
+                        />
+                      )}
+                    />
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <TextField {...register('partner_gynaecologist')} fullWidth label="Partner Gynaecologist" size="small" />

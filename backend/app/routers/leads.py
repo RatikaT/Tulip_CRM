@@ -4,7 +4,7 @@ Lead Management Routes
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import csv
 import io
 from openpyxl import Workbook
@@ -69,9 +69,9 @@ def lead_to_response(lead: Lead) -> dict:
         "package_requested": lead.package_requested,
 
         # Service Details
-        "service_enrolled": lead.service_enrolled.value if lead.service_enrolled else None,
+        "service_enrolled": lead.service_enrolled if lead.service_enrolled else None,
         "package_name_enrolled": lead.package_name_enrolled,
-        "service_partner": lead.service_partner.value if lead.service_partner else None,
+        "service_partner": lead.service_partner if lead.service_partner else None,
         "provider_location": lead.provider_location,
         "hclhc_spoc": lead.hclhc_spoc,
 
@@ -80,7 +80,18 @@ def lead_to_response(lead: Lead) -> dict:
 
         # Doctor/Consultation Details
         "doctor_name": lead.doctor_name,
+        "doctor_speciality": lead.doctor_speciality,
         "consult_date": lead.consult_date,
+
+        # Medical/Clinical Details
+        "visit_id": lead.visit_id,
+        "age": lead.age,
+        "gender": lead.gender,
+        "icd_code": lead.icd_code,
+        "diagnosis": lead.diagnosis,
+        "investigation_item_name": lead.investigation_item_name,
+        "investigation_service_type": lead.investigation_service_type,
+        "cug_name": lead.cug_name,
 
         # Call Tracking
         "number_of_calls": lead.number_of_calls,
@@ -90,6 +101,10 @@ def lead_to_response(lead: Lead) -> dict:
         # Assignment
         "assigned_to": lead.assigned_to,
         "assigned_to_name": lead.assigned_to_name,
+        "assigned_date": lead.assigned_date,
+        "reassign_to": lead.reassign_to,
+        "reassign_to_name": lead.reassign_to_name,
+        "reassigned_date": lead.reassigned_date,
 
         # Comments
         "comments": lead.comments,
@@ -97,6 +112,122 @@ def lead_to_response(lead: Lead) -> dict:
         # System
         "created_by": lead.created_by
     }
+
+
+@router.get("/stats")
+async def get_lead_stats(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get lead statistics for dashboard cards"""
+    try:
+        logger.info(f"Stats endpoint called by: {current_user.get('full_name')}")
+
+        # MongoDB stores all dates in UTC
+        # Server runs in IST (UTC+5:30), so we need to convert IST date boundaries to UTC
+        IST_OFFSET = timedelta(hours=5, minutes=30)
+
+        today_local = date.today()  # Local date (IST)
+        # IST midnight today = UTC yesterday 18:30
+        today_start_utc = datetime.combine(today_local, datetime.min.time()) - IST_OFFSET
+        # IST end of today = UTC today 18:29:59
+        today_end_utc = datetime.combine(today_local, datetime.max.time()) - IST_OFFSET
+
+        db = get_database()
+        is_agent = current_user.get("role") == "agent"
+        user_id = current_user.get("user_id", "")
+
+        logger.info(f"Fetching lead stats for user: {current_user.get('full_name')}, role: {current_user.get('role')}")
+        logger.info(f"Today (IST): {today_local}, UTC range: {today_start_utc} to {today_end_utc}")
+
+        # Base query
+        if is_agent:
+            # Agent sees only their assigned leads
+            base_query = {
+                "is_deleted": False,
+                "$or": [
+                    {"assigned_to": user_id},
+                    {"reassign_to": user_id}
+                ]
+            }
+        else:
+            # Admin sees all leads
+            base_query = {"is_deleted": False}
+
+        # 1. Total leads
+        total = await db.leads.count_documents(base_query)
+
+        # 2. New leads today (created_at is today in IST)
+        new_today = await db.leads.count_documents({
+            **base_query,
+            "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+        })
+
+        # 3. Follow-ups today (follow_up_date is today in IST)
+        follow_up_today = await db.leads.count_documents({
+            **base_query,
+            "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
+        })
+
+        # 4. Assigned today (for agents - leads assigned or reassigned to them today)
+        assigned_today = 0
+        if is_agent:
+            # Count leads where assigned_date or reassigned_date is today
+            assigned_today = await db.leads.count_documents({
+                "is_deleted": False,
+                "$or": [
+                    {"assigned_to": user_id, "assigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}},
+                    {"reassign_to": user_id, "reassigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}}
+                ]
+            })
+
+        logger.info(f"Lead stats - total: {total}, new_today: {new_today}, follow_up_today: {follow_up_today}, assigned_today: {assigned_today}")
+
+        return {
+            "total": total,
+            "new_today": new_today,
+            "follow_up_today": follow_up_today,
+            "assigned_today": assigned_today
+        }
+    except Exception as e:
+        logger.error(f"Error in get_lead_stats: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching lead stats: {str(e)}")
+
+
+@router.get("/bulk-upload/template")
+async def get_bulk_upload_template(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Download a CSV template for bulk lead upload
+    """
+    # Define template columns
+    columns = [
+        "name", "phone_number", "email", "uhid", "employee_id",
+        "lead_source", "status", "trimester", "looking_for",
+        "city", "address", "pin_code", "service_partner", "provider_location",
+        "service_enrolled", "package_name_enrolled", "hclhc_spoc",
+        "doctor_name", "doctor_speciality", "follow_up_date", "alternate_mobile_number"
+    ]
+
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(columns)
+    # Add a sample row
+    writer.writerow([
+        "John Doe", "9876543210", "john@example.com", "UHID001", "EMP001",
+        "Website", "Enquiry Lead", "Trimester 1", "Self",
+        "Delhi", "123 Main St", "110001", "Apollo Cradle", "Kondapur",
+        "Tulip Antenatal", "Basic Package", "Agent Name",
+        "Dr. Smith", "Gynecology", "2026-02-15", "9876543211"
+    ])
+
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode('utf-8-sig')),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=leads_bulk_upload_template.csv"}
+    )
 
 
 @router.post("/bulk-upload")
@@ -127,21 +258,20 @@ async def bulk_upload_leads(
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (row 1 is header)
             total_rows += 1
             try:
-                # Required fields validation
+                # Get identifier fields
                 name = row.get('name', '').strip()
                 phone = row.get('phone_number', '').strip()
+                email = row.get('email', '').strip()
+                uhid = row.get('uhid', '').strip()
 
-                if not name:
-                    errors.append({"row": row_num, "error": "Name is required"})
-                    continue
-                if not phone or len(phone) != 10 or not phone.isdigit():
-                    errors.append({"row": row_num, "error": f"Invalid phone number: {phone}"})
+                # Required: At least one of UHID, Contact No., or Email
+                if not uhid and not phone and not email:
+                    errors.append({"row": row_num, "error": "At least one of UHID, Contact No., or Email is required"})
                     continue
 
-                # Check for duplicate phone
-                existing = await Lead.find_one(Lead.phone_number == phone, Lead.is_deleted == False)
-                if existing:
-                    errors.append({"row": row_num, "error": f"Duplicate: Phone number {phone} already exists in database"})
+                # Validate phone format if provided
+                if phone and (len(phone) != 10 or not phone.isdigit()):
+                    errors.append({"row": row_num, "error": f"Invalid phone number format: {phone} (must be 10 digits)"})
                     continue
 
                 # Parse lead source
@@ -149,16 +279,21 @@ async def bulk_upload_leads(
                 lead_source = None
                 if lead_source_str:
                     source_map = {
-                        'in clinic-walk in': LeadSource.IN_CLINIC_WALK_IN,
-                        'mail': LeadSource.MAIL,
+                        'prescription dump': LeadSource.PRESCRIPTION_DUMP,
                         'in clinic-gynae consult': LeadSource.IN_CLINIC_GYNAE_CONSULT,
-                        'bump day': LeadSource.BUMP_DAY,
-                        'website': LeadSource.WEBSITE,
-                        'call': LeadSource.CALL,
-                        'ama': LeadSource.AMA,
-                        'whatsapp': LeadSource.WHATSAPP,
                         'in clinic-other consults': LeadSource.IN_CLINIC_OTHER_CONSULTS,
+                        'in clinic-walk in': LeadSource.IN_CLINIC_WALK_IN,
+                        'ama': LeadSource.AMA,
+                        'bewell': LeadSource.BEWELL,
+                        'events': LeadSource.EVENTS,
+                        'call': LeadSource.CALL,
                         'others': LeadSource.OTHERS,
+                        'bump day': LeadSource.BUMP_DAY,
+                        'whatsapp': LeadSource.WHATSAPP,
+                        'mail': LeadSource.MAIL,
+                        'tele-consultation': LeadSource.TELE_CONSULTATION,
+                        'website': LeadSource.WEBSITE,
+                        'habit banner': LeadSource.HABIT_BANNER,
                         # Backward compatibility mappings
                         'wa': LeadSource.WHATSAPP,
                         'sms': LeadSource.OTHERS,
@@ -293,6 +428,15 @@ async def bulk_upload_leads(
                     except:
                         pass
 
+                # Parse age
+                age_val = None
+                age_str = row.get('age', '').strip()
+                if age_str:
+                    try:
+                        age_val = int(age_str)
+                    except:
+                        pass
+
                 # Generate lead ID
                 lead_id = await generate_lead_id(db)
 
@@ -302,11 +446,11 @@ async def bulk_upload_leads(
                     lead_source=lead_source,
                     lead_creation_date=lead_creation_date,
                     status=lead_status,
-                    name=name,
-                    email=row.get('email', '').strip() or None,
-                    phone_number=phone,
+                    name=name or "Unknown",
+                    email=email or None,
+                    phone_number=phone or None,
                     employee_id=row.get('employee_id', '').strip() or None,
-                    uhid=row.get('uhid', '').strip() or None,
+                    uhid=uhid or None,
                     user_facility=row.get('user_facility', '').strip() or None,
                     city=row.get('city', '').strip() or None,
                     pin_code=row.get('pin_code', '').strip() or None,
@@ -321,8 +465,18 @@ async def bulk_upload_leads(
                     hclhc_spoc=row.get('hclhc_spoc', '').strip() or None,
                     reason_for_no_sale=reason_for_no_sale,
                     doctor_name=row.get('doctor_name', '').strip() or None,
+                    doctor_speciality=row.get('doctor_speciality', '').strip() or None,
                     consult_date=consult_date_val,
                     follow_up_date=follow_up_date,
+                    # Medical/Clinical Details
+                    visit_id=row.get('visit_id', '').strip() or None,
+                    age=age_val,
+                    gender=row.get('gender', '').strip() or None,
+                    icd_code=row.get('icd_code', '').strip() or None,
+                    diagnosis=row.get('diagnosis', '').strip() or None,
+                    investigation_item_name=row.get('investigation_item_name', '').strip() or None,
+                    investigation_service_type=row.get('investigation_service_type', '').strip() or None,
+                    cug_name=row.get('cug_name', '').strip() or None,
                     created_by=current_user["user_id"],
                     assigned_to=current_user["user_id"],
                     assigned_to_name=current_user["full_name"],
@@ -360,37 +514,142 @@ async def bulk_upload_leads(
 async def get_leads(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
-    status: Optional[str] = None,
-    lead_source: Optional[str] = None,
+    status: Optional[List[str]] = Query(None),
+    lead_source: Optional[List[str]] = Query(None),
+    uhid: Optional[List[str]] = Query(None),
+    package_requested: Optional[List[str]] = Query(None),
     city: Optional[str] = None,
     assigned_to: Optional[str] = None,
+    reassign_to: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
     Get paginated list of leads with filters
+    Agents can only see leads assigned to them or reassigned to them
+    Supports multi-select filters for status, lead_source, uhid, package_requested
     """
     # Build query
     query = {"is_deleted": False}
 
-    if status:
-        query["status"] = status
-    if lead_source:
-        query["lead_source"] = lead_source
+    # Agent restriction: only see leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        user_id = current_user["user_id"]
+        query["$or"] = [
+            {"assigned_to": user_id},
+            {"reassign_to": user_id}
+        ]
+
+    # Multi-select filters (support arrays with $in)
+    if status and len(status) > 0:
+        query["status"] = {"$in": status}
+    if lead_source and len(lead_source) > 0:
+        query["lead_source"] = {"$in": lead_source}
+    if uhid and len(uhid) > 0:
+        query["uhid"] = {"$in": uhid}
+    if package_requested and len(package_requested) > 0:
+        query["package_requested"] = {"$in": package_requested}
+
+    # Single value filters
     if city:
         query["city"] = {"$regex": re.escape(city), "$options": "i"}
-    if assigned_to:
+
+    # Assigned To and Reassign To filters with OR logic
+    if assigned_to and reassign_to:
+        # If both filters are set, use OR logic
+        assignment_conditions = [
+            {"assigned_to": assigned_to},
+            {"reassign_to": reassign_to}
+        ]
+        # If there's already an $or in query (from agent restriction), we need to handle it
+        if "$or" in query:
+            # Combine with existing $or using $and
+            existing_or = query.pop("$or")
+            if "$and" not in query:
+                query["$and"] = []
+            query["$and"].append({"$or": existing_or})
+            query["$and"].append({"$or": assignment_conditions})
+        else:
+            query["$or"] = assignment_conditions
+    elif assigned_to:
         query["assigned_to"] = assigned_to
+    elif reassign_to:
+        query["reassign_to"] = reassign_to
+
+    # Date range filter for created_at
+    if created_date_from or created_date_to:
+        created_at_filter = {}
+        if created_date_from:
+            try:
+                from_date = datetime.strptime(created_date_from, "%Y-%m-%d").date()
+                created_at_filter["$gte"] = datetime.combine(from_date, datetime.min.time())
+            except ValueError:
+                pass
+        if created_date_to:
+            try:
+                to_date = datetime.strptime(created_date_to, "%Y-%m-%d").date()
+                created_at_filter["$lte"] = datetime.combine(to_date, datetime.max.time())
+            except ValueError:
+                pass
+        if created_at_filter:
+            query["created_at"] = created_at_filter
+
+    # Next follow up date filter (single day)
+    if next_follow_up_date:
+        try:
+            filter_date = datetime.strptime(next_follow_up_date, "%Y-%m-%d").date()
+            day_start = datetime.combine(filter_date, datetime.min.time())
+            day_end = datetime.combine(filter_date, datetime.max.time())
+            query["follow_up_date"] = {"$gte": day_start, "$lte": day_end}
+        except ValueError:
+            pass
 
     # Search by name, phone, or lead_id (escape regex special chars for security)
     if search:
         escaped_search = re.escape(search)
-        query["$or"] = [
+        # For agents, we need to combine search with their assignment filter
+        search_conditions = [
             {"name": {"$regex": escaped_search, "$options": "i"}},
             {"phone_number": {"$regex": escaped_search}},
             {"lead_id": {"$regex": escaped_search, "$options": "i"}},
             {"email": {"$regex": escaped_search, "$options": "i"}}
         ]
+        if current_user["role"] == "agent":
+            # Combine agent's assignment filter with search
+            user_id = current_user["user_id"]
+            base_filters = [
+                {"is_deleted": False},
+                {"$or": [{"assigned_to": user_id}, {"reassign_to": user_id}]},
+                {"$or": search_conditions}
+            ]
+            # Add other filters if present
+            if status and len(status) > 0:
+                base_filters.append({"status": {"$in": status}})
+            if lead_source and len(lead_source) > 0:
+                base_filters.append({"lead_source": {"$in": lead_source}})
+            if uhid and len(uhid) > 0:
+                base_filters.append({"uhid": {"$in": uhid}})
+            if package_requested and len(package_requested) > 0:
+                base_filters.append({"package_requested": {"$in": package_requested}})
+            if city:
+                base_filters.append({"city": {"$regex": re.escape(city), "$options": "i"}})
+            # Handle assigned_to and reassign_to with OR logic
+            if assigned_to and reassign_to:
+                base_filters.append({"$or": [{"assigned_to": assigned_to}, {"reassign_to": reassign_to}]})
+            elif assigned_to:
+                base_filters.append({"assigned_to": assigned_to})
+            elif reassign_to:
+                base_filters.append({"reassign_to": reassign_to})
+            if "created_at" in query:
+                base_filters.append({"created_at": query["created_at"]})
+            if "follow_up_date" in query:
+                base_filters.append({"follow_up_date": query["follow_up_date"]})
+            query = {"$and": base_filters}
+        else:
+            query["$or"] = search_conditions
 
     # Count total
     total = await Lead.find(query).count()
@@ -441,7 +700,9 @@ async def export_leads_excel(
         "User Facility", "City", "Pin Code", "Address",
         "Package Requested", "Service Enrolled", "Package Name Enrolled",
         "Service (Partner)", "Provider Location", "HCLHC SPOC", "Reason for No Sale",
-        "Doctor Name", "Consult Date",
+        "Doctor Name", "Doctor Speciality", "Consult Date",
+        "Visit ID", "Age", "Gender", "ICD Code", "Diagnosis",
+        "Investigation Item Name", "Investigation Service Type", "CUG Name",
         "Number of Calls", "Follow Up Date",
         "Assigned To", "Reassign To",
         "Created At", "Updated At", "Created By"
@@ -477,14 +738,23 @@ async def export_leads_excel(
             lead.pin_code,
             lead.address,
             lead.package_requested,
-            lead.service_enrolled.value if lead.service_enrolled else None,
+            lead.service_enrolled if lead.service_enrolled else None,
             lead.package_name_enrolled,
-            lead.service_partner.value if lead.service_partner else None,
+            lead.service_partner if lead.service_partner else None,
             lead.provider_location,
             lead.hclhc_spoc,
             lead.reason_for_no_sale.value if lead.reason_for_no_sale else None,
             lead.doctor_name,
+            lead.doctor_speciality,
             str(lead.consult_date) if lead.consult_date else None,
+            lead.visit_id,
+            lead.age,
+            lead.gender,
+            lead.icd_code,
+            lead.diagnosis,
+            lead.investigation_item_name,
+            lead.investigation_service_type,
+            lead.cug_name,
             lead.number_of_calls,
             lead.follow_up_date.strftime("%Y-%m-%d %H:%M") if lead.follow_up_date else None,
             lead.assigned_to_name,
@@ -658,6 +928,7 @@ async def get_lead(
 ):
     """
     Get single lead by ID
+    Agents can only view leads assigned to them or reassigned to them
     """
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
 
@@ -667,16 +938,26 @@ async def get_lead(
             detail="Lead not found"
         )
 
+    # Agent restriction: only view leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        user_id = current_user["user_id"]
+        if lead.assigned_to != user_id and lead.reassign_to != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view this lead"
+            )
+
     return lead_to_response(lead)
 
 
 @router.post("", response_model=LeadResponse)
 async def create_lead(
     request: LeadCreateRequest,
-    current_user: dict = Depends(get_current_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Create a new lead (Admin only)
+    Create a new lead (All authenticated users)
+    All users can specify assignment when creating a lead
     """
     logger.debug(f"Creating lead: name={request.name}, phone={request.phone_number}, by user={current_user['email']}")
     db = get_database()
@@ -684,12 +965,15 @@ async def create_lead(
     # Generate unique LeadID
     lead_id = await generate_lead_id(db)
 
-    # Get assigned user name if assigned
+    # Get assigned user name if assigned, otherwise default to current user
+    assigned_to = request.assigned_to if request.assigned_to else current_user["user_id"]
     assigned_to_name = None
     if request.assigned_to:
         assigned_user = await User.get(request.assigned_to)
         if assigned_user:
             assigned_to_name = assigned_user.full_name
+    else:
+        assigned_to_name = current_user["full_name"]
 
     # Create lead with new fields
     lead = Lead(
@@ -716,9 +1000,20 @@ async def create_lead(
         provider_location=request.provider_location,
         hclhc_spoc=request.hclhc_spoc,
         reason_for_no_sale=request.reason_for_no_sale,
+        doctor_speciality=request.doctor_speciality,
         follow_up_date=request.follow_up_date,
-        assigned_to=request.assigned_to,
+        # Medical/Clinical Details
+        visit_id=request.visit_id,
+        age=request.age,
+        gender=request.gender,
+        icd_code=request.icd_code,
+        diagnosis=request.diagnosis,
+        investigation_item_name=request.investigation_item_name,
+        investigation_service_type=request.investigation_service_type,
+        cug_name=request.cug_name,
+        assigned_to=assigned_to,
         assigned_to_name=assigned_to_name,
+        assigned_date=datetime.utcnow(),  # Set assigned date on creation
         created_by=current_user["user_id"],
         number_of_calls=1,
         calls=[],
@@ -751,8 +1046,8 @@ async def update_lead(
 ):
     """
     Update a lead
-    Agents can only update: lead_source, lead_creation_date, status, number_of_calls, calls, follow_up_date
-    Admins can update all fields
+    Agents can only update leads assigned/reassigned to them with limited fields
+    Admins can update all fields on all leads
     """
     logger.debug(f"Updating lead {lead_id} by user={current_user['email']}, role={current_user['role']}")
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
@@ -763,31 +1058,186 @@ async def update_lead(
             detail="Lead not found"
         )
 
+    # Agent restriction: only update leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        user_id = current_user["user_id"]
+        if lead.assigned_to != user_id and lead.reassign_to != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update this lead"
+            )
+
     # Track changes for audit
     changes = []
     update_data = request.model_dump(exclude_unset=True)
 
-    # Agent restrictions - only allow specific fields
+    # Agents cannot update assignment fields
     if current_user["role"] == "agent":
-        allowed_fields = [
-            # Basic fields
-            "lead_source", "lead_creation_date", "status",
-            "number_of_calls", "calls", "follow_up_date",
-            # Location fields
-            "user_facility", "city", "pin_code", "address",
-            # Healthcare fields
-            "trimester", "looking_for", "family_member_relation", "package_requested", "service_enrolled",
-            "package_name_enrolled", "service_partner", "provider_location",
-            "doctor_name", "consult_date", "hclhc_spoc", "reason_for_no_sale"
-        ]
-        restricted_fields = [k for k in update_data.keys() if k not in allowed_fields]
-        if restricted_fields:
-            logger.warning(f"Agent {current_user['email']} tried to update restricted fields: {restricted_fields}")
-        update_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+        restricted_fields = ["assigned_to", "assigned_to_name"]
+        update_data = {k: v for k, v in update_data.items() if k not in restricted_fields}
+
+    # Look up reassign_to_name when reassign_to is provided
+    if "reassign_to" in update_data and update_data["reassign_to"]:
+        reassign_user = await User.get(update_data["reassign_to"])
+        if reassign_user:
+            update_data["reassign_to_name"] = reassign_user.full_name
+        else:
+            update_data["reassign_to_name"] = None
+        # Set reassigned_date when reassign_to changes
+        update_data["reassigned_date"] = datetime.utcnow()
+
+    # Look up assigned_to_name when assigned_to is provided (for admins)
+    if "assigned_to" in update_data and update_data["assigned_to"]:
+        assigned_user = await User.get(update_data["assigned_to"])
+        if assigned_user:
+            update_data["assigned_to_name"] = assigned_user.full_name
+        # Set assigned_date when assigned_to changes
+        update_data["assigned_date"] = datetime.utcnow()
+
+    # Helper function to format calls for audit
+    def format_calls_for_audit(calls_list):
+        if not calls_list:
+            return "No calls"
+        formatted = []
+        for call in calls_list:
+            if isinstance(call, dict):
+                call_num = call.get('call_number', '?')
+                date_time = call.get('date_time', 'No date')
+                summary = call.get('summary', '') or 'No summary'
+                # Truncate summary if too long
+                if len(summary) > 50:
+                    summary = summary[:50] + '...'
+                formatted.append(f"Call {call_num}: {date_time[:16] if len(str(date_time)) > 16 else date_time} - '{summary}'")
+            else:
+                # Handle CallEntry objects
+                call_num = getattr(call, 'call_number', '?')
+                date_time = getattr(call, 'date_time', 'No date')
+                summary = getattr(call, 'summary', '') or 'No summary'
+                if len(summary) > 50:
+                    summary = summary[:50] + '...'
+                formatted.append(f"Call {call_num}: {str(date_time)[:16]} - '{summary}'")
+        return "; ".join(formatted)
+
+    # Helper to check if a date is in the past
+    def is_past_date(date_value):
+        if not date_value:
+            return False
+        try:
+            if isinstance(date_value, str):
+                # Parse ISO format datetime string
+                from dateutil import parser
+                dt = parser.parse(date_value)
+            elif isinstance(date_value, datetime):
+                dt = date_value
+            else:
+                return False
+            return dt.date() < datetime.utcnow().date()
+        except:
+            return False
+
+    # Helper to compare calls and generate detailed changes
+    def get_call_changes(old_calls, new_calls):
+        call_changes = []
+        old_calls = old_calls or []
+        new_calls = new_calls or []
+        past_edit_errors = []
+
+        # Convert to list of dicts for comparison
+        old_dict = {}
+        for c in old_calls:
+            if isinstance(c, dict):
+                old_dict[c.get('call_number')] = c
+            else:
+                old_dict[getattr(c, 'call_number', None)] = {
+                    'call_number': getattr(c, 'call_number', None),
+                    'date_time': str(getattr(c, 'date_time', '')),
+                    'summary': getattr(c, 'summary', '')
+                }
+
+        new_dict = {}
+        for c in new_calls:
+            if isinstance(c, dict):
+                new_dict[c.get('call_number')] = c
+            else:
+                new_dict[getattr(c, 'call_number', None)] = {
+                    'call_number': getattr(c, 'call_number', None),
+                    'date_time': str(getattr(c, 'date_time', '')),
+                    'summary': getattr(c, 'summary', '')
+                }
+
+        # Find new calls
+        for call_num, new_call in new_dict.items():
+            if call_num not in old_dict:
+                summary = new_call.get('summary', '') or 'No summary'
+                if len(summary) > 50:
+                    summary = summary[:50] + '...'
+                call_changes.append({
+                    "field": f"Call {call_num}",
+                    "old_value": None,
+                    "new_value": f"Added - Date: {str(new_call.get('date_time', ''))[:16]}, Summary: '{summary}'"
+                })
+            else:
+                old_call = old_dict[call_num]
+                old_date_time = old_call.get('date_time', '')
+
+                # Check if trying to edit summary of a past date call
+                old_summary = old_call.get('summary', '') or ''
+                new_summary = new_call.get('summary', '') or ''
+                if old_summary != new_summary and is_past_date(old_date_time):
+                    past_edit_errors.append(f"Call {call_num}")
+                    continue
+
+                # Check if summary changed
+                new_summary = new_call.get('summary', '') or ''
+                if old_summary != new_summary:
+                    old_display = old_summary[:50] + '...' if len(old_summary) > 50 else old_summary or '(empty)'
+                    new_display = new_summary[:50] + '...' if len(new_summary) > 50 else new_summary or '(empty)'
+                    call_changes.append({
+                        "field": f"Call {call_num} Summary",
+                        "old_value": old_display,
+                        "new_value": new_display
+                    })
+                # Check if date changed
+                old_date = str(old_call.get('date_time', ''))[:16]
+                new_date = str(new_call.get('date_time', ''))[:16]
+                if old_date != new_date:
+                    call_changes.append({
+                        "field": f"Call {call_num} Date",
+                        "old_value": old_date,
+                        "new_value": new_date
+                    })
+
+        # Find deleted calls
+        for call_num in old_dict:
+            if call_num not in new_dict:
+                call_changes.append({
+                    "field": f"Call {call_num}",
+                    "old_value": "Existed",
+                    "new_value": "Deleted"
+                })
+
+        return call_changes, past_edit_errors
 
     # Apply updates
     for field, new_value in update_data.items():
         old_value = getattr(lead, field, None)
+
+        # Special handling for calls field
+        if field == "calls":
+            call_changes, past_errors = get_call_changes(old_value, new_value)
+            if past_errors:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot edit summaries of past date calls: {', '.join(past_errors)}"
+                )
+            changes.extend(call_changes)
+            setattr(lead, field, new_value)
+            continue
+
+        # Skip number_of_calls since we track individual call changes
+        if field == "number_of_calls":
+            setattr(lead, field, new_value)
+            continue
 
         # Handle enum values
         if hasattr(old_value, 'value'):
@@ -836,13 +1286,7 @@ async def update_lead(
             enrollment_id = await generate_enrollment_id(db)
 
             # Map lead's service_partner to enrollment's service_partner
-            service_partner_value = None
-            if lead.service_partner:
-                from app.models.enrollment import ServicePartner as EnrollmentServicePartner
-                try:
-                    service_partner_value = EnrollmentServicePartner(lead.service_partner.value)
-                except ValueError:
-                    pass
+            service_partner_value = lead.service_partner if lead.service_partner else None
 
             # Map trimester
             trimester_value = None
@@ -853,6 +1297,9 @@ async def update_lead(
                 except ValueError:
                     pass
 
+            # Log lead values being mapped to enrollment
+            logger.info(f"Creating enrollment from lead {lead_id} with values: uhid={lead.uhid}, service_enrolled={lead.service_enrolled}, package_requested={lead.package_requested}, provider_location={lead.provider_location}")
+
             enrollment = Enrollment(
                 enrollment_id=enrollment_id,
                 linked_lead_id=lead.lead_id,
@@ -860,9 +1307,13 @@ async def update_lead(
                 employee_id=lead.employee_id or "",
                 phone_number=lead.phone_number,
                 email=lead.email,
+                uhid=lead.uhid,
                 trimester=trimester_value,
                 doctor_name=lead.doctor_name,
+                service_enrolled=lead.service_enrolled,
+                package_name_enrolled=lead.package_requested,
                 service_partner=service_partner_value,
+                partner_centre_selected=lead.provider_location,
                 hclhc_spoc=lead.hclhc_spoc,
                 connect_status=EnrollmentConnectStatus.CONNECTED,
                 created_by=current_user["user_id"],
@@ -892,6 +1343,37 @@ async def update_lead(
     return lead_to_response(lead)
 
 
+@router.get("/{lead_id}/comments")
+async def get_comments(
+    lead_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get all comments for a lead
+    """
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead not found"
+        )
+
+    # Agent restriction: only view comments for leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        user_id = current_user["user_id"]
+        if lead.assigned_to != user_id and lead.reassign_to != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view comments for this lead"
+            )
+
+    return {
+        "lead_id": lead_id,
+        "comments": lead.comments or []
+    }
+
+
 @router.post("/{lead_id}/comments")
 async def add_comment(
     lead_id: str,
@@ -899,7 +1381,8 @@ async def add_comment(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Add a comment to a lead (all users can add comments)
+    Add a comment to a lead
+    Agents can only add comments to leads assigned/reassigned to them
     Comments are permanent (no edit/delete)
     """
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
@@ -909,6 +1392,15 @@ async def add_comment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found"
         )
+
+    # Agent restriction: only add comments to leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        user_id = current_user["user_id"]
+        if lead.assigned_to != user_id and lead.reassign_to != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to add comments to this lead"
+            )
 
     # Create new comment
     new_comment = {

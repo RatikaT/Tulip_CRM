@@ -16,6 +16,7 @@ import {
   IconButton,
   Divider,
   CircularProgress,
+  Autocomplete,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -34,6 +35,7 @@ import {
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
   PACKAGE_OPTIONS,
+  PARTNER_CENTER_OPTIONS,
 } from '../../types/lead.types';
 
 const createLeadSchema = z.object({
@@ -114,6 +116,10 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
   // Watch looking_for to conditionally show family_member_relation field
   const lookingForValue = watch('looking_for');
+
+  // Watch service_partner to show conditional Partner Center options
+  const servicePartnerValue = watch('service_partner');
+  const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
 
   const handleClose = () => {
     reset();
@@ -198,7 +204,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
             <Grid container spacing={2}>
               {/* Identifier Fields */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
                   Lead Identifiers (at least one of UHID, Contact No., or Email is required)
                 </Typography>
               </Grid>
@@ -279,7 +285,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               {/* User Details */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   User Details
                 </Typography>
               </Grid>
@@ -303,7 +309,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               {/* Location */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Location
                 </Typography>
               </Grid>
@@ -326,7 +332,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               {/* Lead Information */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Lead Information
                 </Typography>
               </Grid>
@@ -432,21 +438,8 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   name="service_partner"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      select
-                      label="Service Partner"
-                      value={field.value ? (typeof field.value === 'string' ? field.value.split(', ').filter(Boolean) : field.value) : []}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        field.onChange(Array.isArray(value) ? value.join(', ') : value);
-                      }}
-                      SelectProps={{
-                        multiple: true,
-                        renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
-                      }}
-                    >
+                    <TextField {...field} fullWidth select label="Service Partner">
+                      <MenuItem value="">Select Partner</MenuItem>
                       {SERVICE_PARTNER_OPTIONS.map((partner) => (
                         <MenuItem key={partner} value={partner}>
                           {partner}
@@ -458,7 +451,27 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('provider_location')} fullWidth label="Partner Center" />
+                <Controller
+                  name="provider_location"
+                  control={control}
+                  render={({ field }) => (
+                    <Autocomplete
+                      freeSolo
+                      options={partnerCenterOptions}
+                      value={field.value || ''}
+                      onChange={(_, newValue) => field.onChange(newValue || '')}
+                      onInputChange={(_, newInputValue) => field.onChange(newInputValue)}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          fullWidth
+                          label="Partner Center"
+                          placeholder={partnerCenterOptions.length > 0 ? "Select or type..." : "Enter Partner Center"}
+                        />
+                      )}
+                    />
+                  )}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -472,7 +485,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
               {/* Medical/Clinical Details */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Medical/Clinical Details
                 </Typography>
               </Grid>

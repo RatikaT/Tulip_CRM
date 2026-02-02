@@ -1,0 +1,35 @@
+Field Name,Display Name,Data Type,Required,Editable By,Dropdown Values (if fixed),Source File,Notes
+enrollment_id,Enrollment ID,String,Auto-generated,System Only,N/A,backend/app/models/enrollment.py,Format: ENR_DDMMYYYY_XXX - Auto-generated on creation
+linked_lead_id,Linked Lead ID,String,No,Admin Only,N/A,backend/app/models/enrollment.py,Lead ID if enrollment created from lead
+subscriber_name,Subscriber Name,String,Yes,Admin + Agent,N/A,backend/app/models/enrollment.py,Full name of subscriber
+employee_code,Employee Code,String,Yes,Admin + Agent,N/A,backend/app/models/enrollment.py,Employee code identifier
+phone_number,Phone Number,String,Yes,Admin + Agent,N/A,backend/app/models/enrollment.py,10 digit mobile number
+email,Email,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Valid email format
+billed_date,Billed Date,Date,No,Admin + Agent,N/A (Date picker),backend/app/models/enrollment.py,Format: YYYY-MM-DD or DD/MM/YYYY
+package_billed,Package Billed,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Package name that was billed
+hclhc_spoc,HCLHC SPOC,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,HCLHC Single Point of Contact
+hcl_location,HCL Location,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,HCL facility location
+hclhc_doctor,HCLHC Doctor,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,HCLHC Doctor name
+uhid,UHID,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Unique Health ID
+dob,Date of Birth,Date,No,Admin + Agent,N/A (Date picker),backend/app/models/enrollment.py,Format: YYYY-MM-DD or DD/MM/YYYY
+employee_name,Employee Name,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Employee/User full name
+address,Address,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Full address with PIN code
+trimester,Trimester,Enum,No,Admin + Agent,"Trimester 1 | Trimester 2 | Trimester 3 | Not Conceived",backend/app/models/enrollment.py & backend/app/models/lead.py,Current pregnancy trimester
+service_enrolled,Service Enrolled,Enum,No,Admin + Agent,"PreConception | Antenatal | MaternityWellness",backend/app/models/enrollment.py & backend/app/models/lead.py,Type of service enrolled
+package_name_enrolled,Package Name Enrolled,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Name of package enrolled
+service_partner,Service (Partner),Enum,No,Admin + Agent,"Motherhood | Rainbow | Fortis | Apollo Cradle | Cloud 9 | HCL Healthcare | Mamily | Others",backend/app/models/enrollment.py & backend/app/models/lead.py,Healthcare service partner
+partner_centre_selected,Partner Centre Selected,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Specific partner centre location
+partner_gynaecologist,Partner Gynaecologist,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Gynaecologist at partner centre
+connect_status,Connect Status,Enum,No,Admin + Agent,"Connected | No Response | Follow Up Required | Others",backend/app/models/enrollment.py,Current connection status
+action_taken,Action Taken,Enum,No,Admin + Agent,"Appointment Booked | Feedback Taken | No Action Required | Liasoned with Partner Team",backend/app/models/enrollment.py,Action taken during follow-up
+follow_up_date,Follow Up Date,DateTime,No,Admin + Agent,N/A (DateTime picker),backend/app/models/enrollment.py,Next follow-up date and time
+customer_feedback,Customer Feedback,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Feedback from customer
+remarks,Remarks,String,No,Admin + Agent,N/A,backend/app/models/enrollment.py,Additional remarks/notes
+follow_ups,Follow-ups History,Array,No,Admin + Agent,N/A,backend/app/models/enrollment.py,"Array of {follow_up_number, date, connect_status, action_taken, feedback, remarks, created_by, created_by_name}"
+assigned_to,Assigned To,String (User ID),No,Admin Only,N/A (User dropdown),backend/app/models/enrollment.py,User ID of assigned agent
+assigned_to_name,Assigned To Name,String,No,Admin Only,N/A,backend/app/models/enrollment.py,Display name of assigned agent
+created_at,Created At,DateTime,Auto-generated,System Only,N/A,backend/app/models/enrollment.py,Timestamp of creation
+updated_at,Updated At,DateTime,Auto-generated,System Only,N/A,backend/app/models/enrollment.py,Timestamp of last update
+created_by,Created By,String,Auto-generated,System Only,N/A,backend/app/models/enrollment.py,User ID who created the enrollment
+created_by_name,Created By Name,String,Auto-generated,System Only,N/A,backend/app/models/enrollment.py,Name of user who created the enrollment
+is_deleted,Is Deleted,Boolean,Auto-generated,Admin Only,N/A,backend/app/models/enrollment.py,Soft delete flag

@@ -34,6 +34,7 @@ import {
   SERVICE_ENROLLED_OPTIONS,
   PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
+import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
 
 interface UserOption {
   id: string;
@@ -101,11 +102,16 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
     reset,
     control,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<CreateEnrollmentFormData>({
     resolver: zodResolver(createEnrollmentSchema),
     defaultValues: {},
   });
+
+  // Watch service_partner to show conditional Partner Centre options
+  const servicePartnerValue = watch('service_partner');
+  const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
 
   // Fetch users for HCLHC SPOC dropdown - only users with Tulip CRM access
   useEffect(() => {
@@ -200,7 +206,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
             <Grid container spacing={2}>
               {/* Required Fields */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
                   Required Information
                 </Typography>
               </Grid>
@@ -265,7 +271,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               {/* User Details */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   User Details
                 </Typography>
               </Grid>
@@ -289,7 +295,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               {/* Billing Info */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Billing Information
                 </Typography>
               </Grid>
@@ -309,7 +315,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               {/* HCLH Details */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   HCLH Details
                 </Typography>
               </Grid>
@@ -336,7 +342,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               {/* Service Details */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Service Details
                 </Typography>
               </Grid>
@@ -401,21 +407,8 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   name="service_partner"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      select
-                      label="Service Partner"
-                      value={field.value ? (typeof field.value === 'string' ? field.value.split(', ').filter(Boolean) : field.value) : []}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        field.onChange(Array.isArray(value) ? value.join(', ') : value);
-                      }}
-                      SelectProps={{
-                        multiple: true,
-                        renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
-                      }}
-                    >
+                    <TextField {...field} fullWidth select label="Service Partner">
+                      <MenuItem value="">None</MenuItem>
                       {SERVICE_PARTNER_OPTIONS.map((p) => (
                         <MenuItem key={p} value={p}>
                           {p}
@@ -427,7 +420,27 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('partner_centre_selected')} fullWidth label="Partner Centre Selected" />
+                <Controller
+                  name="partner_centre_selected"
+                  control={control}
+                  render={({ field }) => (
+                    <Autocomplete
+                      freeSolo
+                      options={partnerCenterOptions}
+                      value={field.value || ''}
+                      onChange={(_, newValue) => field.onChange(newValue || '')}
+                      onInputChange={(_, newInputValue) => field.onChange(newInputValue)}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          fullWidth
+                          label="Partner Centre Selected"
+                          placeholder={partnerCenterOptions.length > 0 ? "Select or type..." : "Enter Partner Centre"}
+                        />
+                      )}
+                    />
+                  )}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -436,7 +449,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               {/* Status */}
               <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1 }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   Status & Follow-up
                 </Typography>
               </Grid>

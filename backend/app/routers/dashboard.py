@@ -4,13 +4,14 @@ Updated with enrollment metrics
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, List
 from app.models.lead import Lead, LeadStatus
 from app.models.user import User
 from app.models.summary import Summary, SummaryType
 from app.models.audit_log import AuditLog, AuditAction
 from app.models.enrollment import Enrollment
+from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditAction
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
 from bson import ObjectId
@@ -43,6 +44,17 @@ async def get_dashboard_metrics(
     """
     Get dashboard metrics for all users
     """
+    # MongoDB stores all dates in UTC
+    # Server runs in IST (UTC+5:30), so we need to convert IST date boundaries to UTC
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+
+    today_local = date.today()  # Local date (IST)
+    # IST midnight today = UTC yesterday 18:30
+    today_start_utc = datetime.combine(today_local, datetime.min.time()) - IST_OFFSET
+    # IST end of today = UTC today 18:29:59
+    today_end_utc = datetime.combine(today_local, datetime.max.time()) - IST_OFFSET
+
+    # For legacy queries that expect 'today' as UTC midnight
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Base query - exclude deleted leads (handles both existing and missing is_deleted field)
@@ -60,17 +72,16 @@ async def get_dashboard_metrics(
     unique_users_result = await get_database().leads.aggregate(pipeline).to_list(1)
     unique_users = unique_users_result[0]["unique_users"] if unique_users_result else 0
 
-    # New leads today
+    # New leads today (using IST to UTC conversion)
     new_today = await Lead.find({
         **base_query,
-        "created_at": {"$gte": today}
+        "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
     }).count()
 
-    # Follow-ups today
-    tomorrow = today + timedelta(days=1)
+    # Follow-ups today (using IST to UTC conversion)
     follow_ups_today = await Lead.find({
         **base_query,
-        "follow_up_date": {"$gte": today, "$lt": tomorrow}
+        "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
     }).count()
 
     # Leads by status
@@ -117,12 +128,22 @@ async def get_dashboard_metrics(
     date_counts = {item["date"]: item["count"] for item in daily_trends}
     filled_trends = []
     for i in range(7):
-        date = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
-        filled_trends.append({"date": date, "count": date_counts.get(date, 0)})
+        day_str = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
+        filled_trends.append({"date": day_str, "count": date_counts.get(day_str, 0)})
 
-    # Enrollment metrics
+    # Enrollment metrics - use direct MongoDB queries for accurate datetime comparisons
+    db = get_database()
     enrollment_base_query = {"is_deleted": False}
-    total_enrollments = await Enrollment.find(enrollment_base_query).count()
+    total_enrollments = await db.enrollments.count_documents(enrollment_base_query)
+
+    # New enrollments today (using IST to UTC conversion)
+    new_enrollments_today = await db.enrollments.count_documents({
+        **enrollment_base_query,
+        "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+    })
+
+    logger.info(f"Dashboard metrics - UTC range: {today_start_utc} to {today_end_utc}")
+    logger.info(f"Dashboard metrics - total_enrollments: {total_enrollments}, new_enrollments_today: {new_enrollments_today}")
 
     # Enrollments by service partner
     partner_pipeline = [
@@ -142,6 +163,26 @@ async def get_dashboard_metrics(
     action_result = await get_database().enrollments.aggregate(action_pipeline).to_list(100)
     enrollments_by_action = {item["_id"]: item["count"] for item in action_result if item["_id"]}
 
+    # NEW METRICS:
+    # 1. Leads enrolled today - leads whose status changed to "Enrolled" today
+    # We check for status="Enrolled" AND updated_at is today
+    leads_enrolled_today = await Lead.find({
+        **base_query,
+        "status": "Enrolled",
+        "updated_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+    }).count()
+
+    # 2. Leads with follow-up today (already calculated as follow_ups_today above)
+    # Using the same value
+
+    # 3. Enrollments with follow-up today (next_follow_up_date is today)
+    enrollments_followup_today = await db.enrollments.count_documents({
+        **enrollment_base_query,
+        "next_follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
+    })
+
+    logger.info(f"Dashboard metrics - leads_enrolled_today: {leads_enrolled_today}, enrollments_followup_today: {enrollments_followup_today}")
+
     return {
         "total_leads": total_leads,
         "unique_users": unique_users,
@@ -152,8 +193,13 @@ async def get_dashboard_metrics(
         "leads_by_service": leads_by_service,
         "daily_trends": filled_trends,
         "total_enrollments": total_enrollments,
+        "new_enrollments_today": new_enrollments_today,
         "enrollments_by_partner": enrollments_by_partner,
-        "enrollments_by_action": enrollments_by_action
+        "enrollments_by_action": enrollments_by_action,
+        # New metrics for stat cards
+        "leads_enrolled_today": leads_enrolled_today,
+        "leads_followup_today": follow_ups_today,  # Same as follow_ups_today
+        "enrollments_followup_today": enrollments_followup_today
     }
 
 
@@ -175,6 +221,7 @@ async def get_agent_dashboard(
     Get agent-specific dashboard metrics (their assigned leads only)
     """
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=1)
 
     # Base query - agent's assigned leads only (handles both existing and missing is_deleted field)
     base_query = {
@@ -194,7 +241,6 @@ async def get_agent_dashboard(
     }).count()
 
     # Follow-ups today
-    tomorrow = today + timedelta(days=1)
     follow_ups_today = await Lead.find({
         **base_query,
         "follow_up_date": {"$gte": today, "$lt": tomorrow}
@@ -244,8 +290,47 @@ async def get_agent_dashboard(
     date_counts = {item["date"]: item["count"] for item in daily_trends}
     filled_trends = []
     for i in range(7):
-        date = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
-        filled_trends.append({"date": date, "count": date_counts.get(date, 0)})
+        day_str = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
+        filled_trends.append({"date": day_str, "count": date_counts.get(day_str, 0)})
+
+    # ============ ENROLLMENT STATS FOR AGENT ============
+    # Agent's enrollments are determined by hclhc_spoc field matching agent's full name
+    agent_name = current_user.get("full_name", "")
+
+    # 1. Total Enrollments (where agent is HCLHC SPOC)
+    enrollment_base_query = {
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"}
+    }
+    total_enrollments = await Enrollment.find(enrollment_base_query).count()
+
+    # 2. New Enrollments Assigned Today
+    # Enrollments created today AND assigned to this agent (hclhc_spoc) with assigned_date today
+    new_enrollments_today = await Enrollment.find({
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
+        "created_at": {"$gte": today, "$lt": tomorrow},
+        "assigned_date": {"$gte": today, "$lt": tomorrow}
+    }).count()
+
+    # 3. Total Enrollments Assigned Today
+    # All enrollments where hclhc_spoc is this agent AND (assigned_date OR reassigned_date is today)
+    enrollments_assigned_today = await Enrollment.find({
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
+        "$or": [
+            {"assigned_date": {"$gte": today, "$lt": tomorrow}},
+            {"reassigned_date": {"$gte": today, "$lt": tomorrow}}
+        ]
+    }).count()
+
+    # 4. Enrollments with Follow-up Today
+    # Enrollments where next_follow_up_date is today AND hclhc_spoc is this agent
+    enrollments_followup_today = await Enrollment.find({
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
+        "next_follow_up_date": {"$gte": today, "$lt": tomorrow}
+    }).count()
 
     return {
         "total_leads": total_leads,
@@ -256,7 +341,12 @@ async def get_agent_dashboard(
         "leads_by_status": leads_by_status,
         "leads_by_source": leads_by_source,
         "leads_by_service": leads_by_service,
-        "daily_trends": filled_trends
+        "daily_trends": filled_trends,
+        # Enrollment stats for agent
+        "total_enrollments": total_enrollments,
+        "new_enrollments_today": new_enrollments_today,
+        "enrollments_assigned_today": enrollments_assigned_today,
+        "enrollments_followup_today": enrollments_followup_today
     }
 
 
@@ -304,7 +394,7 @@ async def get_summary_data(
         source_counts[source] = source_counts.get(source, 0) + 1
 
         if lead.service_enrolled:
-            service = lead.service_enrolled.value
+            service = lead.service_enrolled
             service_counts[service] = service_counts.get(service, 0) + 1
 
     # Get agent name if filtered
@@ -428,17 +518,76 @@ async def delete_summary(
     return {"message": "Summary deleted successfully"}
 
 
+@router.get("/leads-by-status")
+async def get_leads_by_status(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get leads grouped by status for charts"""
+    base_query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
+
+    status_pipeline = [
+        {"$match": base_query},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    status_result = await get_database().leads.aggregate(status_pipeline).to_list(100)
+
+    return {
+        "data": [
+            {"status": item["_id"] or "Unknown", "count": item["count"]}
+            for item in status_result
+        ]
+    }
+
+
+@router.get("/leads-by-source")
+async def get_leads_by_source(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get leads grouped by source for charts"""
+    base_query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
+
+    source_pipeline = [
+        {"$match": base_query},
+        {"$group": {"_id": "$lead_source", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
+
+    return {
+        "data": [
+            {"source": item["_id"] or "Unknown", "count": item["count"]}
+            for item in source_result
+        ]
+    }
+
+
 @router.get("/agent-activity")
 async def get_agent_activity(
-    agent_id: str,
-    date: str,
+    agent_id: Optional[str] = None,
+    date: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get detailed agent activity for a specific date.
-    Agents can only view their own activity.
-    Admins can view any agent's activity.
+    Get comprehensive agent activity for a specific date.
+    Includes leads and enrollments: assignments, actions, and follow-ups.
+
+    Returns:
+    - leads_assignment: new leads, reassigned in/out
+    - enrollments_assignment: new enrollments, reassigned in/out
+    - followups: leads and enrollments with follow-ups due
+    - lead_actions: all actions from audit_logs
+    - enrollment_actions: all actions from enrollment_audit_logs
+    - summary: aggregate stats for dashboard cards
     """
+    # Default to current user's ID if not provided
+    if not agent_id:
+        agent_id = current_user["user_id"]
+
+    # Default to today if date not provided
+    if not date:
+        date = datetime.utcnow().strftime("%Y-%m-%d")
+
     # Access control: agents can only see their own data
     is_admin = current_user.get("role") in ["admin", "super_admin"]
     if not is_admin and current_user["user_id"] != agent_id:
@@ -447,11 +596,12 @@ async def get_agent_activity(
             detail="You can only view your own activity"
         )
 
-    # Parse date
+    # Parse date - use UTC boundaries (timestamps in DB are UTC)
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d")
         date_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         date_end = date_start + timedelta(days=1)
+        logger.info(f"Agent activity query: {date} -> UTC range {date_start} to {date_end}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
 
@@ -460,169 +610,413 @@ async def get_agent_activity(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Get all leads assigned to this agent
-    leads_query = {
-        "$and": [
-            {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]},
-            {"assigned_to": agent_id}
-        ]
+    agent_name = agent.full_name
+    db = get_database()
+
+    logger.info(f"=== AGENT ACTIVITY DEBUG ===")
+    logger.info(f"Agent ID: {agent_id}, Agent Name: {agent_name}")
+    logger.info(f"Date: {date}, UTC Range: {date_start} to {date_end}")
+
+    # =============================================
+    # SECTION 1: LEADS ASSIGNMENT
+    # =============================================
+
+    # New leads: created on this date AND assigned to agent
+    new_leads_query = {
+        "$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}],
+        "assigned_to": agent_id,
+        "created_at": {"$gte": date_start, "$lt": date_end}
     }
-    assigned_leads = await Lead.find(leads_query).to_list()
-
-    # Initialize response data
-    leads_assigned_list = []
-    calls_made_list = []
-    followups_due_list = []
-    followups_overdue_list = []
-
-    total_calls_today = 0
-    lead_ids = []
-
-    for lead in assigned_leads:
-        lead_ids.append(lead.lead_id)
-
-        # Add to leads assigned list
-        leads_assigned_list.append({
+    logger.info(f"New leads query: {new_leads_query}")
+    new_leads = await Lead.find(new_leads_query).to_list()
+    logger.info(f"New leads found: {len(new_leads)}")
+    new_leads_list = [
+        {
             "lead_id": lead.lead_id,
-            "name": lead.name,
-            "status": lead.status.value if lead.status else "Unknown",
-            "phone_number": lead.phone_number,
-            "assigned_date": lead.created_at.strftime("%Y-%m-%d") if lead.created_at else None
+            "name": lead.name or "Unknown",
+            "phone": lead.phone_number,
+            "status": lead.status.value if lead.status else "New",
+            "lead_source": lead.lead_source.value if lead.lead_source else None,
+            "created_at": lead.created_at.isoformat() if lead.created_at else None
+        }
+        for lead in new_leads
+    ]
+
+    # Reassigned TO this agent (from audit logs)
+    reassigned_to_agent_query = {
+        "timestamp": {"$gte": date_start, "$lt": date_end},
+        "changes": {
+            "$elemMatch": {
+                "field": {"$in": ["assigned_to", "reassign_to"]},
+                "new_value": agent_id
+            }
+        }
+    }
+    reassigned_to_logs = await AuditLog.find(reassigned_to_agent_query).to_list()
+    logger.info(f"Reassigned TO agent logs found: {len(reassigned_to_logs)}")
+
+    # Get unique lead IDs (avoid duplicates)
+    reassigned_to_lead_ids = set()
+    reassigned_to_agent_list = []
+    for log in reassigned_to_logs:
+        if log.lead_id in reassigned_to_lead_ids:
+            continue
+        reassigned_to_lead_ids.add(log.lead_id)
+
+        # Get lead info
+        lead = await Lead.find_one({"lead_id": log.lead_id})
+        lead_name = lead.name if lead else log.lead_id
+        lead_status = lead.status.value if lead and lead.status else "N/A"
+
+        reassigned_to_agent_list.append({
+            "lead_id": log.lead_id,
+            "name": lead_name or log.lead_id,
+            "status": lead_status,
+            "reassigned_at": log.timestamp.isoformat() if log.timestamp else None
         })
 
-        # Check calls made today
-        if lead.calls:
-            for call in lead.calls:
-                call_dt = call.get("date_time")
-                if call_dt:
-                    # Parse call datetime
-                    if isinstance(call_dt, str):
-                        try:
-                            call_datetime = datetime.fromisoformat(call_dt.replace("Z", "+00:00"))
-                        except:
-                            continue
-                    elif isinstance(call_dt, datetime):
-                        call_datetime = call_dt
-                    else:
-                        continue
+    # Reassigned FROM this agent (audit logs where agent's ID was old value)
+    reassigned_from_agent_query = {
+        "timestamp": {"$gte": date_start, "$lt": date_end},
+        "changes": {
+            "$elemMatch": {
+                "field": {"$in": ["assigned_to", "reassign_to"]},
+                "old_value": agent_id
+            }
+        }
+    }
+    reassigned_from_logs = await AuditLog.find(reassigned_from_agent_query).to_list()
+    logger.info(f"Reassigned FROM agent logs found: {len(reassigned_from_logs)}")
 
-                    # Check if call is on target date
-                    if date_start <= call_datetime < date_end:
-                        total_calls_today += 1
-                        calls_made_list.append({
-                            "lead_id": lead.lead_id,
-                            "name": lead.name,
-                            "call_number": call.get("call_number", 0),
-                            "call_time": call_datetime.strftime("%H:%M"),
-                            "summary": call.get("summary", "")[:100] if call.get("summary") else ""
-                        })
+    reassigned_from_lead_ids = set()
+    reassigned_from_agent_list = []
+    for log in reassigned_from_logs:
+        if log.lead_id in reassigned_from_lead_ids:
+            continue
+        reassigned_from_lead_ids.add(log.lead_id)
 
-        # Check follow-ups
+        lead = await Lead.find_one({"lead_id": log.lead_id})
+        lead_name = lead.name if lead else log.lead_id
+        lead_status = lead.status.value if lead and lead.status else "N/A"
+
+        reassigned_from_agent_list.append({
+            "lead_id": log.lead_id,
+            "name": lead_name or log.lead_id,
+            "status": lead_status,
+            "reassigned_at": log.timestamp.isoformat() if log.timestamp else None
+        })
+
+    # =============================================
+    # SECTION 2: ENROLLMENTS ASSIGNMENT
+    # =============================================
+
+    # New enrollments: created on this date AND hclhc_spoc = agent name
+    new_enrollments_query = {
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
+        "created_at": {"$gte": date_start, "$lt": date_end}
+    }
+    new_enrollments = await Enrollment.find(new_enrollments_query).to_list()
+    new_enrollments_list = [
+        {
+            "enrollment_id": e.enrollment_id,
+            "name": e.name or e.subscriber_name or "Unknown",
+            "phone": e.phone_number,
+            "connect_status": e.connect_status.value if e.connect_status else None,
+            "service_enrolled": e.service_enrolled,
+            "created_at": e.created_at.isoformat() if e.created_at else None
+        }
+        for e in new_enrollments
+    ]
+
+    # Reassigned TO agent (enrollment audit logs - hclhc_spoc changed to this agent's name)
+    enr_reassigned_to_query = {
+        "timestamp": {"$gte": date_start, "$lt": date_end},
+        "changes": {
+            "$elemMatch": {
+                "field": {"$in": ["hclhc_spoc", "assigned_to"]},
+                "new_value": {"$regex": f"^{agent_name}$", "$options": "i"}
+            }
+        }
+    }
+    enr_reassigned_to_logs = await EnrollmentAuditLog.find(enr_reassigned_to_query).to_list()
+    logger.info(f"Enrollment reassigned TO agent logs found: {len(enr_reassigned_to_logs)}")
+
+    # Get unique enrollment IDs
+    enr_reassigned_to_ids = set()
+    enr_reassigned_to_list = []
+    for log in enr_reassigned_to_logs:
+        if log.enrollment_id in enr_reassigned_to_ids:
+            continue
+        enr_reassigned_to_ids.add(log.enrollment_id)
+
+        enrollment = await Enrollment.find_one({"enrollment_id": log.enrollment_id})
+        enr_name = (enrollment.name or enrollment.subscriber_name) if enrollment else log.enrollment_id
+
+        enr_reassigned_to_list.append({
+            "enrollment_id": log.enrollment_id,
+            "name": enr_name or log.enrollment_id,
+            "connect_status": enrollment.connect_status.value if enrollment and enrollment.connect_status else None,
+            "reassigned_at": log.timestamp.isoformat() if log.timestamp else None
+        })
+
+    # Reassigned FROM agent (enrollment audit logs)
+    enr_reassigned_from_query = {
+        "timestamp": {"$gte": date_start, "$lt": date_end},
+        "changes": {
+            "$elemMatch": {
+                "field": {"$in": ["hclhc_spoc", "assigned_to"]},
+                "old_value": {"$regex": f"^{agent_name}$", "$options": "i"}
+            }
+        }
+    }
+    enr_reassigned_from_logs = await EnrollmentAuditLog.find(enr_reassigned_from_query).to_list()
+    logger.info(f"Enrollment reassigned FROM agent logs found: {len(enr_reassigned_from_logs)}")
+
+    enr_reassigned_from_ids = set()
+    enr_reassigned_from_list = []
+    for log in enr_reassigned_from_logs:
+        if log.enrollment_id in enr_reassigned_from_ids:
+            continue
+        enr_reassigned_from_ids.add(log.enrollment_id)
+
+        enrollment = await Enrollment.find_one({"enrollment_id": log.enrollment_id})
+        enr_name = (enrollment.name or enrollment.subscriber_name) if enrollment else log.enrollment_id
+
+        enr_reassigned_from_list.append({
+            "enrollment_id": log.enrollment_id,
+            "name": enr_name or log.enrollment_id,
+            "connect_status": enrollment.connect_status.value if enrollment and enrollment.connect_status else None,
+            "reassigned_at": log.timestamp.isoformat() if log.timestamp else None
+        })
+
+    # =============================================
+    # SECTION 3: FOLLOW-UPS DUE
+    # =============================================
+
+    # Lead follow-ups due on this date
+    lead_followups_query = {
+        "$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}],
+        "assigned_to": agent_id,
+        "follow_up_date": {"$gte": date_start, "$lt": date_end}
+    }
+    leads_with_followups = await Lead.find(lead_followups_query).to_list()
+    lead_followups_list = []
+    for lead in leads_with_followups:
+        is_overdue = False
         if lead.follow_up_date:
-            follow_up_dt = lead.follow_up_date
-            if isinstance(follow_up_dt, str):
-                try:
-                    follow_up_dt = datetime.fromisoformat(follow_up_dt.replace("Z", "+00:00"))
-                except:
-                    follow_up_dt = None
+            # Check if follow-up time has passed
+            now = datetime.utcnow()
+            if lead.follow_up_date < now:
+                is_overdue = True
 
-            if follow_up_dt:
-                follow_up_date_only = follow_up_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        lead_followups_list.append({
+            "lead_id": lead.lead_id,
+            "name": lead.name or "Unknown",
+            "status": lead.status.value if lead.status else "Unknown",
+            "follow_up_time": lead.follow_up_date.isoformat() if lead.follow_up_date else None,
+            "is_overdue": is_overdue
+        })
 
-                # Due today
-                if follow_up_date_only == date_start:
-                    followups_due_list.append({
-                        "lead_id": lead.lead_id,
-                        "name": lead.name,
-                        "follow_up_date": lead.follow_up_date.strftime("%Y-%m-%d %H:%M") if isinstance(lead.follow_up_date, datetime) else str(lead.follow_up_date),
-                        "status": lead.status.value if lead.status else "Unknown"
-                    })
-                # Overdue
-                elif follow_up_date_only < date_start:
-                    # Check if lead is not in a closed status
-                    closed_statuses = ["Lead Closed - No Response", "Not Interested"]
-                    if lead.status and lead.status.value not in closed_statuses:
-                        days_overdue = (date_start - follow_up_date_only).days
-                        followups_overdue_list.append({
-                            "lead_id": lead.lead_id,
-                            "name": lead.name,
-                            "follow_up_date": lead.follow_up_date.strftime("%Y-%m-%d") if isinstance(lead.follow_up_date, datetime) else str(lead.follow_up_date),
-                            "days_overdue": days_overdue,
-                            "status": lead.status.value if lead.status else "Unknown"
-                        })
+    # Enrollment follow-ups due on this date
+    enr_followups_query = {
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
+        "next_follow_up_date": {"$gte": date_start, "$lt": date_end}
+    }
+    enrollments_with_followups = await Enrollment.find(enr_followups_query).to_list()
+    enr_followups_list = [
+        {
+            "enrollment_id": e.enrollment_id,
+            "name": e.name or e.subscriber_name or "Unknown",
+            "connect_status": e.connect_status.value if e.connect_status else None,
+            "next_follow_up_date": e.next_follow_up_date.isoformat() if e.next_follow_up_date else None
+        }
+        for e in enrollments_with_followups
+    ]
 
-    # Get audit logs for status changes, comments, and reassignments by this agent on this date
-    audit_query = {
+    # =============================================
+    # SECTION 4: LEAD ACTIONS (from audit_logs)
+    # =============================================
+
+    lead_audit_query = {
         "user_id": agent_id,
         "timestamp": {"$gte": date_start, "$lt": date_end}
     }
-    audit_logs = await AuditLog.find(audit_query).to_list()
+    logger.info(f"Lead audit query: {lead_audit_query}")
+    lead_audit_logs = await AuditLog.find(lead_audit_query).sort("timestamp").to_list()
+    logger.info(f"Lead audit logs found: {len(lead_audit_logs)}")
 
-    status_changes_list = []
-    comments_added_list = []
-    reassignments_list = []
+    # Categorize actions
+    lead_action_counts = {
+        "status_changes": 0,
+        "comments_added": 0,
+        "calls_logged": 0,
+        "field_updates": 0
+    }
 
-    for log in audit_logs:
-        lead_name = "Unknown"
-        # Try to get lead name from assigned leads
-        for lead in assigned_leads:
-            if lead.lead_id == log.lead_id:
-                lead_name = lead.name
-                break
+    lead_action_details = []
+    unique_leads_worked = set()
 
+    for log in lead_audit_logs:
+        unique_leads_worked.add(log.lead_id)
+
+        # Get lead name
+        lead = await Lead.find_one({"lead_id": log.lead_id})
+        lead_name = lead.name if lead else "Unknown"
+
+        # Determine action type
+        action_type = log.action.value if log.action else "updated"
+
+        # Count by type
         if log.action == AuditAction.STATUS_CHANGED:
-            for change in log.changes:
-                if change.get("field") == "status":
-                    status_changes_list.append({
-                        "lead_id": log.lead_id,
-                        "name": lead_name,
-                        "old_status": change.get("old_value", ""),
-                        "new_status": change.get("new_value", ""),
-                        "changed_at": log.timestamp.strftime("%H:%M")
-                    })
+            lead_action_counts["status_changes"] += 1
+        elif log.action == AuditAction.CALL_ADDED:
+            lead_action_counts["calls_logged"] += 1
+        else:
+            # Check changes for comments
+            has_comment = any(c.get("field") == "comments" for c in log.changes)
+            if has_comment:
+                lead_action_counts["comments_added"] += 1
+            else:
+                lead_action_counts["field_updates"] += 1
 
-        # Check for comments in changes
-        for change in log.changes:
-            if change.get("field") == "comments":
-                comments_added_list.append({
-                    "lead_id": log.lead_id,
-                    "name": lead_name,
-                    "comment_preview": str(change.get("new_value", ""))[:100],
-                    "added_at": log.timestamp.strftime("%H:%M")
-                })
+        lead_action_details.append({
+            "lead_id": log.lead_id,
+            "lead_name": lead_name,
+            "action_type": action_type,
+            "changes": log.changes,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None
+        })
 
-        # Check for reassignments
-        if log.action == AuditAction.ASSIGNED or log.action == AuditAction.UPDATED:
-            for change in log.changes:
-                if change.get("field") in ["reassign_to", "reassign_to_name"]:
-                    reassignments_list.append({
-                        "lead_id": log.lead_id,
-                        "name": lead_name,
-                        "reassigned_to": change.get("new_value", ""),
-                        "reassigned_at": log.timestamp.strftime("%H:%M")
-                    })
+    # =============================================
+    # SECTION 5: ENROLLMENT ACTIONS (from enrollment_audit_logs)
+    # =============================================
+
+    # Query by user_id or user_name for enrollment audit logs
+    enr_audit_query = {
+        "$or": [
+            {"user_id": agent_id},
+            {"user_name": {"$regex": f"^{agent_name}$", "$options": "i"}}
+        ],
+        "timestamp": {"$gte": date_start, "$lt": date_end}
+    }
+    logger.info(f"Enrollment audit query: {enr_audit_query}")
+    enr_audit_logs = await EnrollmentAuditLog.find(enr_audit_query).sort("timestamp").to_list()
+    logger.info(f"Enrollment audit logs found: {len(enr_audit_logs)}")
+
+    enr_action_counts = {
+        "status_changes": 0,
+        "follow_ups_added": 0,
+        "field_updates": 0
+    }
+
+    enr_action_details = []
+    unique_enrollments_worked = set()
+
+    for log in enr_audit_logs:
+        unique_enrollments_worked.add(log.enrollment_id)
+
+        # Get enrollment name
+        enrollment = await Enrollment.find_one({"enrollment_id": log.enrollment_id})
+        enr_name = enrollment.name or enrollment.subscriber_name if enrollment else "Unknown"
+
+        action_type = log.action.value if log.action else "updated"
+
+        # Count by type
+        if log.action == EnrollmentAuditAction.STATUS_CHANGED:
+            enr_action_counts["status_changes"] += 1
+        elif log.action == EnrollmentAuditAction.FOLLOW_UP_ADDED:
+            enr_action_counts["follow_ups_added"] += 1
+        else:
+            enr_action_counts["field_updates"] += 1
+
+        enr_action_details.append({
+            "enrollment_id": log.enrollment_id,
+            "enrollment_name": enr_name,
+            "action_type": action_type,
+            "changes": log.changes,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None
+        })
+
+    # =============================================
+    # SECTION 6: TOTAL PORTFOLIO (all leads/enrollments with agent)
+    # =============================================
+
+    # Total leads currently assigned to agent (no date filter - their portfolio)
+    total_leads_with_agent = await Lead.find({
+        "$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}],
+        "assigned_to": agent_id
+    }).count()
+    logger.info(f"Total leads with agent: {total_leads_with_agent}")
+
+    # Total enrollments with agent as HCLHC SPOC (no date filter)
+    total_enrollments_with_agent = await Enrollment.find({
+        "is_deleted": False,
+        "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"}
+    }).count()
+    logger.info(f"Total enrollments with agent: {total_enrollments_with_agent}")
+
+    # =============================================
+    # SECTION 7: SUMMARY STATS
+    # =============================================
+
+    summary = {
+        # Portfolio totals (all leads/enrollments with this agent)
+        "total_leads_with_agent": total_leads_with_agent,
+        "total_enrollments_with_agent": total_enrollments_with_agent,
+        # Activity on selected date
+        "total_leads_worked": len(unique_leads_worked),
+        "total_enrollments_worked": len(unique_enrollments_worked),
+        "new_leads_assigned": len(new_leads_list),
+        "leads_reassigned_in": len(reassigned_to_agent_list),
+        "leads_reassigned_out": len(reassigned_from_agent_list),
+        "new_enrollments_assigned": len(new_enrollments_list),
+        "enrollments_reassigned_in": len(enr_reassigned_to_list),
+        "enrollments_reassigned_out": len(enr_reassigned_from_list),
+        "total_lead_actions": len(lead_audit_logs),
+        "total_enrollment_actions": len(enr_audit_logs),
+        "followups_due_leads": len(lead_followups_list),
+        "followups_due_enrollments": len(enr_followups_list)
+    }
+
+    logger.info(f"=== AGENT ACTIVITY SUMMARY ===")
+    logger.info(f"Summary: {summary}")
 
     # Build response
     return {
         "agent_id": agent_id,
-        "agent_name": agent.full_name,
+        "agent_name": agent_name,
         "date": date,
-        "summary": {
-            "total_leads_assigned": len(assigned_leads),
-            "calls_made_today": total_calls_today,
-            "followups_due_today": len(followups_due_list),
-            "followups_overdue": len(followups_overdue_list),
-            "status_changes_today": len(status_changes_list),
-            "comments_added_today": len(comments_added_list),
-            "reassignments_made": len(reassignments_list)
+
+        "leads_assignment": {
+            "new_leads": new_leads_list,
+            "reassigned_to_agent": reassigned_to_agent_list,
+            "reassigned_from_agent": reassigned_from_agent_list
         },
-        "lead_details": {
-            "leads_assigned": leads_assigned_list,
-            "calls_made": calls_made_list,
-            "followups_due": followups_due_list,
-            "followups_overdue": followups_overdue_list,
-            "status_changes": status_changes_list,
-            "comments_added": comments_added_list,
-            "reassignments": reassignments_list
-        }
+
+        "enrollments_assignment": {
+            "new_enrollments": new_enrollments_list,
+            "reassigned_to_agent": enr_reassigned_to_list,
+            "reassigned_from_agent": enr_reassigned_from_list
+        },
+
+        "followups": {
+            "leads": lead_followups_list,
+            "enrollments": enr_followups_list
+        },
+
+        "lead_actions": {
+            "total_actions": len(lead_audit_logs),
+            "by_type": lead_action_counts,
+            "details": lead_action_details
+        },
+
+        "enrollment_actions": {
+            "total_actions": len(enr_audit_logs),
+            "by_type": enr_action_counts,
+            "details": enr_action_details
+        },
+
+        "summary": summary
     }

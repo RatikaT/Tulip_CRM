@@ -18,6 +18,7 @@ import {
   Divider,
   CircularProgress,
   Alert,
+  Autocomplete,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -48,9 +49,11 @@ import {
   SERVICE_PARTNER_OPTIONS,
   REASON_FOR_NO_SALE_OPTIONS,
   PACKAGE_OPTIONS,
+  PARTNER_CENTER_OPTIONS,
 } from '../types/lead.types';
 import { brandColors } from '../theme';
 import api from '../services/api';
+import EnrollmentConfirmModal, { EnrollmentPreviewData } from '../components/leads/EnrollmentConfirmModal';
 
 interface UserOption {
   id: string;
@@ -110,6 +113,9 @@ export default function LeadDetailPage() {
 
   // Users list for Assigned To dropdown
   const [users, setUsers] = useState<UserOption[]>([]);
+
+  // Enrollment confirmation modal state
+  const [showEnrollmentModal, setShowEnrollmentModal] = useState(false);
 
   // Fetch users for Assigned To and Reassign dropdowns - only users with Tulip CRM access
   useEffect(() => {
@@ -217,11 +223,111 @@ export default function LeadDetailPage() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = async () => {
+  const handleEnrollmentConfirm = async (enrollmentData: EnrollmentPreviewData) => {
     if (!leadId) return;
     setSaving(true);
     try {
-      await leadService.updateLead(leadId, formData);
+      // First update lead with the enrollment data values
+      const rawUpdateData: Partial<LeadUpdateRequest> = {
+        ...formData,
+        // Update lead fields that map to enrollment
+        name: enrollmentData.subscriber_name,
+        employee_id: enrollmentData.employee_id,
+        phone_number: enrollmentData.phone_number,
+        email: enrollmentData.email || undefined,
+        uhid: enrollmentData.uhid,
+        trimester: enrollmentData.trimester || undefined,
+        doctor_name: enrollmentData.doctor_name,
+        service_enrolled: enrollmentData.service_enrolled,
+        package_requested: enrollmentData.package_name_enrolled,
+        service_partner: enrollmentData.service_partner,
+        provider_location: enrollmentData.partner_centre_selected,
+        hclhc_spoc: enrollmentData.hclhc_spoc,
+        // Set status to Enrolled - this will trigger backend to create enrollment
+        status: 'Enrolled',
+      };
+
+      // Clean the data - convert empty strings to undefined for optional fields
+      const updateData: LeadUpdateRequest = {};
+      for (const [key, value] of Object.entries(rawUpdateData)) {
+        if (value === '' || value === null) {
+          // Skip empty strings and nulls - don't send them
+          continue;
+        }
+        (updateData as Record<string, unknown>)[key] = value;
+      }
+
+      await leadService.updateLead(leadId, updateData);
+
+      // Get the enrollment and update it with additional fields
+      try {
+        const response = await api.get(`/enrollments?linked_lead_id=${leadId}`);
+        const enrollments = response.data.enrollments || [];
+        if (enrollments.length > 0) {
+          const enrollmentId = enrollments[0].enrollment_id;
+
+          // Update the enrollment with additional fields from the modal
+          const enrollmentUpdateData = {
+            name: enrollmentData.name || undefined,
+            dob: enrollmentData.dob || undefined,
+            address: enrollmentData.address || undefined,
+            billed_date: enrollmentData.billed_date || undefined,
+            package_billed: enrollmentData.package_billed || undefined,
+            hcl_facility: enrollmentData.hcl_facility || undefined,
+            partner_gynaecologist: enrollmentData.partner_gynaecologist || undefined,
+            connect_status: enrollmentData.connect_status || undefined,
+            action_taken: enrollmentData.action_taken || undefined,
+            follow_up_date: enrollmentData.follow_up_date || undefined,
+            next_follow_up_date: enrollmentData.next_follow_up_date || undefined,
+            customer_feedback: enrollmentData.customer_feedback || undefined,
+            remarks: enrollmentData.remarks || undefined,
+          };
+
+          await api.put(`/enrollments/${enrollmentId}`, enrollmentUpdateData);
+
+          toast.success('Lead enrolled successfully! Redirecting to enrollment...');
+          setShowEnrollmentModal(false);
+          navigate(`/tulip/enrollments/${enrollmentId}`);
+        } else {
+          toast.success('Lead enrolled successfully!');
+          setShowEnrollmentModal(false);
+          navigate('/tulip/enrollments');
+        }
+      } catch {
+        toast.success('Lead enrolled successfully!');
+        setShowEnrollmentModal(false);
+        navigate('/tulip/enrollments');
+      }
+    } catch (err) {
+      console.error('Failed to enroll lead:', err);
+      toast.error('Failed to create enrollment');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!leadId) return;
+
+    // If status is being changed to "Enrolled", show confirmation modal
+    if (formData.status === 'Enrolled' && lead?.status !== 'Enrolled') {
+      setShowEnrollmentModal(true);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Clean the formData - convert empty strings to undefined for optional fields
+      const cleanedData: LeadUpdateRequest = {};
+      for (const [key, value] of Object.entries(formData)) {
+        if (value === '' || value === null) {
+          // Skip empty strings and nulls - don't send them
+          continue;
+        }
+        (cleanedData as Record<string, unknown>)[key] = value;
+      }
+
+      await leadService.updateLead(leadId, cleanedData);
       toast.success('Lead updated successfully');
       fetchLead();
     } catch (err) {
@@ -283,7 +389,14 @@ export default function LeadDetailPage() {
     return callDate < today;
   };
 
+  // Check if lead is enrolled (non-editable)
+  const isEnrolled = lead?.status === 'Enrolled';
+
   const canEdit = (field: string): boolean => {
+    // Enrolled leads are not editable
+    if (isEnrolled) {
+      return false;
+    }
     // Agents cannot edit assigned_to field
     if (!isAdmin && (field === 'assigned_to' || field === 'assigned_to_name')) {
       return false;
@@ -322,6 +435,13 @@ export default function LeadDetailPage() {
             Lead Details
           </Typography>
         </Box>
+
+        {/* Enrolled Lead Alert */}
+        {isEnrolled && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            This lead has been enrolled and is now read-only. You can view the associated enrollment from the Enrollments page.
+          </Alert>
+        )}
 
         {/* Lead Header Card */}
         <Paper sx={{ p: 3, mb: 3 }}>
@@ -675,17 +795,11 @@ export default function LeadDetailPage() {
                     select
                     label="Service Partner"
                     size="small"
-                    value={formData.service_partner ? (typeof formData.service_partner === 'string' ? formData.service_partner.split(', ').filter(Boolean) : formData.service_partner) : []}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      handleInputChange('service_partner', Array.isArray(value) ? value.join(', ') : value);
-                    }}
+                    value={formData.service_partner || ''}
+                    onChange={(e) => handleInputChange('service_partner', e.target.value)}
                     disabled={!canEdit('service_partner')}
-                    SelectProps={{
-                      multiple: true,
-                      renderValue: (selected) => (Array.isArray(selected) ? selected.join(', ') : selected),
-                    }}
                   >
+                    <MenuItem value="">Select Partner</MenuItem>
                     {SERVICE_PARTNER_OPTIONS.map((partner) => (
                       <MenuItem key={partner} value={partner}>
                         {partner}
@@ -694,13 +808,23 @@ export default function LeadDetailPage() {
                   </TextField>
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    label="Partner Center"
-                    size="small"
+                  <Autocomplete
+                    freeSolo
+                    options={formData.service_partner ? PARTNER_CENTER_OPTIONS[formData.service_partner] || [] : []}
                     value={formData.provider_location || ''}
-                    onChange={(e) => handleInputChange('provider_location', e.target.value)}
+                    onChange={(_, newValue) => handleInputChange('provider_location', newValue || '')}
+                    onInputChange={(_, newInputValue) => handleInputChange('provider_location', newInputValue)}
                     disabled={!canEdit('provider_location')}
+                    size="small"
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        fullWidth
+                        label="Partner Center"
+                        size="small"
+                        placeholder={formData.service_partner && PARTNER_CENTER_OPTIONS[formData.service_partner]?.length > 0 ? "Select or type..." : "Enter Partner Center"}
+                      />
+                    )}
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
@@ -1099,18 +1223,30 @@ export default function LeadDetailPage() {
         {/* Action Buttons */}
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
           <Button variant="outlined" onClick={() => navigate('/tulip/leads')}>
-            Cancel
+            {isEnrolled ? 'Back to Leads' : 'Cancel'}
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </Button>
+          {!isEnrolled && (
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          )}
         </Box>
       </Box>
+
+      {/* Enrollment Confirmation Modal */}
+      <EnrollmentConfirmModal
+        open={showEnrollmentModal}
+        lead={lead}
+        currentFormData={formData}
+        onClose={() => setShowEnrollmentModal(false)}
+        onConfirm={handleEnrollmentConfirm}
+        saving={saving}
+      />
     </LocalizationProvider>
   );
 }

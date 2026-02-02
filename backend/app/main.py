@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import connect_to_database, close_database_connection
 from app.services.auth_service import create_default_admin, create_default_super_admin
-from app.routers import auth, leads, users, dashboard, knowledge_base, custom_fields, enrollments
+from app.routers import auth, leads, users, dashboard, knowledge_base, custom_fields, enrollments, dropdown_configs
 
 # Configure logging (console only for cloud compatibility)
 logging.basicConfig(
@@ -125,6 +125,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(knowledge_base.router, prefix="/api/knowledge-base", tags=["Knowledge Base"])
 app.include_router(custom_fields.router, prefix="/api/custom-fields", tags=["Custom Fields"])
 app.include_router(enrollments.router, prefix="/api/enrollments", tags=["Enrollments"])
+app.include_router(dropdown_configs.router, prefix="/api/dropdown-configs", tags=["Dropdown Configs"])
 
 
 @app.get("/")

@@ -49,7 +49,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { title: 'Home', path: '/', icon: <HomeIcon />, isAbsolute: true },
-  { title: 'Dashboard', path: '/tulip/dashboard', icon: <DashboardIcon /> },
+  { title: 'Dashboard', path: '/tulip/dashboard', icon: <DashboardIcon />, adminOnly: true },
   { title: 'Leads', path: '/tulip/leads', icon: <LeadsIcon /> },
   { title: 'Enrollments', path: '/tulip/enrollments', icon: <EnrollmentIcon /> },
   { title: 'Bulk Upload', path: '/tulip/bulk-upload', icon: <UploadIcon />, adminOnly: true },

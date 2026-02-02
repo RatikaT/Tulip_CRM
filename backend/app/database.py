@@ -33,6 +33,8 @@ async def connect_to_database():
         from app.models.document_chunk import DocumentChunk
         from app.models.chat_session import ChatSession
         from app.models.enrollment import Enrollment
+        from app.models.enrollment_audit_log import EnrollmentAuditLog
+        from app.models.dropdown_config import DropdownConfig
 
         # Initialize Beanie with document models
         await init_beanie(
@@ -46,7 +48,9 @@ async def connect_to_database():
                 KnowledgeDocument,
                 DocumentChunk,
                 ChatSession,
-                Enrollment
+                Enrollment,
+                EnrollmentAuditLog,
+                DropdownConfig
             ]
         )
 
@@ -119,6 +123,15 @@ async def create_indexes():
 
     # Additional Audit Log indexes
     await db.audit_logs.create_index("action")  # For action filtering
+
+    # Enrollment Audit Log indexes
+    await db.enrollment_audit_logs.create_index([("enrollment_id", 1), ("timestamp", -1)])
+    await db.enrollment_audit_logs.create_index("user_id")
+    await db.enrollment_audit_logs.create_index("action")
+
+    # Dropdown Config indexes
+    await db.dropdown_configs.create_index("field_name", unique=True)
+    await db.dropdown_configs.create_index("category")
 
     logger.info("Database indexes created successfully")
 

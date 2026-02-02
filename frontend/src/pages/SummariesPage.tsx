@@ -19,6 +19,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { toast } from 'react-toastify';
 import { format, subDays } from 'date-fns';
 import api from '../services/api';
+import { formatFullDateTimeIST } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
 import AgentDailySummary from '../components/summaries/AgentDailySummary';
 
@@ -390,7 +391,7 @@ Generate an overall summary including:
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography variant="caption" color="text.secondary">
-                      {format(new Date(s.created_at), 'dd MMM yyyy, hh:mm a')}
+                      {formatFullDateTimeIST(s.created_at)}
                     </Typography>
                     {isAdmin && (
                       <Tooltip title="Delete">

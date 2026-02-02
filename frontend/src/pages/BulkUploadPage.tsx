@@ -118,27 +118,36 @@ export default function BulkUploadPage() {
       'name',
       'phone_number',
       'email',
+      'uhid',
       'lead_source',
       'status',
       'trimester',
       'looking_for',
+      'family_member_relation',
       'employee_id',
-      'uhid',
       'city',
       'pin_code',
       'address',
       'user_facility',
       'package_requested',
       'service_enrolled',
-      'package_name_enrolled',
       'service_partner',
       'provider_location',
-      'hclhc_spoc',
       'reason_for_no_sale',
       'doctor_name',
+      'doctor_speciality',
       'consult_date',
       'lead_creation_date',
       'follow_up_date',
+      'alternate_mobile_number',
+      'visit_id',
+      'age',
+      'gender',
+      'icd_code',
+      'diagnosis',
+      'investigation_item_name',
+      'investigation_service_type',
+      'cug_name',
     ];
 
     // Sample data rows with realistic examples
@@ -147,58 +156,77 @@ export default function BulkUploadPage() {
         'Priya Sharma',
         '9876543210',
         'priya@example.com',
+        'UH12345',
         'Website',
         'Enquiry Lead',
         'Trimester 1',
         'Self',
+        '',
         'EMP001',
-        'UH12345',
         'Delhi',
         '110001',
         '123 Main Street',
         'HCL Noida',
         'Maternity Premium',
         'Antenatal',
-        'Premium Package',
         'Motherhood',
         'Noida Sector 18',
-        'Dr. Smith',
         '',
         'Dr. Kapoor',
+        'Gynaecology',
         '2025-12-25',
         '2025-12-28',
         '2025-12-30T10:00:00',
+        '',
+        'V001',
+        '28',
+        'Female',
+        '',
+        '',
+        '',
+        '',
+        '',
       ],
       [
         'Anjali Gupta',
         '8765432109',
         'anjali@example.com',
+        'UH12346',
         'Call',
         'Follow up-In Process',
         'Trimester 2',
         'Family Member',
+        'Wife',
         'EMP002',
-        'UH12346',
         'Mumbai',
         '400001',
         '456 Park Avenue',
         'HCL Mumbai',
         'Maternity Basic',
         'PreConception',
-        'Basic Package',
         'Rainbow',
         'Mumbai Central',
-        'Dr. Sharma',
         '',
         'Dr. Mehta',
+        'Obstetrics',
         '2025-12-26',
         '2025-12-27',
         '2025-12-29T14:30:00',
+        '9988776655',
+        'V002',
+        '32',
+        'Female',
+        'Z34.0',
+        'Normal pregnancy',
+        '',
+        '',
+        'CUG01',
       ],
       [
-        'Neha Verma',
-        '7654321098',
         '',
+        '',
+        'neha@example.com',
+        'UH12347',
         'In Clinic-Walk In',
         'Not Interested',
         'Not Conceived',
@@ -213,11 +241,19 @@ export default function BulkUploadPage() {
         '',
         '',
         '',
-        '',
-        '',
         'Package Cost',
         'Dr. Reddy',
+        'General Medicine',
         '2025-12-25',
+        '',
+        '',
+        '',
+        '',
+        '25',
+        'Female',
+        '',
+        '',
+        '',
         '',
         '',
       ],
@@ -236,7 +272,7 @@ export default function BulkUploadPage() {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'leads_bulk_upload_sample.csv');
+    link.setAttribute('download', 'leads_sample_template.csv');
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -390,45 +426,60 @@ export default function BulkUploadPage() {
           Your CSV file should have the following columns (first row must be headers):
         </Typography>
 
-        <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600, color: 'error.main' }}>
-          Required Fields:
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <Typography variant="body2">
+            <strong>Required:</strong> At least one of <strong>UHID</strong>, <strong>Contact No. (phone_number)</strong>, or <strong>Email</strong> must be provided for each row.
+          </Typography>
+        </Alert>
+
+        <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600, color: 'primary.main' }}>
+          Identifier Fields (at least one required):
         </Typography>
         <Box component="ul" sx={{ pl: 2, mb: 2 }}>
-          <li><Typography variant="body2"><strong>name</strong> - Lead's full name</Typography></li>
-          <li><Typography variant="body2"><strong>phone_number</strong> - 10 digit mobile number (starting with 6-9)</Typography></li>
+          <li><Typography variant="body2"><strong>uhid</strong> - UHID</Typography></li>
+          <li><Typography variant="body2"><strong>phone_number</strong> - Contact No. (10 digit mobile number starting with 6-9)</Typography></li>
+          <li><Typography variant="body2"><strong>email</strong> - Email address</Typography></li>
         </Box>
 
         <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
-          Optional Fields:
+          Other Fields (all optional):
         </Typography>
         <Box component="ul" sx={{ pl: 2 }}>
-          <li><Typography variant="body2"><strong>email</strong> - Email address</Typography></li>
-          <li><Typography variant="body2"><strong>lead_source</strong> - In Clinic-Walk In, Mail, In Clinic-Gynae Consult, Bump Day, Website, Call, AMA, WhatsApp, In Clinic-Other Consults, Others</Typography></li>
+          <li><Typography variant="body2"><strong>name</strong> - Lead's full name (defaults to "Unknown" if not provided)</Typography></li>
+          <li><Typography variant="body2"><strong>lead_source</strong> - Prescription Dump, In Clinic-Gynae Consult, In Clinic-Other Consults, In Clinic-Walk In, AMA, BEWELL, Events, Call, Others, Bump Day, WhatsApp, Mail, Tele-Consultation, Website, Habit Banner</Typography></li>
           <li><Typography variant="body2"><strong>status</strong> - Not Interested, Enquiry Lead, Lead Closed-No Response, Enrolled, Follow up-In Process, Follow up-No Response, Duplicate</Typography></li>
           <li><Typography variant="body2"><strong>trimester</strong> - Trimester 1, Trimester 2, Trimester 3, Not Conceived</Typography></li>
           <li><Typography variant="body2"><strong>looking_for</strong> - Self, Family Member</Typography></li>
+          <li><Typography variant="body2"><strong>family_member_relation</strong> - Relation (e.g., Mother, Daughter, Sister, Wife)</Typography></li>
           <li><Typography variant="body2"><strong>employee_id</strong> - Employee ID</Typography></li>
-          <li><Typography variant="body2"><strong>uhid</strong> - UHID</Typography></li>
           <li><Typography variant="body2"><strong>city</strong> - City name</Typography></li>
           <li><Typography variant="body2"><strong>pin_code</strong> - PIN code</Typography></li>
           <li><Typography variant="body2"><strong>address</strong> - Full address</Typography></li>
-          <li><Typography variant="body2"><strong>user_facility</strong> - HCL facility name</Typography></li>
+          <li><Typography variant="body2"><strong>user_facility</strong> - Facility Name</Typography></li>
           <li><Typography variant="body2"><strong>package_requested</strong> - Package name requested</Typography></li>
-          <li><Typography variant="body2"><strong>service_enrolled</strong> - PreConception, Antenatal, MaternityWellness</Typography></li>
-          <li><Typography variant="body2"><strong>package_name_enrolled</strong> - Enrolled package name</Typography></li>
+          <li><Typography variant="body2"><strong>service_enrolled</strong> - Service Requested (PreConception, Antenatal, MaternityWellness)</Typography></li>
           <li><Typography variant="body2"><strong>service_partner</strong> - Service Partner (Motherhood, Rainbow, Fortis, Apollo Cradle, Cloud 9, HCL Healthcare, Mamily, Others)</Typography></li>
-          <li><Typography variant="body2"><strong>provider_location</strong> - Provider location</Typography></li>
-          <li><Typography variant="body2"><strong>hclhc_spoc</strong> - HCLHC SPOC name</Typography></li>
+          <li><Typography variant="body2"><strong>provider_location</strong> - Partner Center location</Typography></li>
           <li><Typography variant="body2"><strong>reason_for_no_sale</strong> - Already Taking Service outside, Location not suitable, Different Service Provider Required-Brand, Travelling to Native Place for delivery, Package Cost, Only Delivery Package required, Package inadequate, Miscarriage, Looking for other HCLH services, Others</Typography></li>
-          <li><Typography variant="body2"><strong>doctor_name</strong> - Doctor name</Typography></li>
+          <li><Typography variant="body2"><strong>doctor_name</strong> - Treating Doctor Name</Typography></li>
+          <li><Typography variant="body2"><strong>doctor_speciality</strong> - Doctor Speciality/Department</Typography></li>
           <li><Typography variant="body2"><strong>consult_date</strong> - Consultation date (YYYY-MM-DD)</Typography></li>
           <li><Typography variant="body2"><strong>lead_creation_date</strong> - Lead creation date (YYYY-MM-DD)</Typography></li>
           <li><Typography variant="body2"><strong>follow_up_date</strong> - Follow up date (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)</Typography></li>
+          <li><Typography variant="body2"><strong>alternate_mobile_number</strong> - Alternate contact number</Typography></li>
+          <li><Typography variant="body2"><strong>visit_id</strong> - Visit ID</Typography></li>
+          <li><Typography variant="body2"><strong>age</strong> - Age (number)</Typography></li>
+          <li><Typography variant="body2"><strong>gender</strong> - Gender (Male, Female, Other)</Typography></li>
+          <li><Typography variant="body2"><strong>icd_code</strong> - ICD Code</Typography></li>
+          <li><Typography variant="body2"><strong>diagnosis</strong> - Diagnosis</Typography></li>
+          <li><Typography variant="body2"><strong>investigation_item_name</strong> - Investigation Item Name</Typography></li>
+          <li><Typography variant="body2"><strong>investigation_service_type</strong> - Investigation Service Type</Typography></li>
+          <li><Typography variant="body2"><strong>cug_name</strong> - CUG Name</Typography></li>
         </Box>
 
         <Alert severity="info" sx={{ mt: 2 }}>
           <Typography variant="body2">
-            <strong>Note:</strong> Duplicate phone numbers will be skipped. Only CSV files are supported.
+            <strong>Note:</strong> Only CSV files are supported. If Contact No. is provided, it must be a valid 10-digit number starting with 6-9.
           </Typography>
         </Alert>
       </Paper>
