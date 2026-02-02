@@ -28,6 +28,7 @@ interface LeadStatsResponse {
   total: number;
   new_today: number;
   follow_up_today: number;
+  assigned_today: number;
 }
 
 export const leadService = {

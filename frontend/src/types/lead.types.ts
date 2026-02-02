@@ -138,10 +138,12 @@ export interface Lead {
   // Assignment
   assigned_to: string | null;
   assigned_to_name: string | null;
+  assigned_date: string | null;
 
   // Reassignment (editable by both admin and agent)
   reassign_to: string | null;
   reassign_to_name: string | null;
+  reassigned_date: string | null;
 
   // Comments
   comments: Comment[];
