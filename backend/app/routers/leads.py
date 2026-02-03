@@ -439,8 +439,14 @@ async def bulk_upload_leads(
                     except:
                         pass
 
-                # Parse assigned_to - look up user by name
-                assigned_to_str = row.get('assigned_to', '').strip()
+                # Parse assigned_to - look up user by name (handle various column name formats)
+                assigned_to_str = (
+                    row.get('assigned_to', '') or
+                    row.get('Assigned To', '') or
+                    row.get('Assigned_To', '') or
+                    row.get('assignedto', '') or
+                    row.get('AssignedTo', '')
+                ).strip()
                 assigned_to_id = current_user["user_id"]
                 assigned_to_name = current_user["full_name"]
                 if assigned_to_str:
@@ -449,6 +455,9 @@ async def bulk_upload_leads(
                     if assigned_user:
                         assigned_to_id = str(assigned_user.id)
                         assigned_to_name = assigned_user.full_name
+                        logger.info(f"Bulk upload: Assigned to {assigned_to_name} (ID: {assigned_to_id})")
+                    else:
+                        logger.warning(f"Bulk upload: User '{assigned_to_str}' not found, defaulting to current user")
 
                 # Generate lead ID
                 lead_id = await generate_lead_id(db)
