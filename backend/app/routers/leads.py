@@ -206,7 +206,8 @@ async def get_bulk_upload_template(
         "lead_source", "status", "trimester", "looking_for",
         "city", "address", "pin_code", "service_partner", "provider_location",
         "service_requested", "package_name_enrolled", "hclhc_spoc",
-        "doctor_name", "doctor_speciality", "follow_up_date", "alternate_mobile_number"
+        "doctor_name", "doctor_speciality", "follow_up_date", "alternate_mobile_number",
+        "assigned_to"
     ]
 
     # Create CSV content
@@ -219,7 +220,8 @@ async def get_bulk_upload_template(
         "Website", "Enquiry Lead", "Trimester 1", "Self",
         "Delhi", "123 Main St", "110001", "Apollo Cradle", "Kondapur",
         "Tulip Antenatal", "Basic Package", "Agent Name",
-        "Dr. Smith", "Gynecology", "2026-02-15", "9876543211"
+        "Dr. Smith", "Gynecology", "2026-02-15", "9876543211",
+        "Richa"
     ])
 
     output.seek(0)
@@ -437,6 +439,17 @@ async def bulk_upload_leads(
                     except:
                         pass
 
+                # Parse assigned_to - look up user by name
+                assigned_to_str = row.get('assigned_to', '').strip()
+                assigned_to_id = current_user["user_id"]
+                assigned_to_name = current_user["full_name"]
+                if assigned_to_str:
+                    # Try to find user by full_name (case-insensitive)
+                    assigned_user = await User.find_one({"full_name": {"$regex": f"^{re.escape(assigned_to_str)}$", "$options": "i"}})
+                    if assigned_user:
+                        assigned_to_id = str(assigned_user.id)
+                        assigned_to_name = assigned_user.full_name
+
                 # Generate lead ID
                 lead_id = await generate_lead_id(db)
 
@@ -478,8 +491,8 @@ async def bulk_upload_leads(
                     investigation_service_type=row.get('investigation_service_type', '').strip() or None,
                     cug_name=row.get('cug_name', '').strip() or None,
                     created_by=current_user["user_id"],
-                    assigned_to=current_user["user_id"],
-                    assigned_to_name=current_user["full_name"],
+                    assigned_to=assigned_to_id,
+                    assigned_to_name=assigned_to_name,
                     number_of_calls=1,
                     calls=[],
                     comments=[],
