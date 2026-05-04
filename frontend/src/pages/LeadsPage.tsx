@@ -24,6 +24,11 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -31,6 +36,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -40,6 +46,8 @@ import PersonIcon from '@mui/icons-material/Person';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
+import SearchIcon from '@mui/icons-material/Search';
+import InputAdornment from '@mui/material/InputAdornment';
 import { format, isToday, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
@@ -135,6 +143,10 @@ export default function LeadsPage() {
     pageSize: 25,
   });
 
+  // Search
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Filters - multi-select arrays
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<string[]>([]);
@@ -147,6 +159,12 @@ export default function LeadsPage() {
   const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(null);
   const [colorFilter, setColorFilter] = useState<string>(''); // 'filled' or 'not_filled' or ''
   const [showFilters, setShowFilters] = useState(true);
+
+  // Debounce search input → searchTerm (350ms)
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   const [allUhids, setAllUhids] = useState<string[]>([]);
   const [allPackages, setAllPackages] = useState<string[]>([]);
   const [agents, setAgents] = useState<UserOption[]>([]);
@@ -159,6 +177,11 @@ export default function LeadsPage() {
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetLead, setDeleteTargetLead] = useState<Lead | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -290,6 +313,7 @@ export default function LeadsPage() {
       const response = await leadService.getLeads({
         page: paginationModel.page + 1,
         per_page: paginationModel.pageSize,
+        search: searchTerm || undefined,
         status: statusFilter.length > 0 ? statusFilter : undefined,
         lead_source: sourceFilter.length > 0 ? sourceFilter : undefined,
         uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
@@ -321,7 +345,12 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+  }, [paginationModel, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+
+  // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
+  useEffect(() => {
+    setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
+  }, [searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
 
   useEffect(() => {
     fetchLeads();
@@ -337,6 +366,35 @@ export default function LeadsPage() {
     fetchLeads();
     fetchStats();
     toast.success('Lead created successfully');
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, lead: Lead) => {
+    e.stopPropagation();
+    setDeleteTargetLead(lead);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetLead) return;
+    setDeleting(true);
+    try {
+      await leadService.deleteLead(deleteTargetLead.lead_id);
+      toast.success('Lead deleted successfully');
+      setDeleteDialogOpen(false);
+      setDeleteTargetLead(null);
+      fetchLeads();
+      fetchStats();
+    } catch (error) {
+      console.error('Failed to delete lead:', error);
+      toast.error('Failed to delete lead');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setDeleteTargetLead(null);
   };
 
   const handleExport = async () => {
@@ -511,21 +569,34 @@ export default function LeadsPage() {
     {
       field: 'actions',
       headerName: 'Action',
-      width: 60,
+      width: isAdmin ? 100 : 60,
       sortable: false,
       renderCell: (params: GridRenderCellParams) => (
-        <Tooltip title="View Details">
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleViewLead(params.row as Lead);
-            }}
-            color="primary"
-          >
-            <VisibilityIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="View Details">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewLead(params.row as Lead);
+              }}
+              color="primary"
+            >
+              <VisibilityIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {isAdmin && (
+            <Tooltip title="Delete Lead">
+              <IconButton
+                size="small"
+                onClick={(e) => handleDeleteClick(e, params.row as Lead)}
+                color="error"
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
       ),
     },
   ];
@@ -963,6 +1034,35 @@ export default function LeadsPage() {
         </Grid>
       )}
 
+      {/* Search Bar */}
+      <Box sx={{ mb: 1.5 }}>
+        <TextField
+          size="small"
+          fullWidth
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search leads by name, UHID, package, phone, email, employee ID, lead ID, city, doctor..."
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              </InputAdornment>
+            ),
+            endAdornment: searchInput ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearchInput('')}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+          }}
+          sx={{
+            bgcolor: 'white',
+            '& .MuiOutlinedInput-root': { fontSize: '0.85rem' },
+          }}
+        />
+      </Box>
+
       {/* Filters Section */}
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Paper
@@ -1096,20 +1196,21 @@ export default function LeadsPage() {
                   disableCloseOnSelect
                 />
 
-                {/* UHID - Multi-select */}
+                {/* UHID - Multi-select (freeSolo: type any UHID) */}
                 <Autocomplete
                   multiple
+                  freeSolo
                   size="small"
                   options={allUhids}
                   value={uhidFilter}
-                  onChange={(_, newValue) => setUhidFilter(newValue)}
+                  onChange={(_, newValue) => setUhidFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
                   renderInput={(params) => (
                     <TextField
                       {...params}
                       label="UHID"
-                      placeholder=""
+                      placeholder="Type & Enter"
                       sx={{
-                        width: 120,
+                        width: 140,
                         '& .MuiInputBase-root': { fontSize: '0.75rem' },
                         '& .MuiInputLabel-root': { fontSize: '0.75rem' },
                         '& .MuiOutlinedInput-root': { bgcolor: 'white' },
@@ -1120,20 +1221,21 @@ export default function LeadsPage() {
                   disableCloseOnSelect
                 />
 
-                {/* Package Requested - Multi-select */}
+                {/* Package Requested - Multi-select (freeSolo: type any package) */}
                 <Autocomplete
                   multiple
+                  freeSolo
                   size="small"
                   options={allPackages}
                   value={packageRequestedFilter}
-                  onChange={(_, newValue) => setPackageRequestedFilter(newValue)}
+                  onChange={(_, newValue) => setPackageRequestedFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
                   renderInput={(params) => (
                     <TextField
                       {...params}
                       label="Package Requested"
-                      placeholder=""
+                      placeholder="Type & Enter"
                       sx={{
-                        width: 150,
+                        width: 160,
                         '& .MuiInputBase-root': { fontSize: '0.75rem' },
                         '& .MuiInputLabel-root': { fontSize: '0.75rem' },
                         '& .MuiOutlinedInput-root': { bgcolor: 'white' },
@@ -1553,7 +1655,7 @@ export default function LeadsPage() {
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Service</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Assigned To</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Created</TableCell>
-                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', width: 60 }}>Action</TableCell>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', width: isAdmin ? 100 : 60 }}>Action</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1595,18 +1697,31 @@ export default function LeadsPage() {
                               {formatShortDateIST(lead.created_at)}
                             </TableCell>
                             <TableCell>
-                              <Tooltip title="View Details">
-                                <IconButton
-                                  size="small"
-                                  color="primary"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleViewLead(lead);
-                                  }}
-                                >
-                                  <VisibilityIcon sx={{ fontSize: 18 }} />
-                                </IconButton>
-                              </Tooltip>
+                              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                <Tooltip title="View Details">
+                                  <IconButton
+                                    size="small"
+                                    color="primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewLead(lead);
+                                    }}
+                                  >
+                                    <VisibilityIcon sx={{ fontSize: 18 }} />
+                                  </IconButton>
+                                </Tooltip>
+                                {isAdmin && (
+                                  <Tooltip title="Delete Lead">
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={(e) => handleDeleteClick(e, lead)}
+                                    >
+                                      <DeleteIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                              </Box>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1626,6 +1741,28 @@ export default function LeadsPage() {
         onClose={() => setCreateModalOpen(false)}
         onSuccess={handleCreateSuccess}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+      >
+        <DialogTitle>Delete Lead</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete lead <strong>{deleteTargetLead?.lead_id}</strong>
+            {deleteTargetLead?.name ? ` (${deleteTargetLead.name})` : ''}? This action will remove it from the list.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} disabled={deleting}>
+            No
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Yes, Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

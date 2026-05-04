@@ -570,10 +570,16 @@ async def get_leads(
         query["status"] = {"$in": status}
     if lead_source and len(lead_source) > 0:
         query["lead_source"] = {"$in": lead_source}
+    # UHID/Package: whitespace-tolerant, case-insensitive match (some rows have
+    # leading/trailing whitespace in stored values, so $in exact-match misses them)
     if uhid and len(uhid) > 0:
-        query["uhid"] = {"$in": uhid}
+        uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
+        if uhid_alternation:
+            query["uhid"] = {"$regex": f"^\\s*({uhid_alternation})\\s*$", "$options": "i"}
     if package_requested and len(package_requested) > 0:
-        query["package_requested"] = {"$in": package_requested}
+        pkg_alternation = "|".join(re.escape(p.strip()) for p in package_requested if p and p.strip())
+        if pkg_alternation:
+            query["package_requested"] = {"$regex": f"^\\s*({pkg_alternation})\\s*$", "$options": "i"}
 
     # Single value filters
     if city:
@@ -629,15 +635,25 @@ async def get_leads(
         except ValueError:
             pass
 
-    # Search by name, phone, or lead_id (escape regex special chars for security)
-    if search:
-        escaped_search = re.escape(search)
-        # For agents, we need to combine search with their assignment filter
+    # Search across all common identifying fields (escape regex special chars for security)
+    if search and search.strip():
+        escaped_search = re.escape(search.strip())
         search_conditions = [
             {"name": {"$regex": escaped_search, "$options": "i"}},
             {"phone_number": {"$regex": escaped_search}},
+            {"alternate_mobile_number": {"$regex": escaped_search}},
             {"lead_id": {"$regex": escaped_search, "$options": "i"}},
-            {"email": {"$regex": escaped_search, "$options": "i"}}
+            {"email": {"$regex": escaped_search, "$options": "i"}},
+            {"uhid": {"$regex": escaped_search, "$options": "i"}},
+            {"employee_id": {"$regex": escaped_search, "$options": "i"}},
+            {"city": {"$regex": escaped_search, "$options": "i"}},
+            {"package_requested": {"$regex": escaped_search, "$options": "i"}},
+            {"package_name_enrolled": {"$regex": escaped_search, "$options": "i"}},
+            {"doctor_name": {"$regex": escaped_search, "$options": "i"}},
+            {"hclhc_spoc": {"$regex": escaped_search, "$options": "i"}},
+            {"provider_location": {"$regex": escaped_search, "$options": "i"}},
+            {"assigned_to_name": {"$regex": escaped_search, "$options": "i"}},
+            {"reassign_to_name": {"$regex": escaped_search, "$options": "i"}},
         ]
         if current_user["role"] == "agent":
             # Combine agent's assignment filter with search
@@ -653,9 +669,13 @@ async def get_leads(
             if lead_source and len(lead_source) > 0:
                 base_filters.append({"lead_source": {"$in": lead_source}})
             if uhid and len(uhid) > 0:
-                base_filters.append({"uhid": {"$in": uhid}})
+                uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
+                if uhid_alternation:
+                    base_filters.append({"uhid": {"$regex": f"^\\s*({uhid_alternation})\\s*$", "$options": "i"}})
             if package_requested and len(package_requested) > 0:
-                base_filters.append({"package_requested": {"$in": package_requested}})
+                pkg_alternation = "|".join(re.escape(p.strip()) for p in package_requested if p and p.strip())
+                if pkg_alternation:
+                    base_filters.append({"package_requested": {"$regex": f"^\\s*({pkg_alternation})\\s*$", "$options": "i"}})
             if city:
                 base_filters.append({"city": {"$regex": re.escape(city), "$options": "i"}})
             # Handle assigned_to and reassign_to with OR logic

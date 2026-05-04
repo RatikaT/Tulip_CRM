@@ -17,6 +17,7 @@ export interface EnrollmentQueryParams {
   connect_status?: string[];
   action_taken?: string[];
   service_partner?: string[];
+  uhid?: string[];
   hclhc_spoc?: string;
   created_date_from?: string;
   created_date_to?: string;

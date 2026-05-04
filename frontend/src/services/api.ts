@@ -10,6 +10,8 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // FastAPI expects repeated params (?k=a&k=b) for List[str], not bracketed (?k[]=a)
+  paramsSerializer: { indexes: null },
 });
 
 // Request interceptor to add auth token

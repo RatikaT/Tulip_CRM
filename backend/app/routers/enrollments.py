@@ -652,6 +652,7 @@ async def get_enrollments(
     connect_status: Optional[List[str]] = Query(None),
     action_taken: Optional[List[str]] = Query(None),
     service_partner: Optional[List[str]] = Query(None),
+    uhid: Optional[List[str]] = Query(None),
     hclhc_spoc: Optional[str] = None,
     created_date_from: Optional[str] = None,
     created_date_to: Optional[str] = None,
@@ -675,6 +676,11 @@ async def get_enrollments(
             query["action_taken"] = {"$in": action_taken}
         if service_partner and len(service_partner) > 0:
             query["service_partner"] = {"$in": service_partner}
+        # UHID: whitespace-tolerant case-insensitive match (some rows have padding)
+        if uhid and len(uhid) > 0:
+            uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
+            if uhid_alternation:
+                query["uhid"] = {"$regex": f"^\\s*({uhid_alternation})\\s*$", "$options": "i"}
         if hclhc_spoc:
             query["hclhc_spoc"] = {"$regex": re.escape(hclhc_spoc), "$options": "i"}
 
@@ -705,16 +711,25 @@ async def get_enrollments(
             except ValueError:
                 pass
 
-        # Search (escape regex special chars for security)
-        if search:
-            escaped_search = re.escape(search)
+        # Search across all common identifying fields (escape regex special chars for security)
+        if search and search.strip():
+            escaped_search = re.escape(search.strip())
             search_conditions = [
                 {"subscriber_name": {"$regex": escaped_search, "$options": "i"}},
                 {"employee_id": {"$regex": escaped_search, "$options": "i"}},
                 {"name": {"$regex": escaped_search, "$options": "i"}},
                 {"phone_number": {"$regex": escaped_search}},
                 {"enrollment_id": {"$regex": escaped_search, "$options": "i"}},
-                {"email": {"$regex": escaped_search, "$options": "i"}}
+                {"linked_lead_id": {"$regex": escaped_search, "$options": "i"}},
+                {"email": {"$regex": escaped_search, "$options": "i"}},
+                {"uhid": {"$regex": escaped_search, "$options": "i"}},
+                {"package_name_enrolled": {"$regex": escaped_search, "$options": "i"}},
+                {"doctor_name": {"$regex": escaped_search, "$options": "i"}},
+                {"hclhc_spoc": {"$regex": escaped_search, "$options": "i"}},
+                {"partner_centre_selected": {"$regex": escaped_search, "$options": "i"}},
+                {"assigned_to_name": {"$regex": escaped_search, "$options": "i"}},
+                {"reassign_to_name": {"$regex": escaped_search, "$options": "i"}},
+                {"created_by_name": {"$regex": escaped_search, "$options": "i"}},
             ]
             # Combine with existing $or if agent filter is applied
             if "$or" in query:

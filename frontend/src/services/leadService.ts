@@ -12,6 +12,7 @@ import {
 interface LeadFilters {
   page?: number;
   per_page?: number;
+  search?: string;
   status?: string[];
   lead_source?: string[];
   uhid?: string[];
@@ -36,6 +37,7 @@ export const leadService = {
     const params = new URLSearchParams();
     if (filters.page) params.append('page', filters.page.toString());
     if (filters.per_page) params.append('per_page', filters.per_page.toString());
+    if (filters.search && filters.search.trim()) params.append('search', filters.search.trim());
     // Multi-select filters - append each value separately
     if (filters.status && filters.status.length > 0) {
       filters.status.forEach(s => params.append('status', s));

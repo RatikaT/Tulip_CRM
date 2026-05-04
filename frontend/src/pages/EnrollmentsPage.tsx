@@ -24,6 +24,11 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -31,6 +36,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadIcon from '@mui/icons-material/Upload';
@@ -41,6 +47,8 @@ import PersonIcon from '@mui/icons-material/Person';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
+import SearchIcon from '@mui/icons-material/Search';
+import InputAdornment from '@mui/material/InputAdornment';
 import { format, isToday, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
@@ -144,12 +152,22 @@ export default function EnrollmentsPage() {
   // Stats
   const [stats, setStats] = useState<EnrollmentStatsResponse | null>(null);
 
+  // Search
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Filters - multi-select arrays
   const [connectStatusFilter, setConnectStatusFilter] = useState<string[]>([]);
   const [actionTakenFilter, setActionTakenFilter] = useState<string[]>([]);
   const [servicePartnerFilter, setServicePartnerFilter] = useState<string[]>([]);
   const [uhidFilter, setUhidFilter] = useState<string[]>([]);
   const [hclhcSpocFilter, setHclhcSpocFilter] = useState('');
+
+  // Debounce search input → searchTerm (350ms)
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(null);
   const [createdDateTo, setCreatedDateTo] = useState<Date | null>(null);
   const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(null);
@@ -169,6 +187,11 @@ export default function EnrollmentsPage() {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
+
+  // Delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetEnrollment, setDeleteTargetEnrollment] = useState<Enrollment | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -284,9 +307,11 @@ export default function EnrollmentsPage() {
       const response = await enrollmentService.getEnrollments({
         page: paginationModel.page + 1,
         per_page: paginationModel.pageSize,
+        search: searchTerm || undefined,
         connect_status: connectStatusFilter.length > 0 ? connectStatusFilter : undefined,
         action_taken: actionTakenFilter.length > 0 ? actionTakenFilter : undefined,
         service_partner: servicePartnerFilter.length > 0 ? servicePartnerFilter : undefined,
+        uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
         hclhc_spoc: hclhcSpocFilter || undefined,
         created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
         created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
@@ -307,7 +332,12 @@ export default function EnrollmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, connectStatusFilter, actionTakenFilter, servicePartnerFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+
+  // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
+  useEffect(() => {
+    setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
+  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
 
   useEffect(() => {
     fetchEnrollments();
@@ -353,6 +383,35 @@ export default function EnrollmentsPage() {
     setBulkUploadModalOpen(false);
     fetchEnrollments();
     fetchStats();
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, enrollment: Enrollment) => {
+    e.stopPropagation();
+    setDeleteTargetEnrollment(enrollment);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTargetEnrollment) return;
+    setDeleting(true);
+    try {
+      await enrollmentService.deleteEnrollment(deleteTargetEnrollment.enrollment_id);
+      toast.success('Enrollment deleted successfully');
+      setDeleteDialogOpen(false);
+      setDeleteTargetEnrollment(null);
+      fetchEnrollments();
+      fetchStats();
+    } catch (error) {
+      console.error('Failed to delete enrollment:', error);
+      toast.error('Failed to delete enrollment');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setDeleteTargetEnrollment(null);
   };
 
   const handleExport = async () => {
@@ -506,21 +565,34 @@ export default function EnrollmentsPage() {
     {
       field: 'actions',
       headerName: 'Action',
-      width: 60,
+      width: isAdmin ? 100 : 60,
       sortable: false,
       renderCell: (params: GridRenderCellParams) => (
-        <Tooltip title="View Details">
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleViewEnrollment(params.row as Enrollment);
-            }}
-            color="primary"
-          >
-            <VisibilityIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="View Details">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewEnrollment(params.row as Enrollment);
+              }}
+              color="primary"
+            >
+              <VisibilityIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          {isAdmin && (
+            <Tooltip title="Delete Enrollment">
+              <IconButton
+                size="small"
+                onClick={(e) => handleDeleteClick(e, params.row as Enrollment)}
+                color="error"
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
       ),
     },
   ];
@@ -980,6 +1052,35 @@ export default function EnrollmentsPage() {
         </Grid>
       )}
 
+      {/* Search Bar */}
+      <Box sx={{ mb: 1.5 }}>
+        <TextField
+          size="small"
+          fullWidth
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search enrollments by name, UHID, package, phone, email, employee ID, enrollment ID, doctor, SPOC..."
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              </InputAdornment>
+            ),
+            endAdornment: searchInput ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearchInput('')}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+          }}
+          sx={{
+            bgcolor: 'white',
+            '& .MuiOutlinedInput-root': { fontSize: '0.85rem' },
+          }}
+        />
+      </Box>
+
       {/* Filters Section */}
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Paper
@@ -1105,15 +1206,16 @@ export default function EnrollmentsPage() {
                   disableCloseOnSelect
                 />
 
-                {/* UHID - Multi-select */}
+                {/* UHID - Multi-select (freeSolo: type any UHID) */}
                 <Autocomplete
                   multiple
+                  freeSolo
                   size="small"
                   options={allUhids}
                   value={uhidFilter}
-                  onChange={(_, newValue) => setUhidFilter(newValue)}
+                  onChange={(_, newValue) => setUhidFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
                   renderInput={(params) => (
-                    <TextField {...params} label="UHID" placeholder="" sx={{ ...compactInputSx, width: 120 }} />
+                    <TextField {...params} label="UHID" placeholder="Type & Enter" sx={{ ...compactInputSx, width: 140 }} />
                   )}
                   renderTags={() => null}
                   disableCloseOnSelect
@@ -1462,7 +1564,7 @@ export default function EnrollmentsPage() {
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Action Taken</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Follow Up</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Created</TableCell>
-                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', width: 60 }}>Action</TableCell>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', width: isAdmin ? 100 : 60 }}>Action</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1516,18 +1618,31 @@ export default function EnrollmentsPage() {
                               {formatShortDateIST(enrollment.created_at)}
                             </TableCell>
                             <TableCell>
-                              <Tooltip title="View Details">
-                                <IconButton
-                                  size="small"
-                                  color="primary"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleViewEnrollment(enrollment);
-                                  }}
-                                >
-                                  <VisibilityIcon sx={{ fontSize: 18 }} />
-                                </IconButton>
-                              </Tooltip>
+                              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                <Tooltip title="View Details">
+                                  <IconButton
+                                    size="small"
+                                    color="primary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewEnrollment(enrollment);
+                                    }}
+                                  >
+                                    <VisibilityIcon sx={{ fontSize: 18 }} />
+                                  </IconButton>
+                                </Tooltip>
+                                {isAdmin && (
+                                  <Tooltip title="Delete Enrollment">
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={(e) => handleDeleteClick(e, enrollment)}
+                                    >
+                                      <DeleteIcon sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                              </Box>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1571,6 +1686,28 @@ export default function EnrollmentsPage() {
           onSuccess={handleBulkUploadSuccess}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+      >
+        <DialogTitle>Delete Enrollment</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete enrollment <strong>{deleteTargetEnrollment?.enrollment_id}</strong>
+            {deleteTargetEnrollment?.subscriber_name ? ` (${deleteTargetEnrollment.subscriber_name})` : ''}? This action will remove it from the list.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} disabled={deleting}>
+            No
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
+            {deleting ? 'Deleting...' : 'Yes, Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
