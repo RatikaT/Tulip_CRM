@@ -252,9 +252,21 @@ async def bulk_upload_leads(
     total_rows = 0
 
     try:
-        # Read file content
+        # Read file content. Excel-exported CSVs are commonly cp1252/latin-1,
+        # not utf-8 — try a few encodings before failing.
         contents = await file.read()
-        decoded = contents.decode('utf-8-sig')  # Handle BOM
+        decoded = None
+        for enc in ('utf-8-sig', 'utf-8', 'cp1252', 'latin-1'):
+            try:
+                decoded = contents.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if decoded is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not decode file. Please save it as CSV UTF-8 from Excel."
+            )
         reader = csv.DictReader(io.StringIO(decoded))
 
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (row 1 is header)

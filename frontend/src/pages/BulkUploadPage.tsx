@@ -362,7 +362,9 @@ export default function BulkUploadPage() {
         <Paper sx={{ p: 3 }}>
           <Alert
             severity={
-              result.errors && result.errors.length > 0
+              !result.success
+                ? 'error'
+                : result.errors && result.errors.length > 0
                 ? result.created && result.created > 0
                   ? 'warning'
                   : 'error'
