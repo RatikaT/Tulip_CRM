@@ -39,6 +39,40 @@ def _ist_today_utc_bounds():
     return start_utc, end_utc
 
 
+async def _daily_lead_counts(base_query: dict, today_start_utc: datetime, days: int):
+    """Daily lead-creation counts for the last `days` IST days ending today.
+
+    Both the bucketing ($dateToString with Asia/Kolkata) and the zero-fill
+    labels are in IST so the series aligns properly across the IST/UTC
+    boundary — otherwise leads created between 00:00 and 05:29 IST fall into
+    the next UTC day and disappear off the end of the chart.
+    """
+    window_start_utc = today_start_utc - timedelta(days=days - 1)
+    pipeline = [
+        {"$match": {**base_query, "created_at": {"$gte": window_start_utc}}},
+        {"$group": {
+            "_id": {"$dateToString": {
+                "format": "%Y-%m-%d",
+                "date": "$created_at",
+                "timezone": "Asia/Kolkata",
+            }},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    rows = await get_database().leads.aggregate(pipeline).to_list(1000)
+    by_date = {row["_id"]: row["count"] for row in rows}
+    # Labels are IST calendar dates; derive them by adding IST offset to UTC.
+    window_start_ist = window_start_utc + IST_OFFSET
+    return [
+        {
+            "date": (window_start_ist + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "count": by_date.get((window_start_ist + timedelta(days=i)).strftime("%Y-%m-%d"), 0),
+        }
+        for i in range(days)
+    ]
+
+
 class SummaryCreateRequest(BaseModel):
     summary_type: str
     content: str
@@ -120,25 +154,10 @@ async def get_dashboard_metrics(
     service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
-    # Daily leads trend (last 7 IST days, anchored on today's IST start)
-    seven_days_ago = today_start_utc - timedelta(days=6)
-    daily_pipeline = [
-        {"$match": {**base_query, "created_at": {"$gte": seven_days_ago}}},
-        {"$group": {
-            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
-            "count": {"$sum": 1}
-        }},
-        {"$sort": {"_id": 1}}
-    ]
-    daily_result = await get_database().leads.aggregate(daily_pipeline).to_list(100)
-    daily_trends = [{"date": item["_id"], "count": item["count"]} for item in daily_result]
-
-    # Fill missing days
-    date_counts = {item["date"]: item["count"] for item in daily_trends}
-    filled_trends = []
-    for i in range(7):
-        day_str = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
-        filled_trends.append({"date": day_str, "count": date_counts.get(day_str, 0)})
+    # Daily leads trend — 7-day series for the chart, 30-day series for the
+    # percentile band the frontend overlays.
+    filled_trends = await _daily_lead_counts(base_query, today_start_utc, 7)
+    daily_trends_30d = await _daily_lead_counts(base_query, today_start_utc, 30)
 
     # Enrollment metrics - use direct MongoDB queries for accurate datetime comparisons
     db = get_database()
@@ -201,6 +220,7 @@ async def get_dashboard_metrics(
         "leads_by_source": leads_by_source,
         "leads_by_service": leads_by_service,
         "daily_trends": filled_trends,
+        "daily_trends_30d": daily_trends_30d,
         "total_enrollments": total_enrollments,
         "new_enrollments_today": new_enrollments_today,
         "enrollments_by_partner": enrollments_by_partner,
@@ -281,25 +301,9 @@ async def get_agent_dashboard(
     service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
-    # Daily leads trend (last 7 IST days)
-    seven_days_ago = today_start_utc - timedelta(days=6)
-    daily_pipeline = [
-        {"$match": {**base_query, "created_at": {"$gte": seven_days_ago}}},
-        {"$group": {
-            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
-            "count": {"$sum": 1}
-        }},
-        {"$sort": {"_id": 1}}
-    ]
-    daily_result = await get_database().leads.aggregate(daily_pipeline).to_list(100)
-    daily_trends = [{"date": item["_id"], "count": item["count"]} for item in daily_result]
-
-    # Fill missing days
-    date_counts = {item["date"]: item["count"] for item in daily_trends}
-    filled_trends = []
-    for i in range(7):
-        day_str = (seven_days_ago + timedelta(days=i)).strftime("%Y-%m-%d")
-        filled_trends.append({"date": day_str, "count": date_counts.get(day_str, 0)})
+    # Daily leads trend — 7-day series for the chart, 30-day series for the band.
+    filled_trends = await _daily_lead_counts(base_query, today_start_utc, 7)
+    daily_trends_30d = await _daily_lead_counts(base_query, today_start_utc, 30)
 
     # ============ ENROLLMENT STATS FOR AGENT ============
     # Agent's enrollments are determined by hclhc_spoc field matching agent's full name
@@ -348,6 +352,7 @@ async def get_agent_dashboard(
         "leads_by_source": leads_by_source,
         "leads_by_service": leads_by_service,
         "daily_trends": filled_trends,
+        "daily_trends_30d": daily_trends_30d,
         # Enrollment stats for agent
         "total_enrollments": total_enrollments,
         "new_enrollments_today": new_enrollments_today,

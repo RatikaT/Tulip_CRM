@@ -32,8 +32,11 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   LabelList,
-  ReferenceLine,
   Label,
+  LineChart,
+  Line,
+  ReferenceArea,
+  ReferenceLine,
 } from 'recharts';
 import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
@@ -49,6 +52,7 @@ interface DashboardMetrics {
   leads_by_source: Record<string, number>;
   leads_by_service: Record<string, number>;
   daily_trends: Array<{ date: string; count: number }>;
+  daily_trends_30d?: Array<{ date: string; count: number }>;
   total_enrollments: number;
   enrollments_by_partner: Record<string, number>;
   enrollments_by_action: Record<string, number>;
@@ -256,10 +260,23 @@ Keep it concise - this is for a dashboard quick view.`;
       leads: item.count,
       isToday: idx === arr.length - 1,
     })) || [];
-  const trendAverage =
-    trendChartData.length > 0
-      ? trendChartData.reduce((sum, d) => sum + d.leads, 0) / trendChartData.length
-      : 0;
+
+  // Compute p25 / p50 / p75 over the last 30 IST days so today's value can be
+  // judged against a "normal" band. Linear interpolation on the sorted array.
+  const percentile = (sortedAsc: number[], p: number) => {
+    if (sortedAsc.length === 0) return 0;
+    if (sortedAsc.length === 1) return sortedAsc[0];
+    const idx = (sortedAsc.length - 1) * p;
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    return lo === hi ? sortedAsc[lo] : sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
+  };
+  const sorted30d = (metrics?.daily_trends_30d ?? []).map((d) => d.count).sort((a, b) => a - b);
+  const p25 = percentile(sorted30d, 0.25);
+  const p50 = percentile(sorted30d, 0.5);
+  const p75 = percentile(sorted30d, 0.75);
+  const todayCount = trendChartData[trendChartData.length - 1]?.leads ?? 0;
+  const todayAnomalous = sorted30d.length > 0 && (todayCount > p75 || todayCount < p25);
 
   const enrollmentsByPartnerData = topNWithOther(
     metrics?.enrollments_by_partner
@@ -492,35 +509,68 @@ Keep it concise - this is for a dashboard quick view.`;
           </Paper>
         </Grid>
 
-        {/* Daily Leads Trend - Bar Chart with today highlighted + avg line */}
+        {/* Daily Leads Trend — line over 7d with p25–p75 band from 30d */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
-              Daily Leads Trend (Last 7 Days)
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                Daily Leads Trend (Last 7 Days)
+              </Typography>
+              {sorted30d.length > 0 && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: todayAnomalous ? '#E84A8A' : 'text.secondary', fontWeight: 600 }}
+                >
+                  Today {todayCount} · normal band {p25.toFixed(0)}–{p75.toFixed(0)} (30d)
+                  {todayAnomalous ? ' · ANOMALY' : ''}
+                </Typography>
+              )}
+            </Box>
             {trendChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={trendChartData} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
+                <LineChart data={trendChartData} margin={{ top: 16, right: 24, left: 0, bottom: 4 }}>
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  {trendAverage > 0 && (
-                    <ReferenceLine y={trendAverage} stroke="#999" strokeDasharray="4 4">
-                      <Label
-                        value={`avg ${trendAverage.toFixed(1)}`}
-                        position="insideTopRight"
-                        fill="#666"
-                        fontSize={11}
-                      />
+                  <RechartsTooltip cursor={{ stroke: '#ccc' }} />
+                  {sorted30d.length > 0 && (
+                    <ReferenceArea
+                      y1={p25}
+                      y2={p75}
+                      fill="#1E4088"
+                      fillOpacity={0.08}
+                      stroke="none"
+                    />
+                  )}
+                  {sorted30d.length > 0 && (
+                    <ReferenceLine y={p50} stroke="#1E4088" strokeOpacity={0.4} strokeDasharray="4 4">
+                      <Label value={`median ${p50.toFixed(1)}`} position="insideTopRight" fill="#1E4088" fontSize={11} />
                     </ReferenceLine>
                   )}
-                  <Bar dataKey="leads" radius={[4, 4, 0, 0]}>
+                  <Line
+                    type="monotone"
+                    dataKey="leads"
+                    stroke="#1E4088"
+                    strokeWidth={2}
+                    dot={(props: any) => {
+                      const { cx, cy, payload, index } = props;
+                      const isLast = index === trendChartData.length - 1;
+                      const flagged = isLast && todayAnomalous;
+                      return (
+                        <circle
+                          key={`d-${index}-${payload.date}`}
+                          cx={cx}
+                          cy={cy}
+                          r={flagged ? 6 : 4}
+                          fill={flagged ? '#E84A8A' : '#1E4088'}
+                          stroke={flagged ? '#E84A8A' : '#fff'}
+                          strokeWidth={flagged ? 2 : 1}
+                        />
+                      );
+                    }}
+                  >
                     <LabelList dataKey="leads" position="top" style={{ fontSize: 11, fill: '#333' }} />
-                    {trendChartData.map((entry, index) => (
-                      <Cell key={`tcell-${index}`} fill={entry.isToday ? '#1E4088' : '#A8B5D1'} />
-                    ))}
-                  </Bar>
-                </BarChart>
+                  </Line>
+                </LineChart>
               </ResponsiveContainer>
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
