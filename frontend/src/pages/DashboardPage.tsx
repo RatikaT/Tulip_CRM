@@ -29,11 +29,11 @@ import {
   Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
+  LabelList,
+  ReferenceLine,
+  Label,
 } from 'recharts';
 import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
@@ -215,32 +215,66 @@ Keep it concise - this is for a dashboard quick view.`;
     }
   };
 
-  // Transform data for charts
-  const statusChartData = metrics?.leads_by_status
-    ? Object.entries(metrics.leads_by_status).map(([name, value]) => ({ name, value }))
-    : [];
+  // Roll up long-tail distributions: keep top N, sum the rest into "Other".
+  // Solves the dirty-category problem (e.g. "PreConception" vs "Pre-Conception")
+  // without touching the data.
+  const topNWithOther = (
+    data: Array<{ name: string; value: number }>,
+    n: number,
+  ): Array<{ name: string; value: number }> => {
+    const sorted = [...data].sort((a, b) => b.value - a.value);
+    if (sorted.length <= n) return sorted;
+    const top = sorted.slice(0, n);
+    const otherTotal = sorted.slice(n).reduce((sum, item) => sum + item.value, 0);
+    return otherTotal > 0 ? [...top, { name: 'Other', value: otherTotal }] : top;
+  };
 
-  const sourceChartData = metrics?.leads_by_source
-    ? Object.entries(metrics.leads_by_source).map(([name, value]) => ({ name, value }))
-    : [];
+  const statusChartData = topNWithOther(
+    metrics?.leads_by_status
+      ? Object.entries(metrics.leads_by_status).map(([name, value]) => ({ name, value }))
+      : [],
+    6,
+  );
 
-  const serviceChartData = metrics?.leads_by_service
-    ? Object.entries(metrics.leads_by_service).map(([name, value]) => ({ name, value }))
-    : [];
+  const sourceChartData = topNWithOther(
+    metrics?.leads_by_source
+      ? Object.entries(metrics.leads_by_source).map(([name, value]) => ({ name, value }))
+      : [],
+    6,
+  );
+
+  const serviceChartData = topNWithOther(
+    metrics?.leads_by_service
+      ? Object.entries(metrics.leads_by_service).map(([name, value]) => ({ name, value }))
+      : [],
+    5,
+  );
 
   const trendChartData =
-    metrics?.daily_trends?.map((item) => ({
+    metrics?.daily_trends?.map((item, idx, arr) => ({
       date: format(new Date(item.date), 'dd MMM'),
       leads: item.count,
+      isToday: idx === arr.length - 1,
     })) || [];
+  const trendAverage =
+    trendChartData.length > 0
+      ? trendChartData.reduce((sum, d) => sum + d.leads, 0) / trendChartData.length
+      : 0;
 
-  const enrollmentsByPartnerData = metrics?.enrollments_by_partner
-    ? Object.entries(metrics.enrollments_by_partner).map(([name, value]) => ({ name, value }))
-    : [];
+  const enrollmentsByPartnerData = topNWithOther(
+    metrics?.enrollments_by_partner
+      ? Object.entries(metrics.enrollments_by_partner).map(([name, value]) => ({ name, value }))
+      : [],
+    6,
+  );
 
-  const enrollmentsByActionData = metrics?.enrollments_by_action
-    ? Object.entries(metrics.enrollments_by_action).map(([name, value]) => ({ name, value }))
-    : [];
+  const enrollmentsByActionData = topNWithOther(
+    metrics?.enrollments_by_action
+      ? Object.entries(metrics.enrollments_by_action).map(([name, value]) => ({ name, value }))
+      : [],
+    5,
+  );
+  const totalEnrollmentsCharted = enrollmentsByActionData.reduce((sum, d) => sum + d.value, 0);
 
   if (loading) {
     return (
@@ -422,7 +456,7 @@ Keep it concise - this is for a dashboard quick view.`;
 
       {/* Charts Row 1 */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        {/* Status Bifurcation - Pie Chart */}
+        {/* Status Bifurcation - Sorted Horizontal Bar */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
@@ -430,23 +464,25 @@ Keep it concise - this is for a dashboard quick view.`;
             </Typography>
             {statusChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={statusChartData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                    labelLine={false}
-                  >
-                    {statusChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
+                <BarChart
+                  data={statusChartData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 32, left: 8, bottom: 4 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 12 }}
+                    width={140}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  <Bar dataKey="value" fill="#1E4088" radius={[0, 4, 4, 0]}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
@@ -456,7 +492,7 @@ Keep it concise - this is for a dashboard quick view.`;
           </Paper>
         </Grid>
 
-        {/* Daily Leads Trend - Line Chart */}
+        {/* Daily Leads Trend - Bar Chart with today highlighted + avg line */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
@@ -464,19 +500,27 @@ Keep it concise - this is for a dashboard quick view.`;
             </Typography>
             {trendChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={trendChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <RechartsTooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="leads"
-                    stroke="#1E4088"
-                    strokeWidth={2}
-                    dot={{ fill: '#1E4088' }}
-                  />
-                </LineChart>
+                <BarChart data={trendChartData} margin={{ top: 16, right: 16, left: 0, bottom: 4 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  {trendAverage > 0 && (
+                    <ReferenceLine y={trendAverage} stroke="#999" strokeDasharray="4 4">
+                      <Label
+                        value={`avg ${trendAverage.toFixed(1)}`}
+                        position="insideTopRight"
+                        fill="#666"
+                        fontSize={11}
+                      />
+                    </ReferenceLine>
+                  )}
+                  <Bar dataKey="leads" radius={[4, 4, 0, 0]}>
+                    <LabelList dataKey="leads" position="top" style={{ fontSize: 11, fill: '#333' }} />
+                    {trendChartData.map((entry, index) => (
+                      <Cell key={`tcell-${index}`} fill={entry.isToday ? '#1E4088' : '#A8B5D1'} />
+                    ))}
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
@@ -489,7 +533,7 @@ Keep it concise - this is for a dashboard quick view.`;
 
       {/* Charts Row 2 */}
       <Grid container spacing={2}>
-        {/* Service Distribution - Bar Chart */}
+        {/* Service Type - Top 5 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
@@ -497,12 +541,24 @@ Keep it concise - this is for a dashboard quick view.`;
             </Typography>
             {serviceChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={serviceChartData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fontSize: 12 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <RechartsTooltip />
-                  <Bar dataKey="value" fill="#7B4B94" />
+                <BarChart
+                  data={serviceChartData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 32, left: 8, bottom: 4 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 12 }}
+                    width={140}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  <Bar dataKey="value" fill="#7B4B94" radius={[0, 4, 4, 0]}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -513,7 +569,7 @@ Keep it concise - this is for a dashboard quick view.`;
           </Paper>
         </Grid>
 
-        {/* Source Distribution - Bar Chart */}
+        {/* Leads by Source - Top 6 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
@@ -521,12 +577,24 @@ Keep it concise - this is for a dashboard quick view.`;
             </Typography>
             {sourceChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={sourceChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <RechartsTooltip />
-                  <Bar dataKey="value" fill="#E84A8A" />
+                <BarChart
+                  data={sourceChartData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 32, left: 8, bottom: 4 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 12 }}
+                    width={140}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  <Bar dataKey="value" fill="#E84A8A" radius={[0, 4, 4, 0]}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -540,7 +608,7 @@ Keep it concise - this is for a dashboard quick view.`;
 
       {/* Charts Row 3 - Enrollment Charts */}
       <Grid container spacing={2} sx={{ mt: 1 }}>
-        {/* Enrollments by Service Partner - Bar Chart */}
+        {/* Enrollments by Service Partner - Top 6 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
@@ -548,12 +616,24 @@ Keep it concise - this is for a dashboard quick view.`;
             </Typography>
             {enrollmentsByPartnerData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={enrollmentsByPartnerData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tick={{ fontSize: 12 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
-                  <RechartsTooltip />
-                  <Bar dataKey="value" fill="#FF9800" />
+                <BarChart
+                  data={enrollmentsByPartnerData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 32, left: 8, bottom: 4 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 12 }}
+                    width={140}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  <Bar dataKey="value" fill="#FF9800" radius={[0, 4, 4, 0]}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -564,32 +644,52 @@ Keep it concise - this is for a dashboard quick view.`;
           </Paper>
         </Grid>
 
-        {/* Enrollments by Action Taken - Pie Chart */}
+        {/* Enrollments by Action Taken - Donut with total in center */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2, height: 320 }}>
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Enrollments by Action Taken
             </Typography>
             {enrollmentsByActionData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={enrollmentsByActionData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                    labelLine={false}
-                  >
-                    {enrollmentsByActionData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              <Box sx={{ position: 'relative', height: 260 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={enrollmentsByActionData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                      labelLine={false}
+                    >
+                      {enrollmentsByActionData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    textAlign: 'center',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#1E4088' }}>
+                    {totalEnrollmentsCharted}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    enrollments
+                  </Typography>
+                </Box>
+              </Box>
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
                 <Typography color="text.secondary">No enrollment data available</Typography>
