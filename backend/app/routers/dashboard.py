@@ -22,6 +22,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# Application timezone — all "today" buckets on the dashboard are IST.
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
+
+def _ist_today_utc_bounds():
+    """Return (start, end) UTC datetimes covering the current IST calendar day.
+
+    Computed from UTC explicitly so the result is correct regardless of the
+    host's local timezone (Render/Vercel hosts typically run in UTC).
+    """
+    now_ist = datetime.utcnow() + IST_OFFSET
+    ist_midnight = datetime.combine(now_ist.date(), datetime.min.time())
+    start_utc = ist_midnight - IST_OFFSET
+    end_utc = start_utc + timedelta(days=1)
+    return start_utc, end_utc
+
+
 class SummaryCreateRequest(BaseModel):
     summary_type: str
     content: str
@@ -44,18 +61,10 @@ async def get_dashboard_metrics(
     """
     Get dashboard metrics for all users
     """
-    # MongoDB stores all dates in UTC
-    # Server runs in IST (UTC+5:30), so we need to convert IST date boundaries to UTC
-    IST_OFFSET = timedelta(hours=5, minutes=30)
-
-    today_local = date.today()  # Local date (IST)
-    # IST midnight today = UTC yesterday 18:30
-    today_start_utc = datetime.combine(today_local, datetime.min.time()) - IST_OFFSET
-    # IST end of today = UTC today 18:29:59
-    today_end_utc = datetime.combine(today_local, datetime.max.time()) - IST_OFFSET
-
-    # For legacy queries that expect 'today' as UTC midnight
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # All timestamps in MongoDB are stored as UTC. We operate in IST regardless
+    # of host timezone, so derive IST "today" from UTC and convert back to UTC
+    # for the actual queries.
+    today_start_utc, today_end_utc = _ist_today_utc_bounds()
 
     # Base query - exclude deleted leads (handles both existing and missing is_deleted field)
     base_query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
@@ -72,16 +81,16 @@ async def get_dashboard_metrics(
     unique_users_result = await get_database().leads.aggregate(pipeline).to_list(1)
     unique_users = unique_users_result[0]["unique_users"] if unique_users_result else 0
 
-    # New leads today (using IST to UTC conversion)
+    # New leads today (IST)
     new_today = await Lead.find({
         **base_query,
-        "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+        "created_at": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
-    # Follow-ups today (using IST to UTC conversion)
+    # Follow-ups today (IST)
     follow_ups_today = await Lead.find({
         **base_query,
-        "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
+        "follow_up_date": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
     # Leads by status
@@ -102,17 +111,17 @@ async def get_dashboard_metrics(
     source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
     leads_by_source = {item["_id"]: item["count"] for item in source_result if item["_id"]}
 
-    # Leads by service enrolled
+    # Leads by service requested (Lead.service_enrolled was renamed to service_requested)
     service_pipeline = [
-        {"$match": {**base_query, "service_enrolled": {"$ne": None}}},
-        {"$group": {"_id": "$service_enrolled", "count": {"$sum": 1}}},
+        {"$match": {**base_query, "service_requested": {"$ne": None, "$nin": ["", None]}}},
+        {"$group": {"_id": "$service_requested", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
     service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
-    # Daily leads trend (last 7 days)
-    seven_days_ago = today - timedelta(days=6)
+    # Daily leads trend (last 7 IST days, anchored on today's IST start)
+    seven_days_ago = today_start_utc - timedelta(days=6)
     daily_pipeline = [
         {"$match": {**base_query, "created_at": {"$gte": seven_days_ago}}},
         {"$group": {
@@ -136,10 +145,10 @@ async def get_dashboard_metrics(
     enrollment_base_query = {"is_deleted": False}
     total_enrollments = await db.enrollments.count_documents(enrollment_base_query)
 
-    # New enrollments today (using IST to UTC conversion)
+    # New enrollments today (IST)
     new_enrollments_today = await db.enrollments.count_documents({
         **enrollment_base_query,
-        "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+        "created_at": {"$gte": today_start_utc, "$lt": today_end_utc}
     })
 
     logger.info(f"Dashboard metrics - UTC range: {today_start_utc} to {today_end_utc}")
@@ -169,7 +178,7 @@ async def get_dashboard_metrics(
     leads_enrolled_today = await Lead.find({
         **base_query,
         "status": "Enrolled",
-        "updated_at": {"$gte": today_start_utc, "$lte": today_end_utc}
+        "updated_at": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
     # 2. Leads with follow-up today (already calculated as follow_ups_today above)
@@ -178,7 +187,7 @@ async def get_dashboard_metrics(
     # 3. Enrollments with follow-up today (next_follow_up_date is today)
     enrollments_followup_today = await db.enrollments.count_documents({
         **enrollment_base_query,
-        "next_follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
+        "next_follow_up_date": {"$gte": today_start_utc, "$lt": today_end_utc}
     })
 
     logger.info(f"Dashboard metrics - leads_enrolled_today: {leads_enrolled_today}, enrollments_followup_today: {enrollments_followup_today}")
@@ -220,8 +229,7 @@ async def get_agent_dashboard(
     """
     Get agent-specific dashboard metrics (their assigned leads only)
     """
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow = today + timedelta(days=1)
+    today_start_utc, today_end_utc = _ist_today_utc_bounds()
 
     # Base query - agent's assigned leads only (handles both existing and missing is_deleted field)
     base_query = {
@@ -234,16 +242,16 @@ async def get_agent_dashboard(
     # Total assigned leads
     total_leads = await Lead.find(base_query).count()
 
-    # New leads today
+    # New leads today (IST)
     new_today = await Lead.find({
         **base_query,
-        "created_at": {"$gte": today}
+        "created_at": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
-    # Follow-ups today
+    # Follow-ups today (IST)
     follow_ups_today = await Lead.find({
         **base_query,
-        "follow_up_date": {"$gte": today, "$lt": tomorrow}
+        "follow_up_date": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
     # Leads by status
@@ -264,17 +272,17 @@ async def get_agent_dashboard(
     source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
     leads_by_source = {item["_id"]: item["count"] for item in source_result if item["_id"]}
 
-    # Leads by service enrolled
+    # Leads by service requested
     service_pipeline = [
-        {"$match": {**base_query, "service_enrolled": {"$ne": None}}},
-        {"$group": {"_id": "$service_enrolled", "count": {"$sum": 1}}},
+        {"$match": {**base_query, "service_requested": {"$ne": None, "$nin": ["", None]}}},
+        {"$group": {"_id": "$service_requested", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
     service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
-    # Daily leads trend (last 7 days) - for agent's assigned leads
-    seven_days_ago = today - timedelta(days=6)
+    # Daily leads trend (last 7 IST days)
+    seven_days_ago = today_start_utc - timedelta(days=6)
     daily_pipeline = [
         {"$match": {**base_query, "created_at": {"$gte": seven_days_ago}}},
         {"$group": {
@@ -304,32 +312,30 @@ async def get_agent_dashboard(
     }
     total_enrollments = await Enrollment.find(enrollment_base_query).count()
 
-    # 2. New Enrollments Assigned Today
+    # 2. New Enrollments Assigned Today (IST)
     # Enrollments created today AND assigned to this agent (hclhc_spoc) with assigned_date today
     new_enrollments_today = await Enrollment.find({
         "is_deleted": False,
         "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
-        "created_at": {"$gte": today, "$lt": tomorrow},
-        "assigned_date": {"$gte": today, "$lt": tomorrow}
+        "created_at": {"$gte": today_start_utc, "$lt": today_end_utc},
+        "assigned_date": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
-    # 3. Total Enrollments Assigned Today
-    # All enrollments where hclhc_spoc is this agent AND (assigned_date OR reassigned_date is today)
+    # 3. Total Enrollments Assigned Today (IST)
     enrollments_assigned_today = await Enrollment.find({
         "is_deleted": False,
         "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
         "$or": [
-            {"assigned_date": {"$gte": today, "$lt": tomorrow}},
-            {"reassigned_date": {"$gte": today, "$lt": tomorrow}}
+            {"assigned_date": {"$gte": today_start_utc, "$lt": today_end_utc}},
+            {"reassigned_date": {"$gte": today_start_utc, "$lt": today_end_utc}}
         ]
     }).count()
 
-    # 4. Enrollments with Follow-up Today
-    # Enrollments where next_follow_up_date is today AND hclhc_spoc is this agent
+    # 4. Enrollments with Follow-up Today (IST)
     enrollments_followup_today = await Enrollment.find({
         "is_deleted": False,
         "hclhc_spoc": {"$regex": f"^{agent_name}$", "$options": "i"},
-        "next_follow_up_date": {"$gte": today, "$lt": tomorrow}
+        "next_follow_up_date": {"$gte": today_start_utc, "$lt": today_end_utc}
     }).count()
 
     return {
@@ -393,8 +399,8 @@ async def get_summary_data(
         source = lead.lead_source.value if lead.lead_source else "Unknown"
         source_counts[source] = source_counts.get(source, 0) + 1
 
-        if lead.service_enrolled:
-            service = lead.service_enrolled
+        if lead.service_requested:
+            service = lead.service_requested
             service_counts[service] = service_counts.get(service, 0) + 1
 
     # Get agent name if filtered
