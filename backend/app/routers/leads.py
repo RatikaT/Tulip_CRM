@@ -3,6 +3,7 @@ Lead Management Routes
 """
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, date, timedelta
 import csv
@@ -1487,6 +1488,62 @@ async def add_comment(
     return {
         "message": "Comment added successfully",
         "comment": new_comment
+    }
+
+
+class BulkDeleteRequest(BaseModel):
+    lead_ids: List[str]
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_leads(
+    request: BulkDeleteRequest,
+    current_user: dict = Depends(get_current_admin)
+):
+    """
+    Soft delete multiple leads at once (Admin only)
+    """
+    lead_ids = [lid for lid in (request.lead_ids or []) if lid]
+    if not lead_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No lead IDs provided"
+        )
+
+    logger.debug(f"Bulk deleting {len(lead_ids)} leads by user={current_user['email']}")
+
+    leads = await Lead.find(
+        {"lead_id": {"$in": lead_ids}, "is_deleted": False}
+    ).to_list()
+
+    if not leads:
+        return {"message": "No leads deleted", "deleted_count": 0}
+
+    now = datetime.utcnow()
+    audits = []
+    for lead in leads:
+        lead.is_deleted = True
+        lead.updated_at = now
+        lead.last_modified_by = current_user["user_id"]
+        await lead.save()
+        audits.append(AuditLog(
+            lead_id=lead.lead_id,
+            user_id=current_user["user_id"],
+            user_email=current_user["email"],
+            user_name=current_user["full_name"],
+            action=AuditAction.DELETED,
+            changes=[{"field": "is_deleted", "old_value": False, "new_value": True}]
+        ))
+
+    if audits:
+        await AuditLog.insert_many(audits)
+
+    deleted_count = len(leads)
+    logger.info(f"Bulk deleted {deleted_count} leads by {current_user['email']}")
+
+    return {
+        "message": f"{deleted_count} lead(s) deleted successfully",
+        "deleted_count": deleted_count
     }
 
 

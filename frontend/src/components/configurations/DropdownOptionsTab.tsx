@@ -3,7 +3,6 @@ import {
   Box,
   Typography,
   Button,
-  Chip,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -11,14 +10,23 @@ import {
   Alert,
   IconButton,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
   alpha,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsIcon from '@mui/icons-material/Settings';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { toast } from 'react-toastify';
 import { dropdownService } from '../../services/dropdownService';
+import { clearDropdownCache } from '../../hooks/useDropdownOptions';
 import { DropdownConfig } from '../../types/dropdown.types';
 import AddDropdownValueDialog from './AddDropdownValueDialog';
 import { brandColors } from '../../theme';
@@ -60,6 +68,10 @@ export default function DropdownOptionsTab() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<DropdownConfig | null>(null);
   const [selectedParentValue, setSelectedParentValue] = useState<string | undefined>();
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<{ config: DropdownConfig; value: string; parentValue?: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchConfigs = useCallback(async () => {
     setLoading(true);
@@ -110,9 +122,126 @@ export default function DropdownOptionsTab() {
       value,
       parent_value: parentValue || selectedParentValue,
     });
+    // Invalidate the form dropdown cache so the new option shows up immediately
+    clearDropdownCache();
     toast.success(`Added "${value}" to ${selectedConfig.display_name}`);
     fetchConfigs();
   };
+
+  const handleConfirmRemoveValue = async () => {
+    if (!deleteTarget) return;
+    const { config, value, parentValue } = deleteTarget;
+    setDeleting(true);
+    try {
+      await dropdownService.removeOption(config.field_name, { value, parent_value: parentValue });
+      clearDropdownCache();
+      toast.success(`Removed "${value}"`);
+      setDeleteTarget(null);
+      fetchConfigs();
+    } catch (err) {
+      console.error('Failed to remove option:', err);
+      toast.error(`Failed to remove "${value}"`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Reorder a value within its option list by swapping with its neighbour
+  const handleMoveValue = async (
+    config: DropdownConfig,
+    index: number,
+    direction: -1 | 1,
+    parentValue?: string
+  ) => {
+    const list = parentValue
+      ? [...(config.conditional_options?.[parentValue] || [])]
+      : [...config.options];
+    const target = index + direction;
+    if (target < 0 || target >= list.length) return;
+    [list[index], list[target]] = [list[target], list[index]];
+    try {
+      if (parentValue) {
+        const updated = { ...(config.conditional_options || {}), [parentValue]: list };
+        await dropdownService.updateDropdownConfig(config.field_name, { conditional_options: updated });
+      } else {
+        await dropdownService.updateDropdownConfig(config.field_name, { options: list });
+      }
+      clearDropdownCache();
+      fetchConfigs();
+    } catch (err) {
+      console.error('Failed to reorder options:', err);
+      toast.error('Failed to reorder values');
+    }
+  };
+
+  // Renders a reorderable, deletable list of option values
+  const renderOptionList = (config: DropdownConfig, list: string[], parentValue?: string) => (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      {list.map((option, idx) => (
+        <Box
+          key={option}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pl: 1,
+            pr: 0.5,
+            py: 0.5,
+            borderRadius: 2,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: '#fff',
+            transition: 'border-color 0.15s ease, background-color 0.15s ease',
+            '&:hover': { borderColor: alpha(colors.primary, 0.4), bgcolor: alpha(colors.primary, 0.02) },
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Tooltip title="Move up">
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={idx === 0}
+                  onClick={() => handleMoveValue(config, idx, -1, parentValue)}
+                  sx={{ p: 0, height: 16 }}
+                >
+                  <KeyboardArrowUpIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Move down">
+              <span>
+                <IconButton
+                  size="small"
+                  disabled={idx === list.length - 1}
+                  onClick={() => handleMoveValue(config, idx, 1, parentValue)}
+                  sx={{ p: 0, height: 16 }}
+                >
+                  <KeyboardArrowDownIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+          <Typography variant="body2" sx={{ flex: 1, color: colors.textPrimary }}>
+            {option}
+          </Typography>
+          <Tooltip title="Delete">
+            <IconButton
+              size="small"
+              onClick={() => setDeleteTarget({ config, value: option, parentValue })}
+              sx={{ color: 'error.main', '&:hover': { bgcolor: alpha('#ef4444', 0.08) } }}
+            >
+              <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ))}
+      {list.length === 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+          No options configured
+        </Typography>
+      )}
+    </Box>
+  );
 
   // Group configs by category
   const configsByCategory = configs.reduce((acc, config) => {
@@ -166,6 +295,9 @@ export default function DropdownOptionsTab() {
             disabled={seeding}
             sx={{
               bgcolor: colors.primary,
+              borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 600,
               '&:hover': { bgcolor: brandColors.navyBlueDark },
             }}
           >
@@ -221,17 +353,29 @@ export default function DropdownOptionsTab() {
             {categoryConfigs.map((config) => (
               <Accordion
                 key={config.field_name}
+                elevation={0}
                 sx={{
                   mb: 1,
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '8px !important',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: '12px !important',
+                  boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+                  overflow: 'hidden',
+                  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
                   '&:before': { display: 'none' },
+                  '&:hover': {
+                    borderColor: alpha(colors.primary, 0.4),
+                    boxShadow: '0 2px 6px rgba(16,24,40,0.08), 0 1px 3px rgba(16,24,40,0.06)',
+                  },
                   '&.Mui-expanded': { margin: '0 0 8px 0' },
                 }}
               >
                 <AccordionSummary
                   expandIcon={<ExpandMoreIcon />}
                   sx={{
+                    borderRadius: '12px',
+                    '&:hover': { bgcolor: alpha(colors.primary, 0.03) },
+                    '&.Mui-expanded': { bgcolor: alpha(colors.primary, 0.04) },
                     '& .MuiAccordionSummary-content': {
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -277,25 +421,12 @@ export default function DropdownOptionsTab() {
                                 setSelectedParentValue(parentValue);
                                 setAddDialogOpen(true);
                               }}
+                              sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
                             >
                               Add
                             </Button>
                           </Box>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            {options.map((option) => (
-                              <Chip
-                                key={option}
-                                label={option}
-                                size="small"
-                                sx={{ bgcolor: colors.background }}
-                              />
-                            ))}
-                            {options.length === 0 && (
-                              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                                No options configured
-                              </Typography>
-                            )}
-                          </Box>
+                          {renderOptionList(config, options, parentValue)}
                         </Box>
                       ))}
                     </Box>
@@ -313,20 +444,12 @@ export default function DropdownOptionsTab() {
                           size="small"
                           startIcon={<AddIcon />}
                           onClick={() => handleOpenAddDialog(config)}
+                          sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
                         >
                           Add Value
                         </Button>
                       </Box>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        {config.options.map((option) => (
-                          <Chip
-                            key={option}
-                            label={option}
-                            size="small"
-                            sx={{ bgcolor: colors.background }}
-                          />
-                        ))}
-                      </Box>
+                      {renderOptionList(config, config.options)}
                     </Box>
                   )}
                 </AccordionDetails>
@@ -354,6 +477,41 @@ export default function DropdownOptionsTab() {
           defaultParentValue={selectedParentValue}
         />
       )}
+
+      {/* Delete Value Confirmation Dialog */}
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => !deleting && setDeleteTarget(null)}
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Delete value</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete{' '}
+            <strong>"{deleteTarget?.value}"</strong>
+            {deleteTarget ? ` from ${deleteTarget.config.display_name}` : ''}? This option will no
+            longer be available in the dropdown. Existing records keep their value.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleting}
+            sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmRemoveValue}
+            color="error"
+            variant="contained"
+            disabled={deleting}
+            sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
+          >
+            {deleting ? 'Deleting...' : 'Yes, Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

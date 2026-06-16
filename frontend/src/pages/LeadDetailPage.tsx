@@ -41,16 +41,8 @@ import {
   CallEntry,
   Comment,
   AuditLogEntry,
-  LEAD_STATUS_OPTIONS,
-  LEAD_SOURCE_OPTIONS,
-  TRIMESTER_OPTIONS,
-  LOOKING_FOR_OPTIONS,
-  SERVICE_REQUESTED_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  REASON_FOR_NO_SALE_OPTIONS,
-  PACKAGE_OPTIONS,
-  PARTNER_CENTER_OPTIONS,
 } from '../types/lead.types';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../hooks/useDropdownOptions';
 import { brandColors } from '../theme';
 import api from '../services/api';
 import EnrollmentConfirmModal, { EnrollmentPreviewData } from '../components/leads/EnrollmentConfirmModal';
@@ -88,6 +80,17 @@ const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error'
 export default function LeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
   const navigate = useNavigate();
+
+  // Dynamic dropdown options (from Configurations), with static fallback inside the hook
+  const { options: LEAD_STATUS_OPTIONS } = useDropdownOptions('lead_status');
+  const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
+  const { options: TRIMESTER_OPTIONS } = useDropdownOptions('trimester');
+  const { options: LOOKING_FOR_OPTIONS } = useDropdownOptions('looking_for');
+  const { options: SERVICE_REQUESTED_OPTIONS } = useDropdownOptions('service_requested');
+  const { options: SERVICE_PARTNER_OPTIONS } = useDropdownOptions('service_partner');
+  const { options: REASON_FOR_NO_SALE_OPTIONS } = useDropdownOptions('reason_for_no_sale');
+  const { options: PACKAGE_OPTIONS } = useDropdownOptions('package_options');
+  const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
@@ -754,40 +757,42 @@ export default function LeadDetailPage() {
                   </Grid>
                 )}
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    select
-                    label="Package Requested"
-                    size="small"
-                    value={formData.package_requested || ''}
-                    onChange={(e) => handleInputChange('package_requested', e.target.value)}
+                  <Autocomplete
+                    freeSolo
+                    options={PACKAGE_OPTIONS}
+                    inputValue={formData.package_requested || ''}
                     disabled={!canEdit('package_requested')}
-                  >
-                    <MenuItem value="">None</MenuItem>
-                    {PACKAGE_OPTIONS.map((pkg) => (
-                      <MenuItem key={pkg} value={pkg}>
-                        {pkg}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                    onInputChange={(_, newInputValue) =>
+                      handleInputChange('package_requested', newInputValue || '')
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        fullWidth
+                        label="Package Requested"
+                        size="small"
+                      />
+                    )}
+                  />
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    select
-                    label="Service Requested"
-                    size="small"
-                    value={formData.service_requested || ''}
-                    onChange={(e) => handleInputChange('service_requested', e.target.value)}
+                  <Autocomplete
+                    freeSolo
+                    options={SERVICE_REQUESTED_OPTIONS}
+                    inputValue={formData.service_requested || ''}
                     disabled={!canEdit('service_requested')}
-                  >
-                    <MenuItem value="">None</MenuItem>
-                    {SERVICE_REQUESTED_OPTIONS.map((service) => (
-                      <MenuItem key={service} value={service}>
-                        {service}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                    onInputChange={(_, newInputValue) =>
+                      handleInputChange('service_requested', newInputValue || '')
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        fullWidth
+                        label="Service Requested"
+                        size="small"
+                      />
+                    )}
+                  />
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <TextField

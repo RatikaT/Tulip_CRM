@@ -91,23 +91,32 @@ export default function AppLayout() {
 
   const drawer = (
     <Box sx={{ bgcolor: brandColors.navyBlue, minHeight: '100%', color: '#fff' }}>
-      <Toolbar sx={{ px: 2, py: 3 }}>
+      <Toolbar
+        disableGutters
+        sx={{
+          px: 2,
+          ...theme.mixins.toolbar,
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%' }}>
           {/* Tulip Logo */}
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <img
               src="/tulip-logo.png"
               alt="Tulip"
-              style={{ height: '40px', width: 'auto' }}
+              style={{ height: '32px', width: 'auto' }}
             />
           </Box>
           <Typography
             variant="caption"
             sx={{
               color: 'rgba(255,255,255,0.7)',
-              fontSize: '0.7rem',
+              fontSize: '0.65rem',
+              lineHeight: 1.2,
               display: 'block',
-              mt: 0.5,
+              mt: 0.25,
             }}
           >
             Lead Management System
@@ -195,11 +204,13 @@ export default function AppLayout() {
       {/* App Bar */}
       <AppBar
         position="fixed"
+        elevation={0}
         sx={{
           width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           ml: { md: `${DRAWER_WIDTH}px` },
           bgcolor: brandColors.navyBlue,
           color: '#fff',
+          borderBottom: '1px solid rgba(255,255,255,0.12)',
         }}
       >
         <Toolbar>
@@ -267,8 +278,7 @@ export default function AppLayout() {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: DRAWER_WIDTH,
-              borderRight: '1px solid',
-              borderColor: theme.palette.divider,
+              borderRight: 'none',
             },
           }}
           open

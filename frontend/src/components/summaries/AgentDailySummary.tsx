@@ -47,6 +47,7 @@ import {
   LeadActionDetail,
   EnrollmentActionDetail,
 } from '../../types/summary.types';
+import { brandColors } from '../../theme';
 
 interface User {
   id: string;
@@ -303,7 +304,23 @@ Generate a brief (3-5 bullet points) professional summary including:
     icon: React.ReactNode;
     color: string;
   }) => (
-    <Card sx={{ borderTop: `3px solid ${color}`, height: '100%' }}>
+    <Card
+      elevation={0}
+      sx={{
+        borderTop: `3px solid ${color}`,
+        height: '100%',
+        borderRadius: 3,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderTopColor: color,
+        boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        transition: 'transform .18s ease, box-shadow .18s ease',
+        '&:hover': {
+          transform: 'translateY(-3px)',
+          boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+        },
+      }}
+    >
       <CardContent sx={{ py: 1, px: 1.5, '&:last-child': { pb: 1 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <Box sx={{ color, display: 'flex' }}>{icon}</Box>
@@ -363,7 +380,19 @@ Generate a brief (3-5 bullet points) professional summary including:
     color: string;
     children: React.ReactNode;
   }) => (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card
+      elevation={0}
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: 3,
+        border: '1px solid',
+        borderColor: 'divider',
+        boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        overflow: 'hidden',
+      }}
+    >
       <CardHeader
         sx={{
           py: 1,
@@ -424,20 +453,43 @@ Generate a brief (3-5 bullet points) professional summary including:
     return unique.join(', ');
   };
 
+  // Shared header cell style for action tables (navy tint)
+  const headCellSx = {
+    py: 0.75,
+    backgroundColor: `${brandColors.navyBlue}0D`,
+    color: brandColors.navyBlue,
+    fontWeight: 700,
+    fontSize: '0.68rem',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase' as const,
+    borderBottom: `1px solid ${brandColors.navyBlue}26`,
+  };
+
+  const bodyRowSx = {
+    '& td': { borderBottom: '1px solid #eef1f5' },
+  };
+
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2.5,
+      '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+    },
+  };
+
   // Render action details table
   const renderLeadActionsTable = (actions: LeadActionDetail[]) => (
     <TableContainer>
       <Table size="small">
         <TableHead>
           <TableRow>
-            <TableCell sx={{ py: 0.5, width: 50 }}>Time</TableCell>
-            <TableCell sx={{ py: 0.5, width: 100 }}>Lead</TableCell>
-            <TableCell sx={{ py: 0.5 }}>Changes</TableCell>
+            <TableCell sx={{ ...headCellSx, width: 50 }}>Time</TableCell>
+            <TableCell sx={{ ...headCellSx, width: 100 }}>Lead</TableCell>
+            <TableCell sx={headCellSx}>Changes</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {actions.slice(0, 15).map((action, idx) => (
-            <TableRow key={idx} hover>
+            <TableRow key={idx} hover sx={bodyRowSx}>
               <TableCell sx={{ py: 0.5, whiteSpace: 'nowrap', fontSize: '0.75rem' }}>
                 {formatTimestamp(action.timestamp)}
               </TableCell>
@@ -464,14 +516,14 @@ Generate a brief (3-5 bullet points) professional summary including:
       <Table size="small">
         <TableHead>
           <TableRow>
-            <TableCell sx={{ py: 0.5, width: 50 }}>Time</TableCell>
-            <TableCell sx={{ py: 0.5, width: 100 }}>Enrollment</TableCell>
-            <TableCell sx={{ py: 0.5 }}>Changes</TableCell>
+            <TableCell sx={{ ...headCellSx, width: 50 }}>Time</TableCell>
+            <TableCell sx={{ ...headCellSx, width: 100 }}>Enrollment</TableCell>
+            <TableCell sx={headCellSx}>Changes</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {actions.slice(0, 15).map((action, idx) => (
-            <TableRow key={idx} hover>
+            <TableRow key={idx} hover sx={bodyRowSx}>
               <TableCell sx={{ py: 0.5, whiteSpace: 'nowrap', fontSize: '0.75rem' }}>
                 {formatTimestamp(action.timestamp)}
               </TableCell>
@@ -494,8 +546,17 @@ Generate a brief (3-5 bullet points) professional summary including:
   );
 
   return (
-    <Paper sx={{ p: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2,
+        borderRadius: 3,
+        border: '1px solid',
+        borderColor: 'divider',
+        boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+      }}
+    >
+      <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
         Agent Daily Activity Summary
       </Typography>
 
@@ -510,6 +571,7 @@ Generate a brief (3-5 bullet points) professional summary including:
               label="Select Agent"
               value={selectedAgent}
               onChange={(e) => setSelectedAgent(e.target.value)}
+              sx={inputSx}
             >
               {agents.map((agent) => (
                 <MenuItem key={agent.id} value={agent.id}>
@@ -529,6 +591,7 @@ Generate a brief (3-5 bullet points) professional summary including:
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
             InputLabelProps={{ shrink: true }}
+            sx={inputSx}
           />
         </Grid>
 
@@ -965,9 +1028,9 @@ Generate a brief (3-5 bullet points) professional summary including:
             <Box
               sx={{
                 p: 1.5,
-                bgcolor: '#e3f2fd',
-                borderRadius: 1,
-                border: '1px solid #90caf9',
+                bgcolor: 'rgba(30,64,136,0.05)',
+                borderRadius: 2,
+                border: '1px solid rgba(30,64,136,0.18)',
               }}
             >
               <Box

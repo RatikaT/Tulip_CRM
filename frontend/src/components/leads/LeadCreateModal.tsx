@@ -27,15 +27,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { leadService } from '../../services/leadService';
 import { fromISTPickerToUTC } from '../../utils/dateUtils';
-import {
-  LEAD_SOURCE_OPTIONS,
-  TRIMESTER_OPTIONS,
-  LOOKING_FOR_OPTIONS,
-  SERVICE_REQUESTED_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  PACKAGE_OPTIONS,
-  PARTNER_CENTER_OPTIONS,
-} from '../../types/lead.types';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../../hooks/useDropdownOptions';
 
 const createLeadSchema = z.object({
   name: z.string().optional(),
@@ -99,6 +91,14 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
   const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [consultDate, setConsultDate] = useState<Date | null>(null);
 
+  // Dynamic dropdown options (from Configurations), with static fallback inside the hook
+  const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
+  const { options: TRIMESTER_OPTIONS } = useDropdownOptions('trimester');
+  const { options: LOOKING_FOR_OPTIONS } = useDropdownOptions('looking_for');
+  const { options: SERVICE_REQUESTED_OPTIONS } = useDropdownOptions('service_requested');
+  const { options: SERVICE_PARTNER_OPTIONS } = useDropdownOptions('service_partner');
+  const { options: PACKAGE_OPTIONS } = useDropdownOptions('package_options');
+
   const {
     register,
     handleSubmit,
@@ -118,7 +118,7 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
 
   // Watch service_partner to show conditional Partner Center options
   const servicePartnerValue = watch('service_partner');
-  const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
+  const { options: partnerCenterOptions } = useConditionalDropdownOptions('partner_center', servicePartnerValue);
 
   const handleClose = () => {
     reset();

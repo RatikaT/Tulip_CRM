@@ -21,6 +21,14 @@ import {
   DocumentCategory,
   DOCUMENT_CATEGORIES,
 } from '../../types/knowledge-base.types';
+import { brandColors } from '../../theme';
+
+const navyFocusRing = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: 2,
+    '&.Mui-focused': { boxShadow: `0 0 0 3px ${brandColors.navyBlue}1F` },
+  },
+};
 
 interface DocumentEditDialogProps {
   open: boolean;
@@ -96,8 +104,21 @@ export default function DocumentEditDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Edit Document</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        },
+      }}
+    >
+      <DialogTitle sx={{ fontWeight: 700 }}>Edit Document</DialogTitle>
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -111,11 +132,11 @@ export default function DocumentEditDialog({
           onChange={(e) => setName(e.target.value)}
           fullWidth
           required
-          sx={{ mb: 2, mt: 1 }}
+          sx={{ mb: 2, mt: 1, ...navyFocusRing }}
           disabled={saving}
         />
 
-        <FormControl fullWidth sx={{ mb: 2 }}>
+        <FormControl fullWidth sx={{ mb: 2, ...navyFocusRing }}>
           <InputLabel>Category</InputLabel>
           <Select
             value={category}
@@ -138,7 +159,7 @@ export default function DocumentEditDialog({
           fullWidth
           multiline
           rows={3}
-          sx={{ mb: 2 }}
+          sx={{ mb: 2, ...navyFocusRing }}
           disabled={saving}
         />
 
@@ -148,12 +169,13 @@ export default function DocumentEditDialog({
           <Box
             sx={{
               border: '1px solid',
-              borderColor: 'grey.400',
-              borderRadius: 1,
+              borderColor: 'divider',
+              borderRadius: 2,
               p: 1,
               minHeight: 56,
               display: 'flex',
               flexWrap: 'wrap',
+              alignItems: 'center',
               gap: 0.5,
               mt: 2,
             }}
@@ -165,6 +187,17 @@ export default function DocumentEditDialog({
                 size="small"
                 onDelete={() => handleRemoveTag(tag)}
                 disabled={saving}
+                sx={{
+                  bgcolor: `${brandColors.navyBlue}1A`,
+                  color: brandColors.navyBlue,
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
+                  height: 24,
+                  borderRadius: '8px',
+                  border: `1px solid ${brandColors.navyBlue}33`,
+                  '& .MuiChip-label': { px: 1 },
+                  '& .MuiChip-deleteIcon': { color: `${brandColors.navyBlue}99` },
+                }}
               />
             ))}
             <OutlinedInput
@@ -190,14 +223,19 @@ export default function DocumentEditDialog({
         </FormControl>
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button
+          onClick={handleClose}
+          disabled={saving}
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
+        >
           Cancel
         </Button>
         <Button
           variant="contained"
           onClick={handleSave}
           disabled={!name.trim() || saving}
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
         >
           Save
         </Button>

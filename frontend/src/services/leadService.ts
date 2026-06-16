@@ -83,6 +83,11 @@ export const leadService = {
     await api.delete(`/leads/${leadId}`);
   },
 
+  bulkDeleteLeads: async (leadIds: string[]): Promise<{ message: string; deleted_count: number }> => {
+    const response = await api.post<{ message: string; deleted_count: number }>('/leads/bulk-delete', { lead_ids: leadIds });
+    return response.data;
+  },
+
   addComment: async (leadId: string, data: CommentCreateRequest): Promise<{ message: string; comment: Comment }> => {
     const response = await api.post<{ message: string; comment: Comment }>(`/leads/${leadId}/comments`, data);
     return response.data;

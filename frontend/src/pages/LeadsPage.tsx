@@ -30,7 +30,7 @@ import {
   DialogContentText,
   DialogActions,
 } from '@mui/material';
-import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRenderCellParams, GridRowSelectionModel } from '@mui/x-data-grid';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -56,6 +56,7 @@ import { leadService } from '../services/leadService';
 import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '../types/lead.types';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
 import api from '../services/api';
+import { brandColors } from '../theme';
 
 interface UserOption {
   id: string;
@@ -70,13 +71,29 @@ interface LeadStats {
   assigned_today: number;
 }
 
-const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  'New': 'info',
-  'Not Interested': 'error',
-  'Interested': 'success',
-  'Lead Closed - No Response': 'default',
-  'No Response': 'warning',
-  'FollowUp Required': 'primary',
+// Soft colored pill styles per lead status
+const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
+  'Enquiry Lead': { bg: 'rgba(30,64,136,0.10)', color: '#1E4088' },
+  'Enrolled': { bg: 'rgba(16,185,129,0.12)', color: '#0f8a63' },
+  'Follow up-In Process': { bg: 'rgba(245,158,11,0.14)', color: '#b26a00' },
+  'Follow up-No Response': { bg: 'rgba(255,152,0,0.14)', color: '#c2410c' },
+  'Not Interested': { bg: 'rgba(239,68,68,0.12)', color: '#dc2626' },
+  'Lead Closed-No Response': { bg: 'rgba(100,116,139,0.12)', color: '#475569' },
+  'Duplicate': { bg: 'rgba(123,75,148,0.12)', color: '#7B4B94' },
+};
+
+const getStatusChipSx = (status: string) => {
+  const s = STATUS_STYLES[status] || { bg: 'rgba(100,116,139,0.10)', color: '#475569' };
+  return {
+    bgcolor: s.bg,
+    color: s.color,
+    fontWeight: 600,
+    fontSize: '0.7rem',
+    height: 24,
+    borderRadius: '8px',
+    border: `1px solid ${s.color}33`,
+    '& .MuiChip-label': { px: 1 },
+  };
 };
 
 // Helper function to check if a date string is today
@@ -182,6 +199,9 @@ export default function LeadsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetLead, setDeleteTargetLead] = useState<Lead | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [rowSelectionModel, setRowSelectionModel] = useState<GridRowSelectionModel>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -397,6 +417,33 @@ export default function LeadsPage() {
     setDeleteTargetLead(null);
   };
 
+  // Map selected DataGrid row ids (Mongo _id) to lead_ids
+  const getSelectedLeadIds = (): string[] => {
+    const selectedSet = new Set(rowSelectionModel.map((id) => String(id)));
+    return filteredLeads
+      .filter((lead) => selectedSet.has(String(lead.id)))
+      .map((lead) => lead.lead_id);
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    const leadIds = getSelectedLeadIds();
+    if (leadIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const result = await leadService.bulkDeleteLeads(leadIds);
+      toast.success(result.message || `${leadIds.length} lead(s) deleted successfully`);
+      setBulkDeleteDialogOpen(false);
+      setRowSelectionModel([]);
+      fetchLeads();
+      fetchStats();
+    } catch (error) {
+      console.error('Failed to bulk delete leads:', error);
+      toast.error('Failed to delete selected leads');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleExport = async () => {
     setExporting(true);
     try {
@@ -472,12 +519,7 @@ export default function LeadsPage() {
         <Chip
           label={params.value}
           size="small"
-          color={statusColors[params.value as string] || 'default'}
-          sx={{
-            fontWeight: 500,
-            fontSize: '0.7rem',
-            height: 24,
-          }}
+          sx={getStatusChipSx(params.value as string)}
         />
       ),
     },
@@ -675,11 +717,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -709,11 +757,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -743,11 +797,17 @@ export default function LeadsPage() {
           <Grid item xs={12} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -780,11 +840,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -814,11 +880,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -848,11 +920,17 @@ export default function LeadsPage() {
           <Grid item xs={12} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -886,11 +964,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -923,11 +1007,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -960,11 +1050,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -997,11 +1093,17 @@ export default function LeadsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1058,7 +1160,15 @@ export default function LeadsPage() {
           }}
           sx={{
             bgcolor: 'white',
-            '& .MuiOutlinedInput-root': { fontSize: '0.85rem' },
+            '& .MuiOutlinedInput-root': {
+              fontSize: '0.85rem',
+              borderRadius: 2.5,
+              boxShadow: '0 1px 2px rgba(16,24,40,0.04)',
+              transition: 'box-shadow 0.15s ease',
+              '&.Mui-focused': {
+                boxShadow: '0 0 0 3px rgba(30,64,136,0.12)',
+              },
+            },
           }}
         />
       </Box>
@@ -1066,11 +1176,14 @@ export default function LeadsPage() {
       {/* Filters Section */}
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Paper
+          elevation={0}
           sx={{
             mb: 2,
-            border: '1px solid #e0e0e0',
-            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 3,
             overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
           }}
         >
           {/* Filter Header */}
@@ -1079,17 +1192,20 @@ export default function LeadsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              px: 1.5,
-              py: 0.75,
-              bgcolor: '#fafafa',
-              borderBottom: showFilters ? '1px solid #e0e0e0' : 'none',
+              px: 2,
+              py: 1.25,
+              bgcolor: 'rgba(30,64,136,0.04)',
+              borderBottom: showFilters ? '1px solid' : 'none',
+              borderColor: 'divider',
               cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+              '&:hover': { bgcolor: 'rgba(30,64,136,0.07)' },
             }}
             onClick={() => setShowFilters(!showFilters)}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <FilterListIcon sx={{ color: 'primary.main', fontSize: 16 }} />
-              <Typography sx={{ fontWeight: 600, color: '#333', fontSize: '0.75rem' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FilterListIcon sx={{ color: 'primary.main', fontSize: 18 }} />
+              <Typography sx={{ fontWeight: 700, color: 'primary.dark', fontSize: '0.8rem', letterSpacing: '0.02em' }}>
                 Filters
               </Typography>
               {activeFilterCount > 0 && (
@@ -1145,9 +1261,24 @@ export default function LeadsPage() {
 
           {/* Filter Controls */}
           <Collapse in={showFilters}>
-            <Box sx={{ p: 1.5 }}>
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: '#f7f9fc',
+                // Uniform polish for every filter input in this panel
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  bgcolor: '#fff',
+                  transition: 'box-shadow 0.15s ease',
+                  '& fieldset': { borderColor: '#e2e8f0' },
+                  '&:hover fieldset': { borderColor: '#cbd5e1' },
+                  '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+                  '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 1 },
+                },
+              }}
+            >
               {/* Compact styles for filter inputs */}
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.25, alignItems: 'center' }}>
                 {/* Lead Source - Multi-select */}
                 <Autocomplete
                   multiple
@@ -1381,85 +1512,181 @@ export default function LeadsPage() {
                   {sourceFilter.map((source) => (
                     <Box
                       key={`source-${source}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setSourceFilter(prev => prev.filter(s => s !== source))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>{source}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>{source}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {statusFilter.map((status) => (
                     <Box
                       key={`status-${status}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setStatusFilter(prev => prev.filter(s => s !== status))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>{status}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>{status}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {uhidFilter.map((uhid) => (
                     <Box
                       key={`uhid-${uhid}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setUhidFilter(prev => prev.filter(u => u !== uhid))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>UHID: {uhid}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>UHID: {uhid}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {packageRequestedFilter.map((pkg) => (
                     <Box
                       key={`pkg-${pkg}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setPackageRequestedFilter(prev => prev.filter(p => p !== pkg))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>Package: {pkg}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Package: {pkg}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {(createdDateFrom || createdDateTo) && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => { setCreatedDateFrom(null); setCreatedDateTo(null); }}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Created: {createdDateFrom ? format(createdDateFrom, 'dd/MM/yy') : '...'} - {createdDateTo ? format(createdDateTo, 'dd/MM/yy') : '...'}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {nextFollowUpDateFilter && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setNextFollowUpDateFilter(null)}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Follow Up: {format(nextFollowUpDateFilter, 'dd/MM/yy')}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {assignedToFilter && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setAssignedToFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Assigned: {agents.find(a => a.id === assignedToFilter)?.full_name || assignedToFilter}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {reassignedToFilter && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setReassignedToFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Reassigned: {agents.find(a => a.id === reassignedToFilter)?.full_name || reassignedToFilter}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {colorFilter && (
@@ -1475,10 +1702,10 @@ export default function LeadsPage() {
                       }}
                       onClick={() => setColorFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Color: {colorFilter === 'filled' ? 'Highlighted (Yellow)' : 'Not Highlighted'}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                 </Box>
@@ -1490,7 +1717,53 @@ export default function LeadsPage() {
 
       {/* Data Grid - All Leads View */}
       {viewMode === 'all' && (
-        <Paper sx={{ height: 'calc(100vh - 380px)', minHeight: 400 }}>
+        <>
+        {isAdmin && rowSelectionModel.length > 0 && (
+          <Box
+            sx={{
+              mb: 1.5,
+              px: 2,
+              py: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderRadius: 3,
+              bgcolor: '#eaf0fa',
+              border: '1px solid',
+              borderColor: 'primary.light',
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.dark' }}>
+              {rowSelectionModel.length} lead{rowSelectionModel.length > 1 ? 's' : ''} selected
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button size="small" onClick={() => setRowSelectionModel([])}>
+                Clear
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => setBulkDeleteDialogOpen(true)}
+              >
+                Delete Selected
+              </Button>
+            </Box>
+          </Box>
+        )}
+        <Paper
+          elevation={0}
+          sx={{
+            height: 'calc(100vh - 380px)',
+            minHeight: 400,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: 'divider',
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+          }}
+        >
           <DataGrid
             rows={filteredLeads}
             columns={columns}
@@ -1502,41 +1775,77 @@ export default function LeadsPage() {
             onPaginationModelChange={setPaginationModel}
             getRowId={(row) => row.id}
             disableRowSelectionOnClick
+            checkboxSelection={isAdmin}
+            rowSelectionModel={rowSelectionModel}
+            onRowSelectionModelChange={(newSelection) => setRowSelectionModel(newSelection)}
+            disableColumnMenu
+            columnHeaderHeight={48}
             rowHeight={52}
             getRowClassName={(params) => {
+              const classes: string[] = [];
+              // Zebra striping
+              if (params.indexRelativeToCurrentPage % 2 === 1) {
+                classes.push('row-even');
+              }
               // Only highlight for agents (non-admins)
               if (!isAdmin && shouldHighlightForAgent(params.row as Lead)) {
-                return 'highlight-row';
+                classes.push('highlight-row');
               }
-              return '';
+              return classes.join(' ');
             }}
             sx={{
               border: 'none',
               fontSize: '0.85rem',
+              '--DataGrid-rowBorderColor': 'transparent',
               '& .MuiDataGrid-columnHeaders, & .MuiDataGrid-columnHeader, & .MuiDataGrid-columnHeadersInner, & .MuiDataGrid-columnHeaderRow': {
-                backgroundColor: '#d6e0ec !important',
-                fontSize: '0.8rem',
-                fontWeight: 600,
+                backgroundColor: `${brandColors.navyBlue} !important`,
+                color: '#fff',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              },
+              '& .MuiDataGrid-columnSeparator': {
+                color: 'rgba(255,255,255,0.25)',
+              },
+              '& .MuiDataGrid-iconButtonContainer .MuiSvgIcon-root, & .MuiDataGrid-sortIcon': {
+                color: '#fff',
               },
               '& .MuiDataGrid-columnHeaderTitle': {
                 whiteSpace: 'normal',
                 lineHeight: 1.2,
                 textAlign: 'center',
+                fontWeight: 700,
               },
               '& .MuiDataGrid-cell': {
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
+                borderBottom: 'none',
               },
-              '& .MuiDataGrid-cell:focus': {
+              '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': {
+                outline: 'none',
+              },
+              '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': {
                 outline: 'none',
               },
               '& .MuiDataGrid-row': {
-                borderBottom: '1px solid #e0e0e0',
+                borderBottom: '1px solid #eef1f5',
+                transition: 'background-color 0.15s ease',
+              },
+              '& .MuiDataGrid-row.row-even': {
+                backgroundColor: '#f7f9fc',
               },
               '& .MuiDataGrid-row:hover': {
-                backgroundColor: '#f8f9fa',
+                backgroundColor: '#eaf0fa',
                 cursor: 'pointer',
+              },
+              '& .MuiDataGrid-footerContainer': {
+                borderTop: '1px solid #eef1f5',
+                backgroundColor: '#fafbfc',
+              },
+              '& .MuiDataGrid-virtualScroller': {
+                backgroundColor: '#fff',
               },
               // Yellow highlight for agent priority rows
               '& .MuiDataGrid-row.highlight-row': {
@@ -1549,6 +1858,7 @@ export default function LeadsPage() {
             onRowClick={(params) => handleViewLead(params.row as Lead)}
           />
         </Paper>
+        </>
       )}
 
       {/* User Level View */}
@@ -1682,8 +1992,7 @@ export default function LeadsPage() {
                                 <Chip
                                   label={lead.status}
                                   size="small"
-                                  color={statusColors[lead.status] || 'default'}
-                                  sx={{ fontSize: '0.65rem', height: 22 }}
+                                  sx={{ ...getStatusChipSx(lead.status), fontSize: '0.65rem', height: 22 }}
                                 />
                               ) : '-'}
                             </TableCell>
@@ -1760,6 +2069,28 @@ export default function LeadsPage() {
           </Button>
           <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
             {deleting ? 'Deleting...' : 'Yes, Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog
+        open={bulkDeleteDialogOpen}
+        onClose={() => !bulkDeleting && setBulkDeleteDialogOpen(false)}
+      >
+        <DialogTitle>Delete Selected Leads</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete <strong>{rowSelectionModel.length}</strong> selected
+            lead{rowSelectionModel.length > 1 ? 's' : ''}? This action will remove them from the list.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkDeleteDialogOpen(false)} disabled={bulkDeleting}>
+            No
+          </Button>
+          <Button onClick={handleBulkDeleteConfirm} color="error" variant="contained" disabled={bulkDeleting}>
+            {bulkDeleting ? 'Deleting...' : `Yes, Delete ${rowSelectionModel.length}`}
           </Button>
         </DialogActions>
       </Dialog>

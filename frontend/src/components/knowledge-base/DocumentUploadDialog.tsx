@@ -19,6 +19,14 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DescriptionIcon from '@mui/icons-material/Description';
 import { knowledgeBaseService } from '../../services/knowledgeBaseService';
 import { DocumentCategory, DOCUMENT_CATEGORIES } from '../../types/knowledge-base.types';
+import { brandColors } from '../../theme';
+
+const navyFocusRing = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: 2,
+    '&.Mui-focused': { boxShadow: `0 0 0 3px ${brandColors.navyBlue}1F` },
+  },
+};
 
 interface DocumentUploadDialogProps {
   open: boolean;
@@ -126,8 +134,21 @@ export default function DocumentUploadDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Upload Document</DialogTitle>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        },
+      }}
+    >
+      <DialogTitle sx={{ fontWeight: 700 }}>Upload Document</DialogTitle>
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -144,17 +165,17 @@ export default function DocumentUploadDialog({
           onClick={() => fileInputRef.current?.click()}
           sx={{
             border: '2px dashed',
-            borderColor: dragActive ? 'primary.main' : 'grey.400',
-            borderRadius: 2,
+            borderColor: dragActive ? brandColors.navyBlue : '#cbd5e1',
+            borderRadius: 3,
             p: 4,
             textAlign: 'center',
             cursor: 'pointer',
-            bgcolor: dragActive ? 'action.hover' : 'background.paper',
+            bgcolor: dragActive ? `${brandColors.navyBlue}0A` : 'background.paper',
             transition: 'all 0.2s',
             mb: 3,
             '&:hover': {
-              borderColor: 'primary.main',
-              bgcolor: 'action.hover',
+              borderColor: brandColors.navyBlue,
+              bgcolor: `${brandColors.navyBlue}0A`,
             },
           }}
         >
@@ -168,9 +189,23 @@ export default function DocumentUploadDialog({
 
           {file ? (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-              <DescriptionIcon sx={{ fontSize: 40, color: 'primary.main' }} />
+              <Box
+                sx={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: `linear-gradient(135deg, ${brandColors.navyBlue}, ${brandColors.navyBlueDark})`,
+                  color: '#fff',
+                  flexShrink: 0,
+                }}
+              >
+                <DescriptionIcon sx={{ fontSize: 26 }} />
+              </Box>
               <Box sx={{ textAlign: 'left' }}>
-                <Typography variant="body1" fontWeight={500}>
+                <Typography variant="body1" fontWeight={600}>
                   {file.name}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -180,7 +215,22 @@ export default function DocumentUploadDialog({
             </Box>
           ) : (
             <>
-              <CloudUploadIcon sx={{ fontSize: 48, color: 'grey.500', mb: 1 }} />
+              <Box
+                sx={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 1.5,
+                  background: `linear-gradient(135deg, ${brandColors.navyBlue}, ${brandColors.navyBlueDark})`,
+                  color: '#fff',
+                }}
+              >
+                <CloudUploadIcon sx={{ fontSize: 30 }} />
+              </Box>
               <Typography variant="body1" color="text.secondary">
                 Drag and drop a file here, or click to select
               </Typography>
@@ -198,11 +248,11 @@ export default function DocumentUploadDialog({
           onChange={(e) => setName(e.target.value)}
           fullWidth
           required
-          sx={{ mb: 2 }}
+          sx={{ mb: 2, ...navyFocusRing }}
           disabled={uploading}
         />
 
-        <FormControl fullWidth sx={{ mb: 2 }}>
+        <FormControl fullWidth sx={{ mb: 2, ...navyFocusRing }}>
           <InputLabel>Category</InputLabel>
           <Select
             value={category}
@@ -225,6 +275,7 @@ export default function DocumentUploadDialog({
           fullWidth
           multiline
           rows={3}
+          sx={navyFocusRing}
           disabled={uploading}
         />
 
@@ -238,14 +289,19 @@ export default function DocumentUploadDialog({
         )}
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={handleClose} disabled={uploading}>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button
+          onClick={handleClose}
+          disabled={uploading}
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
+        >
           Cancel
         </Button>
         <Button
           variant="contained"
           onClick={handleUpload}
           disabled={!file || !name.trim() || uploading}
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
         >
           Upload
         </Button>

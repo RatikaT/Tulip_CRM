@@ -450,7 +450,9 @@ export default function KnowledgeBasePage() {
         sx={{
           p: 2.5,
           borderRadius: 3,
-          border: `1px solid ${colors.border}`,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
           bgcolor: colors.surface,
         }}
       >
@@ -491,6 +493,10 @@ export default function KnowledgeBasePage() {
                 borderRadius: 2,
                 bgcolor: colors.background,
                 '&:hover': { bgcolor: colors.surfaceHover },
+                '&.Mui-focused': {
+                  bgcolor: colors.surface,
+                  boxShadow: `0 0 0 3px ${alpha(colors.primary, 0.12)}`,
+                },
               },
             }}
           />
@@ -610,10 +616,14 @@ export default function KnowledgeBasePage() {
                       label={doc.category}
                       size="small"
                       sx={{
-                        bgcolor: colors.background,
-                        color: colors.textSecondary,
-                        fontWeight: 500,
-                        fontSize: '0.75rem',
+                        bgcolor: `${colors.primary}1A`,
+                        color: colors.primary,
+                        fontWeight: 600,
+                        fontSize: '0.7rem',
+                        height: 24,
+                        borderRadius: '8px',
+                        border: `1px solid ${colors.primary}33`,
+                        '& .MuiChip-label': { px: 1 },
                       }}
                     />
                     {isAdminUser && (
@@ -621,10 +631,14 @@ export default function KnowledgeBasePage() {
                         label={doc.status === 'published' ? 'Published' : 'Draft'}
                         size="small"
                         sx={{
-                          bgcolor: doc.status === 'published' ? colors.successLight : colors.warningLight,
+                          bgcolor: doc.status === 'published' ? `${colors.success}1A` : `${colors.warning}1A`,
                           color: doc.status === 'published' ? colors.success : colors.warning,
                           fontWeight: 600,
                           fontSize: '0.7rem',
+                          height: 24,
+                          borderRadius: '8px',
+                          border: `1px solid ${doc.status === 'published' ? colors.success : colors.warning}33`,
+                          '& .MuiChip-label': { px: 1 },
                         }}
                       />
                     )}
@@ -701,7 +715,9 @@ export default function KnowledgeBasePage() {
           display: 'flex',
           overflow: 'hidden',
           borderRadius: 3,
-          border: `1px solid ${colors.border}`,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
           bgcolor: colors.surface,
           height: 550,
         }}
@@ -918,15 +934,15 @@ export default function KnowledgeBasePage() {
                     elevation={0}
                     sx={{
                       p: 2,
-                      bgcolor: message.role === 'user' ? colors.primary : colors.surface,
+                      bgcolor: message.role === 'user' ? colors.primary : '#f7f9fc',
                       color: message.role === 'user' ? '#fff' : colors.textPrimary,
-                      borderRadius: 3,
-                      borderTopLeftRadius: message.role === 'assistant' ? 4 : 20,
-                      borderTopRightRadius: message.role === 'user' ? 4 : 20,
+                      borderRadius: '16px',
+                      borderTopLeftRadius: message.role === 'assistant' ? 4 : 16,
+                      borderTopRightRadius: message.role === 'user' ? 4 : 16,
                       border: message.role === 'assistant' ? `1px solid ${colors.border}` : 'none',
                       boxShadow: message.role === 'user'
-                        ? `0 4px 12px ${alpha(colors.primary, 0.3)}`
-                        : `0 2px 8px ${alpha('#000', 0.05)}`,
+                        ? `0 4px 12px ${alpha(colors.primary, 0.28)}`
+                        : 'none',
                     }}
                   >
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
@@ -971,19 +987,26 @@ export default function KnowledgeBasePage() {
                                     sx={{
                                       height: 22,
                                       fontSize: '0.7rem',
-                                      bgcolor: colors.primaryLight,
+                                      bgcolor: `${colors.primary}1A`,
                                       color: colors.primary,
                                       fontWeight: 600,
+                                      borderRadius: '8px',
+                                      border: `1px solid ${colors.primary}33`,
+                                      '& .MuiChip-label': { px: 1 },
                                     }}
                                   />
                                   <Chip
                                     label={`${(source.relevance_score * 100).toFixed(0)}% match`}
                                     size="small"
                                     sx={{
-                                      height: 20,
+                                      height: 22,
                                       fontSize: '0.65rem',
-                                      bgcolor: colors.successLight,
+                                      bgcolor: `${colors.success}1A`,
                                       color: colors.success,
+                                      fontWeight: 600,
+                                      borderRadius: '8px',
+                                      border: `1px solid ${colors.success}33`,
+                                      '& .MuiChip-label': { px: 1 },
                                     }}
                                   />
                                 </Box>
@@ -1016,8 +1039,8 @@ export default function KnowledgeBasePage() {
                   elevation={0}
                   sx={{
                     p: 2,
-                    bgcolor: colors.surface,
-                    borderRadius: 3,
+                    bgcolor: '#f7f9fc',
+                    borderRadius: '16px',
                     borderTopLeftRadius: 4,
                     border: `1px solid ${colors.border}`,
                   }}
@@ -1057,7 +1080,10 @@ export default function KnowledgeBasePage() {
                     borderRadius: 3,
                     bgcolor: colors.background,
                     '&:hover': { bgcolor: colors.surfaceHover },
-                    '&.Mui-focused': { bgcolor: colors.surface },
+                    '&.Mui-focused': {
+                      bgcolor: colors.surface,
+                      boxShadow: `0 0 0 3px ${alpha(colors.primary, 0.12)}`,
+                    },
                   },
                 }}
               />

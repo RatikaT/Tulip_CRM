@@ -17,6 +17,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import DescriptionIcon from '@mui/icons-material/Description';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { brandColors } from '../theme';
 
 interface UploadResult {
   success: boolean;
@@ -282,29 +283,42 @@ export default function BulkUploadPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          Bulk Upload Leads
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, gap: 2, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+            Bulk Upload Leads
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Import multiple leads at once from a CSV file
+          </Typography>
+        </Box>
         <Button
           variant="outlined"
           startIcon={<DownloadIcon />}
           onClick={handleDownloadSampleCSV}
           color="primary"
+          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
         >
           Download Sample CSV
         </Button>
       </Box>
 
       <Paper
+        elevation={0}
         sx={{
-          p: 4,
+          p: 6,
           mb: 3,
-          border: dragActive ? '2px dashed #1976d2' : '2px dashed #ccc',
-          backgroundColor: dragActive ? '#e3f2fd' : 'transparent',
+          borderRadius: 3,
+          border: '2px dashed',
+          borderColor: dragActive ? 'primary.main' : '#cbd5e1',
+          background: dragActive ? 'rgba(30,64,136,0.06)' : '#f7f9fc',
           textAlign: 'center',
           cursor: 'pointer',
-          transition: 'all 0.2s',
+          transition: 'all 0.2s ease',
+          '&:hover': {
+            borderColor: 'primary.main',
+            background: 'rgba(30,64,136,0.04)',
+          },
         }}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
@@ -320,46 +334,100 @@ export default function BulkUploadPage() {
           style={{ display: 'none' }}
         />
 
-        <CloudUploadIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-        <Typography variant="h6" gutterBottom>
-          Drag & drop your file here
+        <Box
+          sx={{
+            width: 80,
+            height: 80,
+            mx: 'auto',
+            mb: 2.5,
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: `linear-gradient(135deg, ${brandColors.navyBlue}26 0%, ${brandColors.navyBlue}0d 100%)`,
+            transform: dragActive ? 'scale(1.08)' : 'scale(1)',
+            transition: 'transform 0.2s ease',
+          }}
+        >
+          <CloudUploadIcon sx={{ fontSize: 44, color: 'primary.main' }} />
+        </Box>
+        <Typography variant="h6" sx={{ fontWeight: 700 }} gutterBottom>
+          {dragActive ? 'Drop your file to upload' : 'Drag & drop your CSV here'}
         </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          or click to browse
+        <Typography variant="body2" color="text.secondary">
+          or{' '}
+          <Box component="span" sx={{ color: 'primary.main', fontWeight: 600 }}>
+            click to browse
+          </Box>
         </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Supported format: CSV
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          Supported format: .CSV
         </Typography>
       </Paper>
 
       {file && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <DescriptionIcon color="primary" />
-              <Box>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2.5,
+            mb: 3,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: 'divider',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+              <Box
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 2,
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  bgcolor: 'rgba(30,64,136,0.10)',
+                }}
+              >
+                <DescriptionIcon color="primary" />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {file.name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {(file.size / 1024).toFixed(2)} KB
+                  {(file.size / 1024).toFixed(2)} KB · Ready to upload
                 </Typography>
               </Box>
             </Box>
             <Button
               variant="contained"
+              startIcon={<CloudUploadIcon />}
               onClick={handleUpload}
               disabled={uploading}
+              sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
             >
               {uploading ? 'Uploading...' : 'Upload'}
             </Button>
           </Box>
-          {uploading && <LinearProgress sx={{ mt: 2 }} />}
+          {uploading && <LinearProgress sx={{ mt: 2, borderRadius: 1 }} />}
         </Paper>
       )}
 
       {result && (
-        <Paper sx={{ p: 3 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 3,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: 'divider',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+          }}
+        >
           <Alert
             severity={
               !result.success
@@ -370,23 +438,37 @@ export default function BulkUploadPage() {
                   : 'error'
                 : 'success'
             }
-            sx={{ mb: 2 }}
+            sx={{ mb: 2.5, borderRadius: 2 }}
           >
             {result.message}
           </Alert>
 
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2">
-              Total rows processed: <strong>{result.total_rows || 0}</strong>
-            </Typography>
-            <Typography variant="body2" color="success.main">
-              Leads created: <strong>{result.created || 0}</strong>
-            </Typography>
-            {result.errors && result.errors.length > 0 && (
-              <Typography variant="body2" color="error.main">
-                Failed entries: <strong>{result.errors.length}</strong>
-              </Typography>
-            )}
+          <Box sx={{ display: 'flex', gap: 1.5, mb: 2.5, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Total rows', value: result.total_rows || 0, color: '#475569' },
+              { label: 'Leads created', value: result.created || 0, color: '#0f8a63' },
+              { label: 'Failed entries', value: result.errors?.length || 0, color: '#dc2626' },
+            ].map((tile) => (
+              <Box
+                key={tile.label}
+                sx={{
+                  flex: '1 1 120px',
+                  px: 2,
+                  py: 1.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: `${tile.color}0d`,
+                }}
+              >
+                <Typography variant="h5" sx={{ fontWeight: 700, color: tile.color, lineHeight: 1.1 }}>
+                  {tile.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {tile.label}
+                </Typography>
+              </Box>
+            ))}
           </Box>
 
           {result.errors && result.errors.length > 0 && (
@@ -394,7 +476,7 @@ export default function BulkUploadPage() {
               <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: 'error.main' }}>
                 Error Details
               </Typography>
-              <List dense sx={{ bgcolor: 'error.50', borderRadius: 1 }}>
+              <List dense sx={{ bgcolor: 'rgba(239,68,68,0.06)', borderRadius: 2, border: '1px solid rgba(239,68,68,0.18)' }}>
                 {result.errors.slice(0, 10).map((err, idx) => (
                   <ListItem key={idx}>
                     <ListItemIcon>
@@ -420,15 +502,25 @@ export default function BulkUploadPage() {
         </Paper>
       )}
 
-      <Paper sx={{ p: 3, mt: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 3,
+          mt: 3,
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        }}
+      >
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>
           File Format Requirements
         </Typography>
         <Typography variant="body2" paragraph>
           Your CSV file should have the following columns (first row must be headers):
         </Typography>
 
-        <Alert severity="warning" sx={{ mb: 2 }}>
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
           <Typography variant="body2">
             <strong>Required:</strong> At least one of <strong>UHID</strong>, <strong>Contact No. (phone_number)</strong>, or <strong>Email</strong> must be provided for each row.
           </Typography>
@@ -479,7 +571,7 @@ export default function BulkUploadPage() {
           <li><Typography variant="body2"><strong>cug_name</strong> - CUG Name</Typography></li>
         </Box>
 
-        <Alert severity="info" sx={{ mt: 2 }}>
+        <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
           <Typography variant="body2">
             <strong>Note:</strong> Only CSV files are supported. If Contact No. is provided, it must be a valid 10-digit number starting with 6-9.
           </Typography>

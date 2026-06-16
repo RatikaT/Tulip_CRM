@@ -71,6 +71,28 @@ const colors = {
   background: '#f8fafc',
 };
 
+const cardShadow = '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)';
+
+// Soft pill style for status / role chips
+const softChip = (hex: string) => ({
+  bgcolor: `${hex}1A`,
+  color: hex,
+  fontWeight: 600,
+  fontSize: '0.7rem',
+  height: 24,
+  borderRadius: '8px',
+  border: `1px solid ${hex}33`,
+  '& .MuiChip-label': { px: 1 },
+});
+
+const chipHex = {
+  navy: '#1E4088',
+  green: '#0f8a63',
+  purple: '#7B4B94',
+  amber: '#b26a00',
+  slate: '#475569',
+};
+
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -339,14 +361,21 @@ export default function ConfigurationsPage() {
       field: 'role',
       headerName: 'Role',
       width: 120,
-      renderCell: (params: GridRenderCellParams) => (
-        <Chip
-          label={params.value?.replace('_', ' ')}
-          size="small"
-          color={params.value === 'super_admin' ? 'secondary' : params.value === 'admin' ? 'primary' : 'default'}
-          sx={{ textTransform: 'capitalize' }}
-        />
-      ),
+      renderCell: (params: GridRenderCellParams) => {
+        const roleHex =
+          params.value === 'super_admin'
+            ? chipHex.purple
+            : params.value === 'admin'
+            ? chipHex.navy
+            : chipHex.slate;
+        return (
+          <Chip
+            label={params.value?.replace('_', ' ')}
+            size="small"
+            sx={{ ...softChip(roleHex), textTransform: 'capitalize' }}
+          />
+        );
+      },
     },
     {
       field: 'crm_types',
@@ -355,7 +384,7 @@ export default function ConfigurationsPage() {
       renderCell: (params: GridRenderCellParams) => (
         <Box sx={{ display: 'flex', gap: 0.5 }}>
           {(params.value as string[] || []).map((crm: string) => (
-            <Chip key={crm} label={crm} size="small" variant="outlined" />
+            <Chip key={crm} label={crm} size="small" sx={softChip(chipHex.slate)} />
           ))}
         </Box>
       ),
@@ -368,7 +397,7 @@ export default function ConfigurationsPage() {
         <Chip
           label={params.value ? 'Active' : 'Inactive'}
           size="small"
-          color={params.value ? 'success' : 'error'}
+          sx={softChip(params.value ? chipHex.green : '#c0392b')}
         />
       ),
     },
@@ -398,7 +427,7 @@ export default function ConfigurationsPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 600, color: colors.textPrimary }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, color: colors.textPrimary }}>
             Configurations
           </Typography>
           <Typography variant="body2" sx={{ color: colors.textSecondary, mt: 0.5 }}>
@@ -407,9 +436,37 @@ export default function ConfigurationsPage() {
         </Box>
       </Box>
 
-      <Paper sx={{ borderRadius: 2, border: `1px solid ${colors.border}` }}>
+      <Paper
+        elevation={0}
+        sx={{
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: cardShadow,
+          overflow: 'hidden',
+        }}
+      >
         <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-          <Tabs value={tabValue} onChange={handleTabChange} aria-label="configuration tabs">
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            aria-label="configuration tabs"
+            TabIndicatorProps={{ sx: { backgroundColor: colors.primary, height: 3, borderRadius: '3px 3px 0 0' } }}
+            sx={{
+              minHeight: 48,
+              '& .MuiTab-root': {
+                textTransform: 'none',
+                fontWeight: 500,
+                fontSize: '0.875rem',
+                minHeight: 48,
+                color: colors.textSecondary,
+              },
+              '& .Mui-selected': {
+                fontWeight: 700,
+                color: `${colors.primary} !important`,
+              },
+            }}
+          >
             <Tab
               icon={<GroupIcon />}
               iconPosition="start"
@@ -453,6 +510,9 @@ export default function ConfigurationsPage() {
                   onClick={() => setCreateUserModalOpen(true)}
                   sx={{
                     bgcolor: colors.primary,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600,
                     '&:hover': { bgcolor: brandColors.navyBlueDark },
                   }}
                 >
@@ -461,7 +521,18 @@ export default function ConfigurationsPage() {
               </Box>
             </Box>
 
-            <Box sx={{ height: 'calc(100vh - 380px)', minHeight: 400 }}>
+            <Paper
+              elevation={0}
+              sx={{
+                height: 'calc(100vh - 380px)',
+                minHeight: 400,
+                borderRadius: 3,
+                border: '1px solid',
+                borderColor: 'divider',
+                boxShadow: cardShadow,
+                overflow: 'hidden',
+              }}
+            >
               <DataGrid
                 rows={users}
                 columns={userColumns}
@@ -472,12 +543,38 @@ export default function ConfigurationsPage() {
                 }}
                 getRowId={(row) => row.id}
                 disableRowSelectionOnClick
+                disableColumnMenu
+                columnHeaderHeight={48}
+                getRowClassName={(params) =>
+                  params.indexRelativeToCurrentPage % 2 === 0 ? 'row-even' : 'row-odd'
+                }
                 sx={{
                   border: 'none',
+                  '& .MuiDataGrid-columnHeaders': {
+                    backgroundColor: `${brandColors.navyBlue} !important`,
+                  },
+                  '& .MuiDataGrid-columnHeader': {
+                    backgroundColor: `${brandColors.navyBlue} !important`,
+                    color: '#fff',
+                  },
+                  '& .MuiDataGrid-columnHeaderTitle': {
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  },
+                  '& .MuiDataGrid-columnSeparator': { color: 'rgba(255,255,255,0.25)' },
+                  '& .MuiDataGrid-iconButtonContainer .MuiSvgIcon-root, & .MuiDataGrid-sortIcon': {
+                    color: '#fff',
+                  },
+                  '& .MuiDataGrid-cell': { borderColor: '#eef1f5' },
                   '& .MuiDataGrid-cell:focus': { outline: 'none' },
+                  '& .MuiDataGrid-row.row-even': { backgroundColor: '#f7f9fc' },
+                  '& .MuiDataGrid-row:hover': { backgroundColor: '#eaf0fa' },
+                  '& .MuiDataGrid-footerContainer': { borderColor: '#eef1f5' },
                 }}
               />
-            </Box>
+            </Paper>
           </Box>
         </TabPanel>
 
@@ -499,6 +596,9 @@ export default function ConfigurationsPage() {
                 onClick={() => handleOpenFieldDialog()}
                 sx={{
                   bgcolor: colors.primary,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600,
                   '&:hover': { bgcolor: brandColors.navyBlueDark },
                 }}
               >
@@ -528,20 +628,48 @@ export default function ConfigurationsPage() {
                 </Typography>
               </Box>
             ) : (
-              <TableContainer>
+              <TableContainer
+                component={Paper}
+                elevation={0}
+                sx={{
+                  borderRadius: 3,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  boxShadow: cardShadow,
+                  overflow: 'hidden',
+                }}
+              >
                 <Table>
                   <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 600 }}>Label</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Field Name</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Required</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Visible to Agents</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }} align="right">Actions</TableCell>
+                    <TableRow
+                      sx={{
+                        bgcolor: colors.primaryLight,
+                        '& .MuiTableCell-head': {
+                          fontWeight: 700,
+                          fontSize: '0.72rem',
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          color: colors.primary,
+                          borderColor: '#eef1f5',
+                        },
+                      }}
+                    >
+                      <TableCell>Label</TableCell>
+                      <TableCell>Field Name</TableCell>
+                      <TableCell>Type</TableCell>
+                      <TableCell>Required</TableCell>
+                      <TableCell>Visible to Agents</TableCell>
+                      <TableCell>Status</TableCell>
+                      <TableCell align="right">Actions</TableCell>
                     </TableRow>
                   </TableHead>
-                  <TableBody>
+                  <TableBody
+                    sx={{
+                      '& .MuiTableCell-body': { borderColor: '#eef1f5' },
+                      '& .MuiTableRow-root:hover': { backgroundColor: '#eaf0fa' },
+                      '& .MuiTableRow-root:last-of-type .MuiTableCell-body': { borderBottom: 'none' },
+                    }}
+                  >
                     {fields.map((field) => (
                       <TableRow key={field.id} hover>
                         <TableCell>
@@ -556,32 +684,28 @@ export default function ConfigurationsPage() {
                           <Chip
                             label={getFieldTypeLabel(field.field_type)}
                             size="small"
-                            sx={{ bgcolor: colors.primaryLight, color: colors.primary }}
+                            sx={softChip(chipHex.navy)}
                           />
                         </TableCell>
                         <TableCell>
                           {field.is_required ? (
-                            <Chip label="Yes" size="small" sx={{ bgcolor: colors.warningLight, color: colors.warning }} />
+                            <Chip label="Yes" size="small" sx={softChip(chipHex.amber)} />
                           ) : (
-                            <Chip label="No" size="small" variant="outlined" />
+                            <Chip label="No" size="small" sx={softChip(chipHex.slate)} />
                           )}
                         </TableCell>
                         <TableCell>
                           {field.visible_to_agents ? (
-                            <Chip label="Yes" size="small" sx={{ bgcolor: colors.successLight, color: colors.success }} />
+                            <Chip label="Yes" size="small" sx={softChip(chipHex.green)} />
                           ) : (
-                            <Chip label="No" size="small" variant="outlined" />
+                            <Chip label="No" size="small" sx={softChip(chipHex.slate)} />
                           )}
                         </TableCell>
                         <TableCell>
                           <Chip
                             label={field.is_active ? 'Active' : 'Inactive'}
                             size="small"
-                            sx={{
-                              bgcolor: field.is_active ? colors.successLight : colors.errorLight,
-                              color: field.is_active ? colors.success : colors.error,
-                              cursor: 'pointer',
-                            }}
+                            sx={{ ...softChip(field.is_active ? chipHex.green : '#c0392b'), cursor: 'pointer' }}
                             onClick={() => handleToggleFieldActive(field)}
                           />
                         </TableCell>
@@ -663,7 +787,18 @@ export default function ConfigurationsPage() {
             </Alert>
           )}
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2.5,
+              pt: 1,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+              },
+            }}
+          >
             <TextField
               label="Field Label"
               value={formData.field_label}
@@ -722,7 +857,11 @@ export default function ConfigurationsPage() {
                     }}
                     fullWidth
                   />
-                  <Button variant="outlined" onClick={handleAddDropdownOption} sx={{ minWidth: 80 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={handleAddDropdownOption}
+                    sx={{ minWidth: 80, borderRadius: 2, textTransform: 'none', fontWeight: 600 }}
+                  >
                     Add
                   </Button>
                 </Box>
@@ -771,7 +910,7 @@ export default function ConfigurationsPage() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
-          <Button onClick={handleCloseFieldDialog} sx={{ borderRadius: 2 }}>
+          <Button onClick={handleCloseFieldDialog} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
             Cancel
           </Button>
           <Button
@@ -782,6 +921,8 @@ export default function ConfigurationsPage() {
               bgcolor: colors.primary,
               borderRadius: 2,
               px: 3,
+              textTransform: 'none',
+              fontWeight: 600,
               '&:hover': { bgcolor: brandColors.navyBlueDark },
             }}
           >
@@ -804,7 +945,7 @@ export default function ConfigurationsPage() {
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteDialogOpen(false)} sx={{ borderRadius: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600 }}>
             Cancel
           </Button>
           <Button
@@ -813,6 +954,8 @@ export default function ConfigurationsPage() {
             sx={{
               bgcolor: colors.error,
               borderRadius: 2,
+              textTransform: 'none',
+              fontWeight: 600,
               '&:hover': { bgcolor: '#dc2626' },
             }}
           >

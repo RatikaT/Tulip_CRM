@@ -65,6 +65,7 @@ import EnrollmentViewModal from '../components/enrollments/EnrollmentViewModal';
 import EnrollmentCreateModal from '../components/enrollments/EnrollmentCreateModal';
 import BulkUploadModal from '../components/enrollments/BulkUploadModal';
 import api from '../services/api';
+import { brandColors } from '../theme';
 
 interface UserOption {
   id: string;
@@ -72,19 +73,31 @@ interface UserOption {
   role: string;
 }
 
-const connectStatusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  'Connected': 'success',
-  'No Response': 'warning',
-  'Follow Up Required': 'primary',
-  'Others': 'default',
+const connectStatusColors: Record<string, string> = {
+  'Connected': '#0f8a63',
+  'No Response': '#b26a00',
+  'Follow Up Required': '#1E4088',
+  'Others': '#475569',
 };
 
-const actionTakenColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  'Appointment Booked': 'success',
-  'Feedback Taken': 'info',
-  'No Action Required': 'default',
-  'Liasoned with Partner Team': 'primary',
+const actionTakenColors: Record<string, string> = {
+  'Appointment Booked': '#0f8a63',
+  'Feedback Taken': '#1565c0',
+  'No Action Required': '#475569',
+  'Liasoned with Partner Team': '#7B4B94',
 };
+
+// Soft colored pill style for status chips
+const softChipSx = (hex: string) => ({
+  bgcolor: `${hex}1A`,
+  color: hex,
+  fontWeight: 600,
+  fontSize: '0.7rem',
+  height: 24,
+  borderRadius: '8px',
+  border: `1px solid ${hex}33`,
+  '& .MuiChip-label': { px: 1 },
+});
 
 // Helper function to check if a date string is today
 const isDateToday = (dateString: string | null): boolean => {
@@ -495,12 +508,7 @@ export default function EnrollmentsPage() {
           <Chip
             label={params.value}
             size="small"
-            color={connectStatusColors[params.value as string] || 'default'}
-            sx={{
-              fontWeight: 500,
-              fontSize: '0.7rem',
-              height: 24,
-            }}
+            sx={softChipSx(connectStatusColors[params.value as string] || '#475569')}
           />
         ) : '-'
       ),
@@ -515,13 +523,7 @@ export default function EnrollmentsPage() {
           <Chip
             label={params.value}
             size="small"
-            color={actionTakenColors[params.value as string] || 'default'}
-            variant="outlined"
-            sx={{
-              fontWeight: 500,
-              fontSize: '0.65rem',
-              height: 24,
-            }}
+            sx={softChipSx(actionTakenColors[params.value as string] || '#475569')}
           />
         ) : '-'
       ),
@@ -692,11 +694,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -726,11 +734,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -760,11 +774,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={12} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -798,11 +818,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -835,11 +861,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -872,11 +904,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -909,11 +947,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -950,11 +994,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -984,11 +1034,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1018,11 +1074,17 @@ export default function EnrollmentsPage() {
           <Grid item xs={12} sm={4} sx={{ display: 'flex' }}>
             <Card sx={{
               background: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-              borderRadius: 1.5,
-              border: '1px solid #f0f0f0',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'divider',
               width: '100%',
               minHeight: 100,
+              transition: 'transform .18s ease, box-shadow .18s ease',
+              '&:hover': {
+                transform: 'translateY(-3px)',
+                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
+              },
             }}>
               <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1076,7 +1138,13 @@ export default function EnrollmentsPage() {
           }}
           sx={{
             bgcolor: 'white',
-            '& .MuiOutlinedInput-root': { fontSize: '0.85rem' },
+            '& .MuiOutlinedInput-root': {
+              fontSize: '0.85rem',
+              borderRadius: 2.5,
+              boxShadow: '0 1px 2px rgba(16,24,40,0.04)',
+              transition: 'box-shadow 0.15s ease',
+              '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+            },
           }}
         />
       </Box>
@@ -1084,11 +1152,14 @@ export default function EnrollmentsPage() {
       {/* Filters Section */}
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <Paper
+          elevation={0}
           sx={{
             mb: 2,
-            border: '1px solid #e0e0e0',
-            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 3,
             overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
           }}
         >
           {/* Filter Header */}
@@ -1097,17 +1168,20 @@ export default function EnrollmentsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              px: 1.5,
-              py: 0.75,
-              bgcolor: '#fafafa',
-              borderBottom: showFilters ? '1px solid #e0e0e0' : 'none',
+              px: 2,
+              py: 1.25,
+              bgcolor: 'rgba(30,64,136,0.04)',
+              borderBottom: showFilters ? '1px solid' : 'none',
+              borderColor: 'divider',
               cursor: 'pointer',
+              transition: 'background-color 0.15s ease',
+              '&:hover': { bgcolor: 'rgba(30,64,136,0.07)' },
             }}
             onClick={() => setShowFilters(!showFilters)}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <FilterListIcon sx={{ color: 'primary.main', fontSize: 16 }} />
-              <Typography sx={{ fontWeight: 600, color: '#333', fontSize: '0.75rem' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FilterListIcon sx={{ color: 'primary.main', fontSize: 18 }} />
+              <Typography sx={{ fontWeight: 700, color: 'primary.dark', fontSize: '0.8rem', letterSpacing: '0.02em' }}>
                 Filters
               </Typography>
               {activeFilterCount > 0 && (
@@ -1162,8 +1236,22 @@ export default function EnrollmentsPage() {
 
           {/* Filter Controls */}
           <Collapse in={showFilters}>
-            <Box sx={{ p: 1.5 }}>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: '#f7f9fc',
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  bgcolor: '#fff',
+                  transition: 'box-shadow 0.15s ease',
+                  '& fieldset': { borderColor: '#e2e8f0' },
+                  '&:hover fieldset': { borderColor: '#cbd5e1' },
+                  '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+                  '&.Mui-focused fieldset': { borderColor: 'primary.main', borderWidth: 1 },
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.25, alignItems: 'center' }}>
                 {/* Connect Status - Multi-select */}
                 <Autocomplete
                   multiple
@@ -1303,72 +1391,156 @@ export default function EnrollmentsPage() {
                   {connectStatusFilter.map((status) => (
                     <Box
                       key={`status-${status}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setConnectStatusFilter(prev => prev.filter(s => s !== status))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>{status}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>{status}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {actionTakenFilter.map((action) => (
                     <Box
                       key={`action-${action}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setActionTakenFilter(prev => prev.filter(a => a !== action))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>{action}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>{action}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {servicePartnerFilter.map((partner) => (
                     <Box
                       key={`partner-${partner}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setServicePartnerFilter(prev => prev.filter(p => p !== partner))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>{partner}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>{partner}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {uhidFilter.map((uhid) => (
                     <Box
                       key={`uhid-${uhid}`}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setUhidFilter(prev => prev.filter(u => u !== uhid))}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>UHID: {uhid}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>UHID: {uhid}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
                   {hclhcSpocFilter && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setHclhcSpocFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>SPOC: {hclhcSpocFilter}</Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>SPOC: {hclhcSpocFilter}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {(createdDateFrom || createdDateTo) && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => { setCreatedDateFrom(null); setCreatedDateTo(null); }}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Created: {createdDateFrom ? format(createdDateFrom, 'dd/MM/yy') : '...'} - {createdDateTo ? format(createdDateTo, 'dd/MM/yy') : '...'}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {nextFollowUpDateFilter && (
                     <Box
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.25, cursor: 'pointer' }}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
                       onClick={() => setNextFollowUpDateFilter(null)}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Follow Up: {format(nextFollowUpDateFilter, 'dd/MM/yy')}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                   {colorFilter && (
@@ -1384,10 +1556,10 @@ export default function EnrollmentsPage() {
                       }}
                       onClick={() => setColorFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'error.main' }}>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Color: {colorFilter === 'filled' ? 'Filled (Yellow)' : 'Not Filled'}
                       </Typography>
-                      <CloseIcon sx={{ fontSize: 12, color: 'error.main' }} />
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
                 </Box>
@@ -1399,7 +1571,18 @@ export default function EnrollmentsPage() {
 
       {/* Data Grid - All Enrollments View */}
       {viewMode === 'all' && (
-        <Paper sx={{ height: 'calc(100vh - 380px)', minHeight: 400 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            height: 'calc(100vh - 380px)',
+            minHeight: 400,
+            borderRadius: 3,
+            border: '1px solid',
+            borderColor: 'divider',
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+          }}
+        >
           <DataGrid
             rows={filteredEnrollments}
             columns={columns}
@@ -1411,41 +1594,73 @@ export default function EnrollmentsPage() {
             onPaginationModelChange={setPaginationModel}
             getRowId={(row) => row.id}
             disableRowSelectionOnClick
+            disableColumnMenu
+            columnHeaderHeight={48}
             rowHeight={52}
             getRowClassName={(params) => {
+              const classes: string[] = [];
+              if (params.indexRelativeToCurrentPage % 2 === 1) {
+                classes.push('row-even');
+              }
               // Only highlight for agents (non-admins)
               if (!isAdmin && shouldHighlightForAgent(params.row as Enrollment)) {
-                return 'highlight-row';
+                classes.push('highlight-row');
               }
-              return '';
+              return classes.join(' ');
             }}
             sx={{
               border: 'none',
               fontSize: '0.85rem',
+              '--DataGrid-rowBorderColor': 'transparent',
               '& .MuiDataGrid-columnHeaders, & .MuiDataGrid-columnHeader, & .MuiDataGrid-columnHeadersInner, & .MuiDataGrid-columnHeaderRow': {
-                backgroundColor: '#d6e0ec !important',
-                fontSize: '0.8rem',
-                fontWeight: 600,
+                backgroundColor: `${brandColors.navyBlue} !important`,
+                color: '#fff',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              },
+              '& .MuiDataGrid-columnSeparator': {
+                color: 'rgba(255,255,255,0.25)',
+              },
+              '& .MuiDataGrid-iconButtonContainer .MuiSvgIcon-root, & .MuiDataGrid-sortIcon': {
+                color: '#fff',
               },
               '& .MuiDataGrid-columnHeaderTitle': {
                 whiteSpace: 'normal',
                 lineHeight: 1.2,
                 textAlign: 'center',
+                fontWeight: 700,
               },
               '& .MuiDataGrid-cell': {
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
+                borderBottom: 'none',
               },
-              '& .MuiDataGrid-cell:focus': {
+              '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within': {
+                outline: 'none',
+              },
+              '& .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': {
                 outline: 'none',
               },
               '& .MuiDataGrid-row': {
-                borderBottom: '1px solid #e0e0e0',
+                borderBottom: '1px solid #eef1f5',
+                transition: 'background-color 0.15s ease',
+              },
+              '& .MuiDataGrid-row.row-even': {
+                backgroundColor: '#f7f9fc',
               },
               '& .MuiDataGrid-row:hover': {
-                backgroundColor: '#f8f9fa',
+                backgroundColor: '#eaf0fa',
                 cursor: 'pointer',
+              },
+              '& .MuiDataGrid-footerContainer': {
+                borderTop: '1px solid #eef1f5',
+                backgroundColor: '#fafbfc',
+              },
+              '& .MuiDataGrid-virtualScroller': {
+                backgroundColor: '#fff',
               },
               // Yellow highlight for agent priority rows
               '& .MuiDataGrid-row.highlight-row': {
@@ -1593,8 +1808,7 @@ export default function EnrollmentsPage() {
                                 <Chip
                                   label={enrollment.connect_status}
                                   size="small"
-                                  color={connectStatusColors[enrollment.connect_status] || 'default'}
-                                  sx={{ fontSize: '0.65rem', height: 22 }}
+                                  sx={{ ...softChipSx(connectStatusColors[enrollment.connect_status] || '#475569'), fontSize: '0.65rem', height: 22 }}
                                 />
                               ) : '-'}
                             </TableCell>
@@ -1603,9 +1817,7 @@ export default function EnrollmentsPage() {
                                 <Chip
                                   label={enrollment.action_taken}
                                   size="small"
-                                  color={actionTakenColors[enrollment.action_taken] || 'default'}
-                                  variant="outlined"
-                                  sx={{ fontSize: '0.65rem', height: 22 }}
+                                  sx={{ ...softChipSx(actionTakenColors[enrollment.action_taken] || '#475569'), fontSize: '0.65rem', height: 22 }}
                                 />
                               ) : '-'}
                             </TableCell>

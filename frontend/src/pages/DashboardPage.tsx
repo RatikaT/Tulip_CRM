@@ -33,10 +33,12 @@ import {
   ResponsiveContainer,
   LabelList,
   Label,
-  LineChart,
   Line,
+  Area,
+  ComposedChart,
   ReferenceArea,
   ReferenceLine,
+  CartesianGrid,
 } from 'recharts';
 import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
@@ -77,33 +79,64 @@ const COLORS = ['#1E4088', '#E84A8A', '#7B4B94', '#4CAF50', '#FF9800', '#2196F3'
 
 function MetricCard({ title, subtitle, value, icon, color }: MetricCardProps) {
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ py: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography color="text.secondary" variant="body2" gutterBottom>
+    <Card
+      elevation={0}
+      sx={{
+        height: '100%',
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: 3,
+        // Full border in the card's color
+        border: '1.5px solid',
+        borderColor: color,
+        boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        transition: 'transform .18s ease, box-shadow .18s ease',
+        '&:hover': {
+          transform: 'translateY(-3px)',
+          boxShadow: `0 12px 24px ${color}26`,
+        },
+      }}
+    >
+      <CardContent sx={{ py: 2.25, pl: 2.75, pr: 2, '&:last-child': { pb: 2.25 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="body2"
+              sx={{ color: 'text.secondary', fontWeight: 600, fontSize: '0.8rem', lineHeight: 1.3 }}
+            >
               {title}
             </Typography>
             {subtitle && (
-              <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
+              <Typography
+                variant="caption"
+                sx={{ display: 'block', color: 'text.disabled', mt: 0.25, fontSize: '0.7rem' }}
+              >
                 {subtitle}
               </Typography>
             )}
-            <Typography variant="h4" component="div" sx={{ fontWeight: 700 }}>
+            <Typography
+              variant="h4"
+              component="div"
+              sx={{ fontWeight: 700, color: 'text.primary', mt: 0.75, lineHeight: 1.1 }}
+            >
               {value}
             </Typography>
           </Box>
           <Box
             sx={{
-              backgroundColor: `${color}15`,
-              borderRadius: 2,
-              p: 1.5,
+              flexShrink: 0,
+              width: 48,
+              height: 48,
+              borderRadius: '14px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              color,
+              background: `linear-gradient(135deg, ${color}1f 0%, ${color}0d 100%)`,
+              boxShadow: `0 2px 8px ${color}26`,
             }}
           >
-            <Box sx={{ color }}>{icon}</Box>
+            {icon}
           </Box>
         </Box>
       </CardContent>
@@ -475,7 +508,17 @@ Keep it concise - this is for a dashboard quick view.`;
       <Grid container spacing={2} sx={{ mb: 3 }}>
         {/* Status Bifurcation - Sorted Horizontal Bar */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#1E4088',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Status Bifurcation
             </Typography>
@@ -490,14 +533,28 @@ Keep it concise - this is for a dashboard quick view.`;
                   <YAxis
                     dataKey="name"
                     type="category"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 12, fill: '#475467' }}
                     width={140}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  <Bar dataKey="value" fill="#1E4088" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(30,64,136,0.06)' }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid #eef1f5',
+                      boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <defs>
+                    <linearGradient id="barGrad1E4088" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#1E4088" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#1E4088" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <Bar dataKey="value" fill="url(#barGrad1E4088)" radius={[0, 6, 6, 0]} barSize={20}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#475467' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -511,7 +568,17 @@ Keep it concise - this is for a dashboard quick view.`;
 
         {/* Daily Leads Trend — line over 7d with p25–p75 band from 30d */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#1E4088',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 Daily Leads Trend (Last 7 Days)
@@ -528,10 +595,29 @@ Keep it concise - this is for a dashboard quick view.`;
             </Box>
             {trendChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={trendChartData} margin={{ top: 16, right: 24, left: 0, bottom: 4 }}>
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <RechartsTooltip cursor={{ stroke: '#ccc' }} />
+                <ComposedChart data={trendChartData} margin={{ top: 16, right: 24, left: 0, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#2E5AA8" />
+                      <stop offset="100%" stopColor="#1E4088" />
+                    </linearGradient>
+                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#1E4088" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="#1E4088" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef1f5" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#475467' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: '#475467' }} axisLine={false} tickLine={false} />
+                  <RechartsTooltip
+                    cursor={{ stroke: '#1E4088', strokeOpacity: 0.3, strokeWidth: 1 }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid #eef1f5',
+                      boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
                   {sorted30d.length > 0 && (
                     <ReferenceArea
                       y1={p25}
@@ -546,11 +632,19 @@ Keep it concise - this is for a dashboard quick view.`;
                       <Label value={`median ${p50.toFixed(1)}`} position="insideTopRight" fill="#1E4088" fontSize={11} />
                     </ReferenceLine>
                   )}
+                  <Area
+                    type="monotone"
+                    dataKey="leads"
+                    stroke="none"
+                    fill="url(#areaGrad)"
+                    isAnimationActive={false}
+                    activeDot={false}
+                  />
                   <Line
                     type="monotone"
                     dataKey="leads"
-                    stroke="#1E4088"
-                    strokeWidth={2}
+                    stroke="url(#lineGrad)"
+                    strokeWidth={2.5}
                     dot={(props: any) => {
                       const { cx, cy, payload, index } = props;
                       const isLast = index === trendChartData.length - 1;
@@ -568,9 +662,9 @@ Keep it concise - this is for a dashboard quick view.`;
                       );
                     }}
                   >
-                    <LabelList dataKey="leads" position="top" style={{ fontSize: 11, fill: '#333' }} />
+                    <LabelList dataKey="leads" position="top" style={{ fontSize: 11, fontWeight: 600, fill: '#475467' }} />
                   </Line>
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             ) : (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 260 }}>
@@ -585,7 +679,17 @@ Keep it concise - this is for a dashboard quick view.`;
       <Grid container spacing={2}>
         {/* Service Type - Top 5 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#7B4B94',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Service Type Distribution
             </Typography>
@@ -600,14 +704,28 @@ Keep it concise - this is for a dashboard quick view.`;
                   <YAxis
                     dataKey="name"
                     type="category"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 12, fill: '#475467' }}
                     width={140}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  <Bar dataKey="value" fill="#7B4B94" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(30,64,136,0.06)' }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid #eef1f5',
+                      boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <defs>
+                    <linearGradient id="barGrad7B4B94" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#7B4B94" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#7B4B94" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <Bar dataKey="value" fill="url(#barGrad7B4B94)" radius={[0, 6, 6, 0]} barSize={20}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#475467' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -621,7 +739,17 @@ Keep it concise - this is for a dashboard quick view.`;
 
         {/* Leads by Source - Top 6 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#E84A8A',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Leads by Source
             </Typography>
@@ -636,14 +764,28 @@ Keep it concise - this is for a dashboard quick view.`;
                   <YAxis
                     dataKey="name"
                     type="category"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 12, fill: '#475467' }}
                     width={140}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  <Bar dataKey="value" fill="#E84A8A" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(30,64,136,0.06)' }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid #eef1f5',
+                      boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <defs>
+                    <linearGradient id="barGradE84A8A" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#E84A8A" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#E84A8A" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <Bar dataKey="value" fill="url(#barGradE84A8A)" radius={[0, 6, 6, 0]} barSize={20}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#475467' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -660,7 +802,17 @@ Keep it concise - this is for a dashboard quick view.`;
       <Grid container spacing={2} sx={{ mt: 1 }}>
         {/* Enrollments by Service Partner - Top 6 + Other, horizontal bar */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#FF9800',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Enrollments by Service Partner
             </Typography>
@@ -675,14 +827,28 @@ Keep it concise - this is for a dashboard quick view.`;
                   <YAxis
                     dataKey="name"
                     type="category"
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 12, fill: '#475467' }}
                     width={140}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  <Bar dataKey="value" fill="#FF9800" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fill: '#333' }} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(30,64,136,0.06)' }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid #eef1f5',
+                      boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <defs>
+                    <linearGradient id="barGradFF9800" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#FF9800" stopOpacity={0.7} />
+                      <stop offset="100%" stopColor="#FF9800" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <Bar dataKey="value" fill="url(#barGradFF9800)" radius={[0, 6, 6, 0]} barSize={20}>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 12, fontWeight: 600, fill: '#475467' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -696,7 +862,17 @@ Keep it concise - this is for a dashboard quick view.`;
 
         {/* Enrollments by Action Taken - Donut with total in center */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: 320 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.5,
+              height: 320,
+              borderRadius: 3,
+              border: '1.5px solid',
+              borderColor: '#2196F3',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+            }}
+          >
             <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
               Enrollments by Action Taken
             </Typography>

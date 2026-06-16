@@ -208,6 +208,26 @@ Generate an overall summary including:
     }
   };
 
+  const inputSx = {
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2.5,
+      '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
+    },
+  };
+
+  const getSummaryTypeColor = (type: string): string => {
+    switch (type) {
+      case 'overall':
+        return '#1E4088';
+      case 'agent':
+        return '#7B4B94';
+      case 'daily':
+        return '#0f8a63';
+      default:
+        return '#475569';
+    }
+  };
+
   const getSummaryTypeLabel = (type: string) => {
     switch (type) {
       case 'overall':
@@ -223,9 +243,14 @@ Generate an overall summary including:
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-        AI Summaries
-      </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+          AI Summaries
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Generate and review AI-powered activity and performance summaries
+        </Typography>
+      </Box>
 
       {/* Agent Daily Activity Summary */}
       <Box sx={{ mb: 3 }}>
@@ -233,7 +258,17 @@ Generate an overall summary including:
       </Box>
 
       {/* Generate Summary Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 3,
+          mb: 3,
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <AutoAwesomeIcon color="primary" />
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -250,6 +285,7 @@ Generate an overall summary including:
               label="Summary Type"
               value={summaryType}
               onChange={(e) => setSummaryType(e.target.value as 'overall' | 'agent' | 'daily')}
+              sx={inputSx}
             >
               <MenuItem value="overall">Overall Summary</MenuItem>
               <MenuItem value="agent">Agent-wise Summary</MenuItem>
@@ -266,6 +302,7 @@ Generate an overall summary including:
                 label="Select Agent"
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
+                sx={inputSx}
               >
                 <MenuItem value="">All Agents</MenuItem>
                 {agents.map((agent) => (
@@ -286,6 +323,7 @@ Generate an overall summary including:
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
               InputLabelProps={{ shrink: true }}
+              sx={inputSx}
             />
           </Grid>
 
@@ -298,6 +336,7 @@ Generate an overall summary including:
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
               InputLabelProps={{ shrink: true }}
+              sx={inputSx}
             />
           </Grid>
 
@@ -320,13 +359,13 @@ Generate an overall summary including:
             <Box
               sx={{
                 p: 2,
-                bgcolor: '#e3f2fd',
-                borderRadius: 2,
+                bgcolor: 'rgba(30,64,136,0.05)',
+                borderRadius: 2.5,
                 whiteSpace: 'pre-wrap',
-                border: '1px solid #90caf9',
+                border: '1px solid rgba(30,64,136,0.18)',
               }}
             >
-              <Typography variant="subtitle2" color="primary" sx={{ mb: 1 }}>
+              <Typography variant="subtitle2" color="primary" sx={{ mb: 1, fontWeight: 700 }}>
                 Latest Generated Summary
               </Typography>
               <Box
@@ -348,7 +387,16 @@ Generate an overall summary including:
       </Paper>
 
       {/* Summary History Section */}
-      <Paper sx={{ p: 3 }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 3,
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+        }}
+      >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
             Summary History
@@ -367,13 +415,32 @@ Generate an overall summary including:
         ) : storedSummaries.length > 0 ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {storedSummaries.map((s) => (
-              <Paper key={s.id} variant="outlined" sx={{ p: 2 }}>
+              <Paper
+                key={s.id}
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 3,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+                }}
+              >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                     <Chip
                       label={getSummaryTypeLabel(s.summary_type)}
                       size="small"
-                      color={s.summary_type === 'overall' ? 'primary' : s.summary_type === 'agent' ? 'secondary' : 'info'}
+                      sx={{
+                        bgcolor: `${getSummaryTypeColor(s.summary_type)}1A`,
+                        color: getSummaryTypeColor(s.summary_type),
+                        fontWeight: 600,
+                        fontSize: '0.7rem',
+                        height: 24,
+                        borderRadius: '8px',
+                        border: `1px solid ${getSummaryTypeColor(s.summary_type)}33`,
+                        '& .MuiChip-label': { px: 1 },
+                      }}
                     />
                     {s.agent_name && (
                       <Typography variant="body2" color="text.secondary">
