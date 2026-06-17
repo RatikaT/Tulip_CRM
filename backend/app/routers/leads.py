@@ -371,18 +371,9 @@ async def bulk_upload_leads(
                     elif 'family' in looking_for_str.lower():
                         looking_for = LookingFor.FAMILY_MEMBER
 
-                # Parse service_requested
-                service_str = row.get('service_requested', '').strip()
-                service_requested = None
-                if service_str:
-                    service_map = {
-                        'preconception': ServiceEnrolled.PRE_CONCEPTION,
-                        'pre conception': ServiceEnrolled.PRE_CONCEPTION,
-                        'antenatal': ServiceEnrolled.ANTENATAL,
-                        'maternitywellness': ServiceEnrolled.MATERNITY_WELLNESS,
-                        'maternity wellness': ServiceEnrolled.MATERNITY_WELLNESS,
-                    }
-                    service_requested = service_map.get(service_str.lower())
+                # Parse service_requested — stored as free text (like package_requested),
+                # so any value from the CSV is preserved instead of being dropped to None.
+                service_requested = row.get('service_requested', '').strip() or None
 
                 # Parse service_partner
                 partner_str = row.get('service_partner', '').strip()
