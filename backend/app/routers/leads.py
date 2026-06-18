@@ -550,6 +550,7 @@ async def get_leads(
     created_date_from: Optional[str] = None,
     created_date_to: Optional[str] = None,
     next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
@@ -697,6 +698,19 @@ async def get_leads(
         else:
             query["$or"] = search_conditions
 
+    # "Assigned today" quick filter: assigned_date OR reassigned_date is today (IST).
+    # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper so it
+    # composes correctly with any query shape built above.
+    if assigned_today:
+        IST_OFFSET = timedelta(hours=5, minutes=30)
+        t = date.today()
+        a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
+        a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
+        query = {"$and": [query, {"$or": [
+            {"assigned_date": {"$gte": a_start, "$lte": a_end}},
+            {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
+        ]}]}
+
     # Count total
     total = await Lead.find(query).count()
     pages = math.ceil(total / per_page) if total > 0 else 1
@@ -716,10 +730,13 @@ async def get_leads(
 
 @router.get("/export/excel")
 async def export_leads_excel(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
     current_user: dict = Depends(get_current_admin)
 ):
     """
-    Export all leads with audit trail to Excel (Admin only)
+    Export leads with audit trail to Excel (Admin only).
+    Optional created_at date range filter, interpreted in IST.
     """
     # Create workbook
     wb = Workbook()
@@ -762,8 +779,30 @@ async def export_leads_excel(
         cell.alignment = header_alignment
         cell.border = thin_border
 
-    # Fetch all leads
-    leads = await Lead.find(Lead.is_deleted == False).sort("-created_at").to_list()
+    # Build query with optional IST-aware created_at date range.
+    # created_at is stored in UTC; the picker sends IST calendar dates, so we
+    # offset by IST (+5:30) to get the correct UTC boundaries.
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+    query: dict = {"is_deleted": False}
+    created_range: dict = {}
+    if start_date:
+        try:
+            start_utc = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
+            created_range["$gte"] = start_utc
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date (expected YYYY-MM-DD)")
+    if end_date:
+        try:
+            # Inclusive end of day in IST = start of next IST day, then to UTC
+            end_excl_utc = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
+            created_range["$lt"] = end_excl_utc
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date (expected YYYY-MM-DD)")
+    if created_range:
+        query["created_at"] = created_range
+
+    # Fetch leads (optionally filtered by created_at range)
+    leads = await Lead.find(query).sort("-created_at").to_list()
 
     # Write lead data
     for row_num, lead in enumerate(leads, 2):
@@ -913,8 +952,15 @@ async def export_leads_excel(
         cell.alignment = header_alignment
         cell.border = thin_border
 
-    # Fetch all audit logs
-    audit_logs = await AuditLog.find().sort("-timestamp").to_list()
+    # Fetch audit logs scoped to the exported leads (so the audit sheet matches
+    # the same date range as the Leads sheet)
+    exported_lead_ids = [lead.lead_id for lead in leads]
+    if exported_lead_ids:
+        audit_logs = await AuditLog.find(
+            {"lead_id": {"$in": exported_lead_ids}}
+        ).sort("-timestamp").to_list()
+    else:
+        audit_logs = []
 
     audit_row = 2
     for log in audit_logs:

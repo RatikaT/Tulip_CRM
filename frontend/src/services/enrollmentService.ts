@@ -22,6 +22,7 @@ export interface EnrollmentQueryParams {
   created_date_from?: string;
   created_date_to?: string;
   next_follow_up_date?: string;
+  assigned_today?: boolean;
 }
 
 export const enrollmentService = {
@@ -68,9 +69,13 @@ export const enrollmentService = {
     return response.data;
   },
 
-  exportExcel: async (): Promise<Blob> => {
+  exportExcel: async (startDate?: string, endDate?: string): Promise<Blob> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
     const response = await api.get('/enrollments/export/excel', {
       responseType: 'blob',
+      params,
     });
     return response.data;
   },

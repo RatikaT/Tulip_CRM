@@ -518,9 +518,14 @@ async def bulk_upload_enrollments(
 
 @router.get("/export/excel")
 async def export_enrollments_excel(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
     current_user: dict = Depends(get_current_admin)
 ):
-    """Export all enrollments to Excel (Admin only)"""
+    """
+    Export enrollments to Excel (Admin only).
+    Optional created_at date range filter, interpreted in IST.
+    """
     wb = Workbook()
 
     # Styles
@@ -555,7 +560,26 @@ async def export_enrollments_excel(
         cell.alignment = header_alignment
         cell.border = thin_border
 
-    enrollments = await Enrollment.find(Enrollment.is_deleted == False).sort("-created_at").to_list()
+    # Build query with optional IST-aware created_at date range.
+    # created_at is stored in UTC; the picker sends IST calendar dates, so we
+    # offset by IST (+5:30) to get the correct UTC boundaries.
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+    query: dict = {"is_deleted": False}
+    created_range: dict = {}
+    if start_date:
+        try:
+            created_range["$gte"] = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date (expected YYYY-MM-DD)")
+    if end_date:
+        try:
+            created_range["$lt"] = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date (expected YYYY-MM-DD)")
+    if created_range:
+        query["created_at"] = created_range
+
+    enrollments = await Enrollment.find(query).sort("-created_at").to_list()
 
     for row_num, enrollment in enumerate(enrollments, 2):
         row_data = [
@@ -670,6 +694,7 @@ async def get_enrollments(
     created_date_from: Optional[str] = None,
     created_date_to: Optional[str] = None,
     next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollments with pagination and filters"""
@@ -749,6 +774,18 @@ async def get_enrollments(
                 query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_conditions}]
             else:
                 query["$or"] = search_conditions
+
+        # "Assigned today" quick filter: assigned_date OR reassigned_date is today (IST).
+        # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper.
+        if assigned_today:
+            IST_OFFSET = timedelta(hours=5, minutes=30)
+            t = date.today()
+            a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
+            a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
+            query = {"$and": [query, {"$or": [
+                {"assigned_date": {"$gte": a_start, "$lte": a_end}},
+                {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
+            ]}]}
 
         # Get total count
         total = await Enrollment.find(query).count()

@@ -185,15 +185,17 @@ export default function EnrollmentsPage() {
   const [createdDateTo, setCreatedDateTo] = useState<Date | null>(null);
   const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(null);
   const [colorFilter, setColorFilter] = useState<string>(''); // 'filled' or 'not_filled' or ''
+  const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>(false);
+  const [activeKpi, setActiveKpi] = useState<string>('');
   const [showFilters, setShowFilters] = useState(true);
   const [allUhids, setAllUhids] = useState<string[]>([]);
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter;
+  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
 
   // Get total number of active filter values
-  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0);
+  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -208,6 +210,9 @@ export default function EnrollmentsPage() {
 
   // Export state
   const [exporting, setExporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState<Date | null>(null);
+  const [exportEndDate, setExportEndDate] = useState<Date | null>(null);
 
   // View mode toggle: 'all' for all enrollments, 'user' for user-level view
   const [viewMode, setViewMode] = useState<'all' | 'user'>('all');
@@ -329,6 +334,7 @@ export default function EnrollmentsPage() {
         created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
         created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
         next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
+        assigned_today: assignedTodayFilter || undefined,
       });
       setEnrollments(response.enrollments);
       setTotalCount(response.total);
@@ -345,12 +351,12 @@ export default function EnrollmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
-  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter]);
+  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   useEffect(() => {
     fetchEnrollments();
@@ -427,10 +433,101 @@ export default function EnrollmentsPage() {
     setDeleteTargetEnrollment(null);
   };
 
+  const clearAllFilters = () => {
+    setConnectStatusFilter([]);
+    setActionTakenFilter([]);
+    setServicePartnerFilter([]);
+    setUhidFilter([]);
+    setHclhcSpocFilter('');
+    setCreatedDateFrom(null);
+    setCreatedDateTo(null);
+    setNextFollowUpDateFilter(null);
+    setColorFilter('');
+    setAssignedTodayFilter(false);
+    setActiveKpi('');
+  };
+
+  // KPI card acts as a quick filter on the table
+  const handleKpiClick = (kpi: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today') => {
+    if (activeKpi === kpi) {
+      clearAllFilters();
+      return;
+    }
+    clearAllFilters();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (kpi === 'new_today') {
+      setCreatedDateFrom(today);
+      setCreatedDateTo(today);
+    } else if (kpi === 'assigned_today') {
+      setAssignedTodayFilter(true);
+    } else if (kpi === 'follow_up_today') {
+      setNextFollowUpDateFilter(today);
+    }
+    // 'total' = cleared (show all)
+    setActiveKpi(kpi);
+  };
+
+  // Clickable KPI card that doubles as a quick filter
+  const renderKpiCard = (opts: {
+    kpiKey: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today';
+    title: string;
+    value: number | string;
+    subtitle?: string;
+    icon: React.ReactNode;
+    iconBg: string;
+    sm: number;
+  }) => (
+    <Grid item xs={6} sm={opts.sm} sx={{ display: 'flex' }}>
+      <Card
+        onClick={() => handleKpiClick(opts.kpiKey)}
+        sx={{
+          background: '#ffffff',
+          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: 'divider',
+          width: '100%',
+          minHeight: 100,
+          cursor: 'pointer',
+          transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+          '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 12px 24px rgba(16,24,40,0.10)' },
+          ...(activeKpi === opts.kpiKey && {
+            borderColor: 'primary.main',
+            boxShadow: '0 0 0 2px rgba(30,64,136,0.35), 0 8px 20px rgba(16,24,40,0.10)',
+          }),
+        }}
+      >
+        <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Box>
+              <Typography color="text.secondary" variant="body2" sx={{ mb: 0.5 }}>
+                {opts.title}
+              </Typography>
+              <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
+                {opts.value}
+              </Typography>
+              {opts.subtitle && (
+                <Typography variant="caption" color="text.secondary">
+                  {opts.subtitle}
+                </Typography>
+              )}
+            </Box>
+            <Box sx={{ width: 40, height: 40, borderRadius: '50%', background: opts.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {opts.icon}
+            </Box>
+          </Box>
+        </CardContent>
+      </Card>
+    </Grid>
+  );
+
   const handleExport = async () => {
     setExporting(true);
     try {
-      const blob = await enrollmentService.exportExcel();
+      const start = exportStartDate ? format(exportStartDate, 'yyyy-MM-dd') : undefined;
+      const end = exportEndDate ? format(exportEndDate, 'yyyy-MM-dd') : undefined;
+      const blob = await enrollmentService.exportExcel(start, end);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -440,6 +537,7 @@ export default function EnrollmentsPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
       toast.success('Export downloaded successfully');
+      setExportDialogOpen(false);
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Failed to export enrollments');
@@ -658,7 +756,7 @@ export default function EnrollmentsPage() {
               <Button
                 variant="outlined"
                 startIcon={<DownloadIcon />}
-                onClick={handleExport}
+                onClick={() => setExportDialogOpen(true)}
                 disabled={exporting}
                 size="small"
               >
@@ -815,302 +913,45 @@ export default function EnrollmentsPage() {
       ) : stats && !isAdmin ? (
         /* Agent Stats Cards - 4 cards for agents */
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
-          <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.25 }}>
-                      Total Enrollments
-                    </Typography>
-                    <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                      Assigned or Reassigned
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.total}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <PersonIcon sx={{ color: '#1976d2', fontSize: '1.4rem' }} />
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.25 }}>
-                      New Enrollments Today
-                    </Typography>
-                    <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                      Assigned Today
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.new_today}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.25 }}>
-                      Enrollments Assigned Today
-                    </Typography>
-                    <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                      All Assignments
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.assigned_today}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>*</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={3} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.25 }}>
-                      Follow-ups Today
-                    </Typography>
-                    <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mb: 0.5 }}>
-                      Enrollments
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.follow_up_today}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#c2185b', fontSize: '1.2rem' }}>!</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+          {renderKpiCard({
+            kpiKey: 'total', sm: 3, title: 'Total Enrollments', value: stats.total, subtitle: 'Assigned or Reassigned',
+            iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+            icon: <PersonIcon sx={{ color: '#1976d2', fontSize: '1.4rem' }} />,
+          })}
+          {renderKpiCard({
+            kpiKey: 'new_today', sm: 3, title: 'New Enrollments Today', value: stats.new_today, subtitle: 'Assigned Today',
+            iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
+            icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
+          })}
+          {renderKpiCard({
+            kpiKey: 'assigned_today', sm: 3, title: 'Enrollments Assigned Today', value: stats.assigned_today, subtitle: 'All Assignments',
+            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>*</Typography>,
+          })}
+          {renderKpiCard({
+            kpiKey: 'follow_up_today', sm: 3, title: 'Follow-ups Today', value: stats.follow_up_today, subtitle: 'Enrollments',
+            iconBg: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)',
+            icon: <Typography sx={{ color: '#c2185b', fontSize: '1.2rem' }}>!</Typography>,
+          })}
         </Grid>
       ) : stats && isAdmin && (
         /* Admin Stats Cards - 3 cards */
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
-          <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.5 }}>
-                      Total Enrollments
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.total}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={6} sm={4} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.5 }}>
-                      Enrollments Created Today
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.new_today}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={4} sx={{ display: 'flex' }}>
-            <Card sx={{
-              background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-              borderRadius: 3,
-              border: '1px solid',
-              borderColor: 'divider',
-              width: '100%',
-              minHeight: 100,
-              transition: 'transform .18s ease, box-shadow .18s ease',
-              '&:hover': {
-                transform: 'translateY(-3px)',
-                boxShadow: '0 12px 24px rgba(16,24,40,0.10)',
-              },
-            }}>
-              <CardContent sx={{ py: 2, px: 2.5, '&:last-child': { pb: 2 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography color="text.secondary" variant="body2" sx={{ mb: 0.5 }}>
-                      Follow-ups Today
-                    </Typography>
-                    <Typography variant="h4" sx={{ fontWeight: 600, color: '#1a1a2e' }}>
-                      {stats.follow_up_today}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+          {renderKpiCard({
+            kpiKey: 'total', sm: 4, title: 'Total Enrollments', value: stats.total,
+            iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+            icon: <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>,
+          })}
+          {renderKpiCard({
+            kpiKey: 'new_today', sm: 4, title: 'Enrollments Created Today', value: stats.new_today,
+            iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
+            icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
+          })}
+          {renderKpiCard({
+            kpiKey: 'follow_up_today', sm: 4, title: 'Follow-ups Today', value: stats.follow_up_today,
+            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
+          })}
         </Grid>
       )}
 
@@ -1200,15 +1041,7 @@ export default function EnrollmentsPage() {
                   size="small"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConnectStatusFilter([]);
-                    setActionTakenFilter([]);
-                    setServicePartnerFilter([]);
-                    setUhidFilter([]);
-                    setHclhcSpocFilter('');
-                    setCreatedDateFrom(null);
-                    setCreatedDateTo(null);
-                    setNextFollowUpDateFilter(null);
-                    setColorFilter('');
+                    clearAllFilters();
                   }}
                   sx={{
                     color: 'error.main',
@@ -1539,6 +1372,29 @@ export default function EnrollmentsPage() {
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Follow Up: {format(nextFollowUpDateFilter, 'dd/MM/yy')}
+                      </Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    </Box>
+                  )}
+                  {assignedTodayFilter && (
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
+                      onClick={() => { setAssignedTodayFilter(false); setActiveKpi(''); }}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
+                        Assigned Today
                       </Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
@@ -1917,6 +1773,59 @@ export default function EnrollmentsPage() {
           </Button>
           <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
             {deleting ? 'Deleting...' : 'Yes, Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Export Date Range Dialog */}
+      <Dialog
+        open={exportDialogOpen}
+        onClose={() => !exporting && setExportDialogOpen(false)}
+        PaperProps={{ sx: { borderRadius: 3, width: 420, maxWidth: '90vw' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Export Enrollments</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Choose a date range to export enrollments created within it (IST). Leave both blank to export all.
+          </DialogContentText>
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <Box sx={{ display: 'flex', gap: 1.5, mt: 1 }}>
+              <DatePicker
+                label="From"
+                value={exportStartDate}
+                onChange={(d) => setExportStartDate(d)}
+                maxDate={exportEndDate || undefined}
+                slotProps={{ textField: { size: 'small', fullWidth: true } }}
+              />
+              <DatePicker
+                label="To"
+                value={exportEndDate}
+                onChange={(d) => setExportEndDate(d)}
+                minDate={exportStartDate || undefined}
+                slotProps={{ textField: { size: 'small', fullWidth: true } }}
+              />
+            </Box>
+          </LocalizationProvider>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => { setExportStartDate(null); setExportEndDate(null); }}
+            disabled={exporting || (!exportStartDate && !exportEndDate)}
+            sx={{ textTransform: 'none', mr: 'auto' }}
+          >
+            Clear
+          </Button>
+          <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleExport}
+            variant="contained"
+            disabled={exporting}
+            startIcon={<DownloadIcon />}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
+          >
+            {exporting ? 'Exporting...' : 'Export'}
           </Button>
         </DialogActions>
       </Dialog>
