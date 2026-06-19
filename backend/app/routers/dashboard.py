@@ -398,10 +398,10 @@ async def get_summary_data(
     service_counts = {}
 
     for lead in leads:
-        status = lead.status.value if lead.status else "Unknown"
+        status = lead.status if lead.status else "Unknown"
         status_counts[status] = status_counts.get(status, 0) + 1
 
-        source = lead.lead_source.value if lead.lead_source else "Unknown"
+        source = lead.lead_source if lead.lead_source else "Unknown"
         source_counts[source] = source_counts.get(source, 0) + 1
 
         if lead.service_requested:
@@ -646,8 +646,8 @@ async def get_agent_activity(
             "lead_id": lead.lead_id,
             "name": lead.name or "Unknown",
             "phone": lead.phone_number,
-            "status": lead.status.value if lead.status else "New",
-            "lead_source": lead.lead_source.value if lead.lead_source else None,
+            "status": lead.status if lead.status else "New",
+            "lead_source": lead.lead_source if lead.lead_source else None,
             "created_at": lead.created_at.isoformat() if lead.created_at else None
         }
         for lead in new_leads
@@ -677,7 +677,7 @@ async def get_agent_activity(
         # Get lead info
         lead = await Lead.find_one({"lead_id": log.lead_id})
         lead_name = lead.name if lead else log.lead_id
-        lead_status = lead.status.value if lead and lead.status else "N/A"
+        lead_status = lead.status if lead and lead.status else "N/A"
 
         reassigned_to_agent_list.append({
             "lead_id": log.lead_id,
@@ -708,7 +708,7 @@ async def get_agent_activity(
 
         lead = await Lead.find_one({"lead_id": log.lead_id})
         lead_name = lead.name if lead else log.lead_id
-        lead_status = lead.status.value if lead and lead.status else "N/A"
+        lead_status = lead.status if lead and lead.status else "N/A"
 
         reassigned_from_agent_list.append({
             "lead_id": log.lead_id,
@@ -824,7 +824,7 @@ async def get_agent_activity(
         lead_followups_list.append({
             "lead_id": lead.lead_id,
             "name": lead.name or "Unknown",
-            "status": lead.status.value if lead.status else "Unknown",
+            "status": lead.status if lead.status else "Unknown",
             "follow_up_time": lead.follow_up_date.isoformat() if lead.follow_up_date else None,
             "is_overdue": is_overdue
         })

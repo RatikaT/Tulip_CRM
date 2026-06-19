@@ -104,10 +104,12 @@ class Lead(Document):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Lead Source and Status (agent editable)
-    lead_source: Optional[LeadSource] = None
+    # Lead Source and Status (agent editable).
+    # Dropdown-backed fields are stored as free text so admin-configured
+    # custom options (Configurations > Dropdown Options) are accepted.
+    lead_source: Optional[str] = None
     lead_creation_date: Optional[date] = None  # Manual calendar select
-    status: LeadStatus = LeadStatus.ENQUIRY_LEAD
+    status: str = LeadStatus.ENQUIRY_LEAD.value
 
     # User Details - At least one of UHID, phone_number, or email is required
     name: Optional[str] = "Unknown"
@@ -124,8 +126,8 @@ class Lead(Document):
     address: Optional[str] = None
 
     # Lead Information
-    trimester: Optional[Trimester] = None  # Renamed from stage
-    looking_for: Optional[LookingFor] = None
+    trimester: Optional[str] = None  # Renamed from stage
+    looking_for: Optional[str] = None
     family_member_relation: Optional[str] = None  # Free text: Mother, Daughter, Sister, Wife, etc.
     package_requested: Optional[str] = None
 
@@ -137,7 +139,7 @@ class Lead(Document):
     hclhc_spoc: Optional[str] = None
 
     # Reason for No Sale
-    reason_for_no_sale: Optional[ReasonForNoSale] = None
+    reason_for_no_sale: Optional[str] = None
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None

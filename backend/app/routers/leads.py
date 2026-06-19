@@ -45,9 +45,9 @@ def lead_to_response(lead: Lead) -> dict:
         "updated_at": lead.updated_at,
 
         # Lead Source and Status
-        "lead_source": lead.lead_source.value if lead.lead_source else None,
+        "lead_source": lead.lead_source if lead.lead_source else None,
         "lead_creation_date": lead.lead_creation_date,
-        "status": lead.status.value if lead.status else None,
+        "status": lead.status if lead.status else None,
 
         # User Details
         "name": lead.name,
@@ -64,8 +64,8 @@ def lead_to_response(lead: Lead) -> dict:
         "address": lead.address,
 
         # Lead Information
-        "trimester": lead.trimester.value if lead.trimester else None,
-        "looking_for": lead.looking_for.value if lead.looking_for else None,
+        "trimester": lead.trimester if lead.trimester else None,
+        "looking_for": lead.looking_for if lead.looking_for else None,
         "family_member_relation": lead.family_member_relation,
         "package_requested": lead.package_requested,
 
@@ -77,7 +77,7 @@ def lead_to_response(lead: Lead) -> dict:
         "hclhc_spoc": lead.hclhc_spoc,
 
         # Reason for No Sale
-        "reason_for_no_sale": lead.reason_for_no_sale.value if lead.reason_for_no_sale else None,
+        "reason_for_no_sale": lead.reason_for_no_sale if lead.reason_for_no_sale else None,
 
         # Doctor/Consultation Details
         "doctor_name": lead.doctor_name,
@@ -813,11 +813,11 @@ async def export_leads_excel(
             lead.phone_number,
             lead.employee_id,
             lead.uhid,
-            lead.status.value if lead.status else None,
-            lead.lead_source.value if lead.lead_source else None,
+            lead.status if lead.status else None,
+            lead.lead_source if lead.lead_source else None,
             str(lead.lead_creation_date) if lead.lead_creation_date else None,
-            lead.trimester.value if lead.trimester else None,
-            lead.looking_for.value if lead.looking_for else None,
+            lead.trimester if lead.trimester else None,
+            lead.looking_for if lead.looking_for else None,
             lead.user_facility,
             lead.city,
             lead.pin_code,
@@ -828,7 +828,7 @@ async def export_leads_excel(
             lead.service_partner if lead.service_partner else None,
             lead.provider_location,
             lead.hclhc_spoc,
-            lead.reason_for_no_sale.value if lead.reason_for_no_sale else None,
+            lead.reason_for_no_sale if lead.reason_for_no_sale else None,
             lead.doctor_name,
             lead.doctor_speciality,
             str(lead.consult_date) if lead.consult_date else None,
@@ -1385,7 +1385,7 @@ async def update_lead(
             if lead.trimester:
                 from app.models.enrollment import Trimester as EnrollmentTrimester
                 try:
-                    trimester_value = EnrollmentTrimester(lead.trimester.value)
+                    trimester_value = EnrollmentTrimester(lead.trimester)
                 except ValueError:
                     pass
 

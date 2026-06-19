@@ -29,8 +29,10 @@ class CommentCreateRequest(BaseModel):
 
 class LeadCreateRequest(BaseModel):
     """Lead creation request schema - At least one of UHID, Contact No., or Email required"""
-    # Optional fields - lead_source no longer mandatory
-    lead_source: Optional[LeadSource] = None
+    # Optional fields - lead_source no longer mandatory.
+    # Dropdown-backed fields are stored as free text so admin-configured
+    # custom options (Configurations > Dropdown Options) are accepted.
+    lead_source: Optional[str] = None
     lead_creation_date: Optional[date] = None
     name: Optional[str] = Field(default="Unknown", max_length=200)
     email: Optional[EmailStr] = None
@@ -44,8 +46,8 @@ class LeadCreateRequest(BaseModel):
     city: Optional[str] = None
     pin_code: Optional[str] = None
     address: Optional[str] = None
-    trimester: Optional[Trimester] = None
-    looking_for: Optional[LookingFor] = None
+    trimester: Optional[str] = None
+    looking_for: Optional[str] = None
     family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
     service_requested: Optional[str] = None
@@ -53,7 +55,7 @@ class LeadCreateRequest(BaseModel):
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
-    reason_for_no_sale: Optional[ReasonForNoSale] = None
+    reason_for_no_sale: Optional[str] = None
     doctor_name: Optional[str] = None
     doctor_speciality: Optional[str] = None
     consult_date: Optional[date] = None
@@ -93,10 +95,11 @@ class LeadCreateRequest(BaseModel):
 
 class LeadUpdateRequest(BaseModel):
     """Lead update request schema - Role-based field restrictions apply"""
-    # Agent editable fields
-    lead_source: Optional[LeadSource] = None
+    # Agent editable fields. Dropdown-backed fields are free text so
+    # admin-configured custom options are accepted on save.
+    lead_source: Optional[str] = None
     lead_creation_date: Optional[date] = None
-    status: Optional[LeadStatus] = None
+    status: Optional[str] = None
     number_of_calls: Optional[int] = None
     calls: Optional[List[CallEntrySchema]] = None
     follow_up_date: Optional[datetime] = None
@@ -112,8 +115,8 @@ class LeadUpdateRequest(BaseModel):
     city: Optional[str] = None
     pin_code: Optional[str] = None
     address: Optional[str] = None
-    trimester: Optional[Trimester] = None
-    looking_for: Optional[LookingFor] = None
+    trimester: Optional[str] = None
+    looking_for: Optional[str] = None
     family_member_relation: Optional[str] = None
     package_requested: Optional[str] = None
     service_requested: Optional[str] = None
@@ -121,7 +124,7 @@ class LeadUpdateRequest(BaseModel):
     service_partner: Optional[str] = None
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
-    reason_for_no_sale: Optional[ReasonForNoSale] = None
+    reason_for_no_sale: Optional[str] = None
     doctor_name: Optional[str] = None
     doctor_speciality: Optional[str] = None
     consult_date: Optional[date] = None
