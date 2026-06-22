@@ -358,11 +358,19 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <Autocomplete
                 freeSolo
+                forcePopupIcon
+                openOnFocus
                 options={users.map((u) => u.full_name)}
                 inputValue={formData.hclhc_spoc}
                 onInputChange={(_, newValue) => handleChange('hclhc_spoc', newValue || '')}
                 renderInput={(params) => (
-                  <TextField {...params} fullWidth label="HCLHC SPOC" size="small" />
+                  <TextField
+                    {...params}
+                    fullWidth
+                    label="HCLHC SPOC"
+                    size="small"
+                    placeholder="Select SPOC"
+                  />
                 )}
               />
             </Grid>
