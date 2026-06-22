@@ -32,6 +32,13 @@ import {
   PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS, LeadUpdateRequest } from '../../types/lead.types';
+import api from '../../services/api';
+
+interface UserOption {
+  id: string;
+  full_name: string;
+  email: string;
+}
 
 interface EnrollmentConfirmModalProps {
   open: boolean;
@@ -116,6 +123,23 @@ export default function EnrollmentConfirmModal({
   const [dob, setDob] = useState<Date | null>(null);
   const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
+
+  // Users for the HCLHC SPOC dropdown (only users with Tulip CRM access)
+  const [users, setUsers] = useState<UserOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    const fetchUsers = async () => {
+      try {
+        const response = await api.get<{ users: UserOption[] }>('/users/dropdown', {
+          params: { crm_type: 'tulip' },
+        });
+        setUsers(response.data.users || []);
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+      }
+    };
+    fetchUsers();
+  }, [open]);
 
   // Pre-fill form data from currentFormData (unsaved edits) when modal opens
   // Use currentFormData first (what user has been editing), fall back to lead values
@@ -332,12 +356,14 @@ export default function EnrollmentConfirmModal({
             </Grid>
 
             <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="HCLHC SPOC"
-                value={formData.hclhc_spoc}
-                onChange={(e) => handleChange('hclhc_spoc', e.target.value)}
-                size="small"
+              <Autocomplete
+                freeSolo
+                options={users.map((u) => u.full_name)}
+                inputValue={formData.hclhc_spoc}
+                onInputChange={(_, newValue) => handleChange('hclhc_spoc', newValue || '')}
+                renderInput={(params) => (
+                  <TextField {...params} fullWidth label="HCLHC SPOC" size="small" />
+                )}
               />
             </Grid>
 
