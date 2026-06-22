@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://tulip-crm-backend.onrender.com/api/:path*"
+      "destination": "https://tulip-crm-backend-6gjh.onrender.com/api/:path*"
     },
     {
       "source": "/((?!api/).*)",
