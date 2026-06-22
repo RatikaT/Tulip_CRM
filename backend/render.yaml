@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: crm-backend
+    name: tulip-crm-backend
     env: python
     region: oregon
     plan: free
@@ -22,3 +22,8 @@ services:
         sync: false
       - key: LOG_LEVEL
         value: INFO
+      # Required by config.py - the app will not start without these
+      - key: DEFAULT_ADMIN_PASSWORD
+        sync: false
+      - key: DEFAULT_SUPER_ADMIN_PASSWORD
+        sync: false
