@@ -66,6 +66,7 @@ import EnrollmentCreateModal from '../components/enrollments/EnrollmentCreateMod
 import BulkUploadModal from '../components/enrollments/BulkUploadModal';
 import api from '../services/api';
 import { brandColors } from '../theme';
+import { loadPersistedFilters, savePersistedFilters, toDateOrNull, dateToIso } from '../utils/filterPersistence';
 
 interface UserOption {
   id: string;
@@ -166,27 +167,29 @@ export default function EnrollmentsPage() {
   const [stats, setStats] = useState<EnrollmentStatsResponse | null>(null);
 
   // Search
-  const [searchInput, setSearchInput] = useState('');
+  const ENROLLMENTS_FILTERS_KEY = 'tulip_enrollments_filters';
+  const savedEnrollmentFilters = loadPersistedFilters(ENROLLMENTS_FILTERS_KEY);
+  const [searchInput, setSearchInput] = useState<string>((savedEnrollmentFilters.searchInput as string) ?? '');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Filters - multi-select arrays
-  const [connectStatusFilter, setConnectStatusFilter] = useState<string[]>([]);
-  const [actionTakenFilter, setActionTakenFilter] = useState<string[]>([]);
-  const [servicePartnerFilter, setServicePartnerFilter] = useState<string[]>([]);
-  const [uhidFilter, setUhidFilter] = useState<string[]>([]);
-  const [hclhcSpocFilter, setHclhcSpocFilter] = useState('');
+  const [connectStatusFilter, setConnectStatusFilter] = useState<string[]>((savedEnrollmentFilters.connectStatusFilter as string[]) ?? []);
+  const [actionTakenFilter, setActionTakenFilter] = useState<string[]>((savedEnrollmentFilters.actionTakenFilter as string[]) ?? []);
+  const [servicePartnerFilter, setServicePartnerFilter] = useState<string[]>((savedEnrollmentFilters.servicePartnerFilter as string[]) ?? []);
+  const [uhidFilter, setUhidFilter] = useState<string[]>((savedEnrollmentFilters.uhidFilter as string[]) ?? []);
+  const [hclhcSpocFilter, setHclhcSpocFilter] = useState<string>((savedEnrollmentFilters.hclhcSpocFilter as string) ?? '');
 
   // Debounce search input → searchTerm (350ms)
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput), 350);
     return () => clearTimeout(t);
   }, [searchInput]);
-  const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(null);
-  const [createdDateTo, setCreatedDateTo] = useState<Date | null>(null);
-  const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(null);
-  const [colorFilter, setColorFilter] = useState<string>(''); // 'filled' or 'not_filled' or ''
-  const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>(false);
-  const [activeKpi, setActiveKpi] = useState<string>('');
+  const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.createdDateFrom));
+  const [createdDateTo, setCreatedDateTo] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.createdDateTo));
+  const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.nextFollowUpDateFilter));
+  const [colorFilter, setColorFilter] = useState<string>((savedEnrollmentFilters.colorFilter as string) ?? ''); // 'filled' or 'not_filled' or ''
+  const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>((savedEnrollmentFilters.assignedTodayFilter as boolean) ?? false);
+  const [activeKpi, setActiveKpi] = useState<string>((savedEnrollmentFilters.activeKpi as string) ?? '');
   const [showFilters, setShowFilters] = useState(true);
   const [allUhids, setAllUhids] = useState<string[]>([]);
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
@@ -215,7 +218,19 @@ export default function EnrollmentsPage() {
   const [exportEndDate, setExportEndDate] = useState<Date | null>(null);
 
   // View mode toggle: 'all' for all enrollments, 'user' for user-level view
-  const [viewMode, setViewMode] = useState<'all' | 'user'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'user'>((savedEnrollmentFilters.viewMode as 'all' | 'user') ?? 'all');
+
+  // Persist filters so they survive navigating into an enrollment and back (all roles)
+  useEffect(() => {
+    savePersistedFilters(ENROLLMENTS_FILTERS_KEY, {
+      searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter,
+      hclhcSpocFilter,
+      createdDateFrom: dateToIso(createdDateFrom),
+      createdDateTo: dateToIso(createdDateTo),
+      nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
+      colorFilter, assignedTodayFilter, activeKpi, viewMode,
+    });
+  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // Filter enrollments by color filter (client-side filter for highlight status)

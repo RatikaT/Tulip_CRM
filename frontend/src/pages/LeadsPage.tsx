@@ -57,6 +57,7 @@ import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '../types/lead.ty
 import LeadCreateModal from '../components/leads/LeadCreateModal';
 import api from '../services/api';
 import { brandColors } from '../theme';
+import { loadPersistedFilters, savePersistedFilters, toDateOrNull, dateToIso } from '../utils/filterPersistence';
 
 interface UserOption {
   id: string;
@@ -161,22 +162,24 @@ export default function LeadsPage() {
   });
 
   // Search
-  const [searchInput, setSearchInput] = useState('');
+  const LEADS_FILTERS_KEY = 'tulip_leads_filters';
+  const savedLeadFilters = loadPersistedFilters(LEADS_FILTERS_KEY);
+  const [searchInput, setSearchInput] = useState<string>((savedLeadFilters.searchInput as string) ?? '');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Filters - multi-select arrays
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
-  const [uhidFilter, setUhidFilter] = useState<string[]>([]);
-  const [packageRequestedFilter, setPackageRequestedFilter] = useState<string[]>([]);
-  const [assignedToFilter, setAssignedToFilter] = useState<string>('');
-  const [reassignedToFilter, setReassignedToFilter] = useState<string>('');
-  const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(null);
-  const [createdDateTo, setCreatedDateTo] = useState<Date | null>(null);
-  const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(null);
-  const [colorFilter, setColorFilter] = useState<string>(''); // 'filled' or 'not_filled' or ''
-  const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>(false);
-  const [activeKpi, setActiveKpi] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string[]>((savedLeadFilters.statusFilter as string[]) ?? []);
+  const [sourceFilter, setSourceFilter] = useState<string[]>((savedLeadFilters.sourceFilter as string[]) ?? []);
+  const [uhidFilter, setUhidFilter] = useState<string[]>((savedLeadFilters.uhidFilter as string[]) ?? []);
+  const [packageRequestedFilter, setPackageRequestedFilter] = useState<string[]>((savedLeadFilters.packageRequestedFilter as string[]) ?? []);
+  const [assignedToFilter, setAssignedToFilter] = useState<string>((savedLeadFilters.assignedToFilter as string) ?? '');
+  const [reassignedToFilter, setReassignedToFilter] = useState<string>((savedLeadFilters.reassignedToFilter as string) ?? '');
+  const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(toDateOrNull(savedLeadFilters.createdDateFrom));
+  const [createdDateTo, setCreatedDateTo] = useState<Date | null>(toDateOrNull(savedLeadFilters.createdDateTo));
+  const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(toDateOrNull(savedLeadFilters.nextFollowUpDateFilter));
+  const [colorFilter, setColorFilter] = useState<string>((savedLeadFilters.colorFilter as string) ?? ''); // 'filled' or 'not_filled' or ''
+  const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>((savedLeadFilters.assignedTodayFilter as boolean) ?? false);
+  const [activeKpi, setActiveKpi] = useState<string>((savedLeadFilters.activeKpi as string) ?? '');
   const [showFilters, setShowFilters] = useState(true);
 
   // Debounce search input → searchTerm (350ms)
@@ -215,7 +218,19 @@ export default function LeadsPage() {
   const [stats, setStats] = useState<LeadStats | null>(null);
 
   // View mode toggle: 'all' for all leads, 'user' for user-level view
-  const [viewMode, setViewMode] = useState<'all' | 'user'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'user'>((savedLeadFilters.viewMode as 'all' | 'user') ?? 'all');
+
+  // Persist filters so they survive navigating into a lead and back (all roles)
+  useEffect(() => {
+    savePersistedFilters(LEADS_FILTERS_KEY, {
+      searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter,
+      assignedToFilter, reassignedToFilter,
+      createdDateFrom: dateToIso(createdDateFrom),
+      createdDateTo: dateToIso(createdDateTo),
+      nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
+      colorFilter, assignedTodayFilter, activeKpi, viewMode,
+    });
+  }, [searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // Filter leads by color filter (client-side filter for highlight status)
