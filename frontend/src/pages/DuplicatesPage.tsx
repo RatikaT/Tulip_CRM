@@ -131,7 +131,22 @@ export default function DuplicatesPage() {
   }, []);
 
   useEffect(() => {
-    loadDuplicates();
+    // On open, run a fresh scan first so the list is never stale (covers the
+    // case where the upload-time scan lagged on a slow server), then load.
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        await leadService.scanDuplicates();
+      } catch (error) {
+        // ignore scan errors (e.g. server cold start); still load what's flagged
+        console.error('Auto-scan on open failed:', error);
+      }
+      if (!cancelled) await loadDuplicates();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadDuplicates]);
 
   const handleScan = async () => {
