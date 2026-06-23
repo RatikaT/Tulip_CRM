@@ -732,11 +732,12 @@ async def get_leads(
 async def export_leads_excel(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
-    current_user: dict = Depends(get_current_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Export leads with audit trail to Excel (Admin only).
-    Optional created_at date range filter, interpreted in IST.
+    Export leads with audit trail to Excel.
+    Admins/super-admins export all leads; agents export only leads assigned or
+    reassigned to them. Optional created_at date range filter, interpreted in IST.
     """
     # Create workbook
     wb = Workbook()
@@ -784,6 +785,10 @@ async def export_leads_excel(
     # offset by IST (+5:30) to get the correct UTC boundaries.
     IST_OFFSET = timedelta(hours=5, minutes=30)
     query: dict = {"is_deleted": False}
+    # Agents can only export leads assigned or reassigned to them
+    if current_user["role"] == "agent":
+        uid = current_user["user_id"]
+        query["$or"] = [{"assigned_to": uid}, {"reassign_to": uid}]
     created_range: dict = {}
     if start_date:
         try:

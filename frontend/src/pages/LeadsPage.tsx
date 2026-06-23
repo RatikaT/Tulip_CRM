@@ -805,17 +805,15 @@ export default function LeadsPage() {
               <RefreshIcon />
             </IconButton>
           </Tooltip>
-          {isAdmin && (
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={() => setExportDialogOpen(true)}
-              disabled={exporting}
-              size="small"
-            >
-              {exporting ? 'Exporting...' : 'Export'}
-            </Button>
-          )}
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => setExportDialogOpen(true)}
+            disabled={exporting}
+            size="small"
+          >
+            {exporting ? 'Exporting...' : 'Export'}
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}

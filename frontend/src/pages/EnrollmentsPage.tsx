@@ -766,26 +766,24 @@ export default function EnrollmentsPage() {
               <RefreshIcon />
             </IconButton>
           </Tooltip>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => setExportDialogOpen(true)}
+            disabled={exporting}
+            size="small"
+          >
+            {exporting ? 'Exporting...' : 'Export'}
+          </Button>
           {isAdmin && (
-            <>
-              <Button
-                variant="outlined"
-                startIcon={<DownloadIcon />}
-                onClick={() => setExportDialogOpen(true)}
-                disabled={exporting}
-                size="small"
-              >
-                {exporting ? 'Exporting...' : 'Export'}
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<UploadIcon />}
-                onClick={() => setBulkUploadModalOpen(true)}
-                size="small"
-              >
-                Bulk Upload
-              </Button>
-            </>
+            <Button
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              onClick={() => setBulkUploadModalOpen(true)}
+              size="small"
+            >
+              Bulk Upload
+            </Button>
           )}
           {canCreate && (
             <Button

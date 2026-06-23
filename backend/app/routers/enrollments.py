@@ -520,11 +520,12 @@ async def bulk_upload_enrollments(
 async def export_enrollments_excel(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
-    current_user: dict = Depends(get_current_admin)
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Export enrollments to Excel (Admin only).
-    Optional created_at date range filter, interpreted in IST.
+    Export enrollments to Excel.
+    Admins/super-admins export all enrollments; agents export only enrollments
+    where they are the HCLHC SPOC. Optional created_at date range filter (IST).
     """
     wb = Workbook()
 
@@ -565,6 +566,10 @@ async def export_enrollments_excel(
     # offset by IST (+5:30) to get the correct UTC boundaries.
     IST_OFFSET = timedelta(hours=5, minutes=30)
     query: dict = {"is_deleted": False}
+    # Agents can only export enrollments where they are the HCLHC SPOC
+    if current_user.get("role") == "agent":
+        user_name = current_user.get("full_name", "")
+        query["hclhc_spoc"] = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
     created_range: dict = {}
     if start_date:
         try:
