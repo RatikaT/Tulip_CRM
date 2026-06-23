@@ -179,6 +179,13 @@ class Lead(Document):
     last_modified_by: Optional[str] = None
     is_deleted: bool = False
 
+    # Duplicate handling (super-admin managed). Absent/None = normal active lead.
+    #   'pending'       -> detected as a possible duplicate, hidden from Leads, awaiting review
+    #   'confirmed'     -> reviewed & confirmed duplicate, hidden from Leads (archived)
+    #   'not_duplicate' -> reviewed & cleared, shown in Leads, not re-flagged
+    duplicate_status: Optional[str] = None
+    duplicate_of: Optional[str] = None  # lead_id of the primary (kept) lead
+
     class Settings:
         name = "leads"
         use_state_management = True

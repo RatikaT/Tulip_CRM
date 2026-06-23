@@ -11,6 +11,7 @@ import SummariesPage from './pages/SummariesPage';
 import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import ConfigurationsPage from './pages/ConfigurationsPage';
+import DuplicatesPage from './pages/DuplicatesPage';
 import CRMHomePage from './pages/CRMHomePage';
 import ComingSoonPage from './pages/ComingSoonPage';
 
@@ -34,6 +35,21 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (user?.role !== 'admin' && user?.role !== 'super_admin') {
+    return <Navigate to="/tulip/leads" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Super-admin-only route wrapper
+const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, user } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'super_admin') {
     return <Navigate to="/tulip/leads" replace />;
   }
 
@@ -129,6 +145,14 @@ export const router = createBrowserRouter([
       {
         path: 'knowledge-base',
         element: <KnowledgeBasePage />,
+      },
+      {
+        path: 'duplicates',
+        element: (
+          <SuperAdminRoute>
+            <DuplicatesPage />
+          </SuperAdminRoute>
+        ),
       },
     ],
   },

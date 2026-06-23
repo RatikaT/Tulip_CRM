@@ -101,7 +101,11 @@ async def get_dashboard_metrics(
     today_start_utc, today_end_utc = _ist_today_utc_bounds()
 
     # Base query - exclude deleted leads (handles both existing and missing is_deleted field)
-    base_query = {"$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}]}
+    # and exclude duplicate leads (pending/confirmed) from dashboard counts
+    base_query = {
+        "$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}],
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+    }
 
     # Total leads
     total_leads = await Lead.find(base_query).count()

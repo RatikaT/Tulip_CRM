@@ -33,6 +33,29 @@ interface LeadStatsResponse {
   assigned_today: number;
 }
 
+export interface DuplicateScanResponse {
+  message: string;
+  flagged: number;
+}
+
+export interface DuplicateItem {
+  lead: Lead;
+  primary: Lead | null;
+  matched_on: string[];
+}
+
+export interface DuplicatesResponse {
+  duplicates: DuplicateItem[];
+  total: number;
+}
+
+export type RelatedLead = Lead & { matched_on: string[] };
+
+export interface RelatedLeadsResponse {
+  related: RelatedLead[];
+  total: number;
+}
+
 export const leadService = {
   getLeads: async (filters: LeadFilters = {}): Promise<LeadListResponse> => {
     const params = new URLSearchParams();
@@ -97,6 +120,31 @@ export const leadService = {
 
   getAuditTrail: async (leadId: string): Promise<AuditTrailResponse> => {
     const response = await api.get<AuditTrailResponse>(`/leads/${leadId}/audit`);
+    return response.data;
+  },
+
+  scanDuplicates: async (): Promise<DuplicateScanResponse> => {
+    const response = await api.post<DuplicateScanResponse>('/leads/dedup/scan');
+    return response.data;
+  },
+
+  getDuplicates: async (): Promise<DuplicatesResponse> => {
+    const response = await api.get<DuplicatesResponse>('/leads/duplicates');
+    return response.data;
+  },
+
+  confirmDuplicate: async (leadId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/leads/${leadId}/duplicate/confirm`);
+    return response.data;
+  },
+
+  dismissDuplicate: async (leadId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/leads/${leadId}/duplicate/dismiss`);
+    return response.data;
+  },
+
+  getRelatedLeads: async (leadId: string): Promise<RelatedLeadsResponse> => {
+    const response = await api.get<RelatedLeadsResponse>(`/leads/${leadId}/related`);
     return response.data;
   },
 

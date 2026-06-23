@@ -222,6 +222,10 @@ class LeadResponse(BaseModel):
     # System
     created_by: Optional[str] = None
 
+    # Duplicate handling
+    duplicate_status: Optional[str] = None
+    duplicate_of: Optional[str] = None
+
     class Config:
         from_attributes = True
 

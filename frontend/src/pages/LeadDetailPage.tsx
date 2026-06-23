@@ -19,12 +19,14 @@ import {
   CircularProgress,
   Alert,
   Autocomplete,
+  Collapse,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
   ExpandMore as ExpandMoreIcon,
   Save as SaveIcon,
   Add as AddIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -33,8 +35,8 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
-import { formatFullDateTimeIST, toISTForPicker, fromISTPickerToUTC } from '../utils/dateUtils';
-import { leadService } from '../services/leadService';
+import { formatFullDateTimeIST, formatShortDateIST, toISTForPicker, fromISTPickerToUTC } from '../utils/dateUtils';
+import { leadService, RelatedLead } from '../services/leadService';
 import {
   Lead,
   LeadUpdateRequest,
@@ -77,6 +79,31 @@ const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error'
   'FollowUp Required': 'primary',
 };
 
+// Soft colored pill styles per lead status (matches LeadsPage design)
+const RELATED_STATUS_STYLES: Record<string, { bg: string; color: string }> = {
+  'Enquiry Lead': { bg: 'rgba(30,64,136,0.10)', color: '#1E4088' },
+  'Enrolled': { bg: 'rgba(16,185,129,0.12)', color: '#0f8a63' },
+  'Follow up-In Process': { bg: 'rgba(245,158,11,0.14)', color: '#b26a00' },
+  'Follow up-No Response': { bg: 'rgba(255,152,0,0.14)', color: '#c2410c' },
+  'Not Interested': { bg: 'rgba(239,68,68,0.12)', color: '#dc2626' },
+  'Lead Closed-No Response': { bg: 'rgba(100,116,139,0.12)', color: '#475569' },
+  'Duplicate': { bg: 'rgba(123,75,148,0.12)', color: '#7B4B94' },
+};
+
+const getRelatedStatusChipSx = (status: string) => {
+  const s = RELATED_STATUS_STYLES[status] || { bg: 'rgba(100,116,139,0.10)', color: '#475569' };
+  return {
+    bgcolor: s.bg,
+    color: s.color,
+    fontWeight: 600,
+    fontSize: '0.68rem',
+    height: 22,
+    borderRadius: '8px',
+    border: `1px solid ${s.color}33`,
+    '& .MuiChip-label': { px: 0.9 },
+  };
+};
+
 export default function LeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
   const navigate = useNavigate();
@@ -100,6 +127,10 @@ export default function LeadDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const [auditTrail, setAuditTrail] = useState<AuditLogEntry[]>([]);
+
+  // Returning-customer (related leads) panel
+  const [relatedLeads, setRelatedLeads] = useState<RelatedLead[]>([]);
+  const [relatedExpanded, setRelatedExpanded] = useState(true);
 
   // Form state for editable fields
   const [formData, setFormData] = useState<Partial<LeadUpdateRequest>>({});
@@ -139,6 +170,27 @@ export default function LeadDetailPage() {
     if (leadId) {
       fetchLead();
     }
+  }, [leadId]);
+
+  // Fetch related (returning-customer) leads
+  useEffect(() => {
+    if (!leadId) return;
+    let active = true;
+    (async () => {
+      try {
+        const data = await leadService.getRelatedLeads(leadId);
+        if (active) {
+          setRelatedLeads(data.related || []);
+          setRelatedExpanded(true);
+        }
+      } catch (error) {
+        console.error('Failed to fetch related leads:', error);
+        if (active) setRelatedLeads([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, [leadId]);
 
   const fetchLead = async () => {
@@ -523,6 +575,86 @@ export default function LeadDetailPage() {
             </Grid>
           </Grid>
         </Paper>
+
+        {/* Returning Customer Panel */}
+        {relatedLeads.length > 0 && (
+          <Box
+            sx={{
+              mb: 3,
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: 'rgba(245,158,11,0.35)',
+              bgcolor: 'rgba(245,158,11,0.06)',
+              boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
+              overflow: 'hidden',
+            }}
+          >
+            <Box
+              onClick={() => setRelatedExpanded((v) => !v)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 2,
+                py: 1.25,
+                cursor: 'pointer',
+                '&:hover': { bgcolor: 'rgba(245,158,11,0.10)' },
+              }}
+            >
+              <Typography sx={{ fontWeight: 700, color: '#b26a00', fontSize: '0.9rem' }}>
+                🔁 Returning customer — we've spoken to {lead.name} before ({relatedLeads.length} past lead
+                {relatedLeads.length === 1 ? '' : 's'})
+              </Typography>
+              <IconButton size="small" sx={{ color: '#b26a00' }}>
+                {relatedExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              </IconButton>
+            </Box>
+            <Collapse in={relatedExpanded}>
+              <Divider sx={{ borderColor: 'rgba(245,158,11,0.25)' }} />
+              <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {relatedLeads.map((rl) => (
+                  <Box
+                    key={rl.lead_id}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 1.5,
+                      px: 1.5,
+                      py: 1,
+                      borderRadius: 2,
+                      bgcolor: '#fff',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 72 }}>
+                      {formatShortDateIST(rl.created_at)}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', minWidth: 120 }}>
+                      {rl.service_requested || '—'}
+                    </Typography>
+                    <Chip label={rl.status} size="small" sx={getRelatedStatusChipSx(rl.status)} />
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      {rl.lead_source || '—'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Handled by {rl.assigned_to_name || 'Unassigned'}
+                    </Typography>
+                    <Box sx={{ flexGrow: 1 }} />
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => navigate(`/tulip/leads/${rl.lead_id}`)}
+                    >
+                      View
+                    </Button>
+                  </Box>
+                ))}
+              </Box>
+            </Collapse>
+          </Box>
+        )}
 
         {/* Collapsible Sections */}
         <Box sx={{ mb: 3 }}>

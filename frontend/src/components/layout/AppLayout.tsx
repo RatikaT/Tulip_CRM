@@ -33,6 +33,7 @@ import {
   MenuBook as KnowledgeBaseIcon,
   Home as HomeIcon,
   HowToReg as EnrollmentIcon,
+  ContentCopy as ContentCopyIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../stores/authStore';
 import { brandColors } from '../../theme';
@@ -44,6 +45,7 @@ interface NavItem {
   path: string;
   icon: React.ReactElement;
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
   isAbsolute?: boolean;
 }
 
@@ -53,6 +55,7 @@ const navItems: NavItem[] = [
   { title: 'Leads', path: '/tulip/leads', icon: <LeadsIcon /> },
   { title: 'Enrollments', path: '/tulip/enrollments', icon: <EnrollmentIcon /> },
   { title: 'Bulk Upload', path: '/tulip/bulk-upload', icon: <UploadIcon />, adminOnly: true },
+  { title: 'Duplicates', path: '/tulip/duplicates', icon: <ContentCopyIcon />, superAdminOnly: true },
   { title: 'Summaries', path: '/tulip/summaries', icon: <SummaryIcon /> },
   { title: 'Knowledge Base', path: '/tulip/knowledge-base', icon: <KnowledgeBaseIcon /> },
   { title: 'Configurations', path: '/tulip/configurations', icon: <SettingsIcon />, adminOnly: true },
@@ -69,6 +72,7 @@ export default function AppLayout() {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -87,7 +91,11 @@ export default function AppLayout() {
     navigate('/login');
   };
 
-  const filteredNavItems = navItems.filter(item => !item.adminOnly || isAdmin);
+  const filteredNavItems = navItems.filter(item => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (item.adminOnly) return isAdmin;
+    return true;
+  });
 
   const drawer = (
     <Box sx={{ bgcolor: brandColors.navyBlue, minHeight: '100%', color: '#fff' }}>

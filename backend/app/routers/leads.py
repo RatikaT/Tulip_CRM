@@ -22,7 +22,8 @@ from app.models.audit_log import AuditLog, AuditAction
 from app.models.user import User
 from app.models.enrollment import Enrollment, ConnectStatus as EnrollmentConnectStatus
 from app.utils.enrollment_id import generate_enrollment_id
-from app.middleware.auth_middleware import get_current_user, get_current_admin
+from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
+from app.services import dedup_service
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
@@ -111,7 +112,11 @@ def lead_to_response(lead: Lead) -> dict:
         "comments": lead.comments,
 
         # System
-        "created_by": lead.created_by
+        "created_by": lead.created_by,
+
+        # Duplicate handling
+        "duplicate_status": lead.duplicate_status,
+        "duplicate_of": lead.duplicate_of,
     }
 
 
@@ -140,11 +145,12 @@ async def get_lead_stats(
         logger.info(f"Fetching lead stats for user: {current_user.get('full_name')}, role: {current_user.get('role')}")
         logger.info(f"Today (IST): {today_local}, UTC range: {today_start_utc} to {today_end_utc}")
 
-        # Base query
+        # Base query (exclude duplicate leads from counts)
         if is_agent:
             # Agent sees only their assigned leads
             base_query = {
                 "is_deleted": False,
+                "duplicate_status": {"$in": [None, "not_duplicate"]},
                 "$or": [
                     {"assigned_to": user_id},
                     {"reassign_to": user_id}
@@ -152,7 +158,7 @@ async def get_lead_stats(
             }
         else:
             # Admin sees all leads
-            base_query = {"is_deleted": False}
+            base_query = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
 
         # 1. Total leads
         total = await db.leads.count_documents(base_query)
@@ -526,12 +532,22 @@ async def bulk_upload_leads(
 
     logger.info(f"Bulk upload by {current_user['email']}: {created_count} created, {len(errors)} errors")
 
+    # Detect duplicates among the newly-uploaded + existing leads (flags only, never deletes)
+    duplicates_flagged = 0
+    try:
+        if created_count > 0:
+            duplicates_flagged = await scan_for_duplicates()
+    except Exception as e:
+        logger.error(f"Duplicate scan after bulk upload failed: {e}")
+
+    dup_msg = f" {duplicates_flagged} possible duplicate(s) flagged for review." if duplicates_flagged else ""
     return {
         "success": len(errors) == 0 or created_count > 0,
         "message": f"Processed {total_rows} rows. Created {created_count} leads." +
-                   (f" {len(errors)} errors." if errors else ""),
+                   (f" {len(errors)} errors." if errors else "") + dup_msg,
         "total_rows": total_rows,
         "created": created_count,
+        "duplicates_flagged": duplicates_flagged,
         "errors": errors[:20]  # Limit errors returned
     }
 
@@ -561,6 +577,9 @@ async def get_leads(
     """
     # Build query
     query = {"is_deleted": False}
+    # Hide duplicate leads (pending/confirmed) from the Leads page; they live in
+    # the Duplicates page until the super admin clears them.
+    query["duplicate_status"] = {"$in": [None, "not_duplicate"]}
 
     # Agent restriction: only see leads assigned or reassigned to them
     if current_user["role"] == "agent":
@@ -665,6 +684,7 @@ async def get_leads(
             user_id = current_user["user_id"]
             base_filters = [
                 {"is_deleted": False},
+                {"duplicate_status": {"$in": [None, "not_duplicate"]}},
                 {"$or": [{"assigned_to": user_id}, {"reassign_to": user_id}]},
                 {"$or": search_conditions}
             ]
@@ -784,7 +804,8 @@ async def export_leads_excel(
     # created_at is stored in UTC; the picker sends IST calendar dates, so we
     # offset by IST (+5:30) to get the correct UTC boundaries.
     IST_OFFSET = timedelta(hours=5, minutes=30)
-    query: dict = {"is_deleted": False}
+    # Exclude duplicate leads from the MIS export
+    query: dict = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
     # Agents can only export leads assigned or reassigned to them
     if current_user["role"] == "agent":
         uid = current_user["user_id"]
@@ -1016,6 +1037,84 @@ async def export_leads_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+# ===================== Duplicate handling (super-admin) =====================
+
+@router.post("/dedup/scan")
+async def scan_duplicates(current_user: dict = Depends(get_current_super_admin)):
+    """Scan all active leads and flag same-person+month+service duplicates (Super Admin)."""
+    flagged = await dedup_service.scan_for_duplicates()
+    return {"message": f"{flagged} possible duplicate(s) flagged for review", "flagged": flagged}
+
+
+@router.get("/duplicates")
+async def list_duplicate_leads(current_user: dict = Depends(get_current_super_admin)):
+    """List leads flagged as duplicates (pending/confirmed), with their primary lead (Super Admin)."""
+    dups = await Lead.find(
+        {"is_deleted": False, "duplicate_status": {"$in": dedup_service.HIDDEN_DUP_STATES}}
+    ).sort("-created_at").to_list()
+
+    # Preload primaries referenced by duplicate_of
+    primary_ids = list({d.duplicate_of for d in dups if d.duplicate_of})
+    primaries = {}
+    if primary_ids:
+        for p in await Lead.find({"lead_id": {"$in": primary_ids}}).to_list():
+            primaries[p.lead_id] = p
+
+    items = []
+    for d in dups:
+        primary = primaries.get(d.duplicate_of)
+        items.append({
+            "lead": lead_to_response(d),
+            "primary": lead_to_response(primary) if primary else None,
+            "matched_on": dedup_service.same_person(d, primary) if primary else [],
+        })
+    return {"duplicates": items, "total": len(items)}
+
+
+@router.post("/{lead_id}/duplicate/confirm")
+async def confirm_duplicate(lead_id: str, current_user: dict = Depends(get_current_super_admin)):
+    """Confirm a lead is a duplicate: mark status Duplicate, keep hidden from Leads (Super Admin)."""
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    lead.duplicate_status = "confirmed"
+    lead.status = LeadStatus.DUPLICATE.value
+    lead.updated_at = datetime.utcnow()
+    lead.last_modified_by = current_user["user_id"]
+    await lead.save()
+    return {"message": "Lead confirmed as duplicate"}
+
+
+@router.post("/{lead_id}/duplicate/dismiss")
+async def dismiss_duplicate(lead_id: str, current_user: dict = Depends(get_current_super_admin)):
+    """Move a flagged lead back to the Leads page (not a duplicate); won't be re-flagged (Super Admin)."""
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    lead.duplicate_status = "not_duplicate"
+    lead.duplicate_of = None
+    lead.updated_at = datetime.utcnow()
+    lead.last_modified_by = current_user["user_id"]
+    await lead.save()
+    return {"message": "Lead moved to Leads"}
+
+
+@router.get("/{lead_id}/related")
+async def get_related_leads(lead_id: str, current_user: dict = Depends(get_current_user)):
+    """Returning-customer history: other leads of the same person (all roles)."""
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    related = await dedup_service.find_related_leads(lead)
+    return {
+        "related": [
+            {**lead_to_response(r), "matched_on": dedup_service.same_person(lead, r)}
+            for r in related
+        ],
+        "total": len(related),
+    }
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)
