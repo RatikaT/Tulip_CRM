@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -24,10 +25,12 @@ interface UploadResult {
   message: string;
   total_rows?: number;
   created?: number;
+  duplicates_flagged?: number;
   errors?: Array<{ row: number; error: string }>;
 }
 
 export default function BulkUploadPage() {
+  const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -447,6 +450,7 @@ export default function BulkUploadPage() {
             {[
               { label: 'Total rows', value: result.total_rows || 0, color: '#475569' },
               { label: 'Leads created', value: result.created || 0, color: '#0f8a63' },
+              { label: 'Duplicates flagged', value: result.duplicates_flagged || 0, color: '#b26a00' },
               { label: 'Failed entries', value: result.errors?.length || 0, color: '#dc2626' },
             ].map((tile) => (
               <Box
@@ -470,6 +474,21 @@ export default function BulkUploadPage() {
               </Box>
             ))}
           </Box>
+
+          {(result.duplicates_flagged || 0) > 0 && (
+            <Alert
+              severity="warning"
+              sx={{ mb: 2.5, borderRadius: 2 }}
+              action={
+                <Button color="inherit" size="small" onClick={() => navigate('/tulip/duplicates')}>
+                  Review duplicates
+                </Button>
+              }
+            >
+              <strong>{result.duplicates_flagged}</strong> possible duplicate lead(s) were flagged and hidden
+              from the Leads page. Review them on the <strong>Duplicates</strong> page.
+            </Alert>
+          )}
 
           {result.errors && result.errors.length > 0 && (
             <Box>
