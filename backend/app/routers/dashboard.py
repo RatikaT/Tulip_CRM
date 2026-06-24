@@ -107,8 +107,15 @@ async def get_dashboard_metrics(
         "duplicate_status": {"$in": [None, "not_duplicate"]},
     }
 
-    # Total leads
+    # Total leads (unique — duplicates are excluded by base_query)
     total_leads = await Lead.find(base_query).count()
+
+    # Duplicate leads — flagged (pending/confirmed) and hidden from the lists,
+    # but still counted so the Total Leads card can show where they went.
+    duplicate_leads = await Lead.find({
+        "$or": [{"is_deleted": False}, {"is_deleted": {"$exists": False}}],
+        "duplicate_status": {"$in": ["pending", "confirmed"]},
+    }).count()
 
     # Unique users (by employee_id)
     pipeline = [
@@ -217,6 +224,9 @@ async def get_dashboard_metrics(
 
     return {
         "total_leads": total_leads,
+        "unique_leads": total_leads,                       # explicit alias (= non-duplicate)
+        "duplicate_leads": duplicate_leads,                # flagged duplicates (hidden from lists)
+        "total_leads_all": total_leads + duplicate_leads,  # unique + duplicate
         "unique_users": unique_users,
         "new_leads_today": new_today,
         "follow_ups_today": follow_ups_today,
@@ -348,6 +358,9 @@ async def get_agent_dashboard(
 
     return {
         "total_leads": total_leads,
+        "unique_leads": total_leads,
+        "duplicate_leads": 0,                 # duplicates are managed at the org level, not per-agent
+        "total_leads_all": total_leads,
         "unique_users": 0,
         "new_leads_today": new_today,
         "connected_leads": 0,

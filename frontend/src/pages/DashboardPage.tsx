@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
+  Link,
   Grid,
   Paper,
   Typography,
@@ -47,6 +49,9 @@ import { toast } from 'react-toastify';
 
 interface DashboardMetrics {
   total_leads: number;
+  unique_leads?: number;
+  duplicate_leads?: number;
+  total_leads_all?: number;
   unique_users: number;
   new_leads_today: number;
   follow_ups_today: number;
@@ -73,11 +78,12 @@ interface MetricCardProps {
   value: number | string;
   icon: React.ReactNode;
   color: string;
+  footer?: React.ReactNode;
 }
 
 const COLORS = ['#1E4088', '#E84A8A', '#7B4B94', '#4CAF50', '#FF9800', '#2196F3', '#9C27B0'];
 
-function MetricCard({ title, subtitle, value, icon, color }: MetricCardProps) {
+function MetricCard({ title, subtitle, value, icon, color, footer }: MetricCardProps) {
   return (
     <Card
       elevation={0}
@@ -121,6 +127,7 @@ function MetricCard({ title, subtitle, value, icon, color }: MetricCardProps) {
             >
               {value}
             </Typography>
+            {footer && <Box sx={{ mt: 0.75 }}>{footer}</Box>}
           </Box>
           <Box
             sx={{
@@ -147,6 +154,8 @@ function MetricCard({ title, subtitle, value, icon, color }: MetricCardProps) {
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -405,9 +414,34 @@ Keep it concise - this is for a dashboard quick view.`;
             <Grid item xs={6} sm={6} md={3}>
               <MetricCard
                 title="Total Leads"
-                value={metrics?.total_leads || 0}
+                value={metrics?.total_leads_all ?? metrics?.total_leads ?? 0}
                 icon={<PeopleIcon fontSize="large" />}
                 color="#7B4B94"
+                footer={
+                  isAdmin ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                        <b>{metrics?.unique_leads ?? metrics?.total_leads ?? 0}</b> unique
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'text.disabled' }}>·</Typography>
+                      {isSuperAdmin ? (
+                        <Link
+                          component="button"
+                          type="button"
+                          underline="hover"
+                          onClick={() => navigate('/tulip/duplicates')}
+                          sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#E84A8A' }}
+                        >
+                          {metrics?.duplicate_leads ?? 0} duplicate
+                        </Link>
+                      ) : (
+                        <Typography variant="caption" sx={{ color: '#E84A8A', fontWeight: 600 }}>
+                          {metrics?.duplicate_leads ?? 0} duplicate
+                        </Typography>
+                      )}
+                    </Box>
+                  ) : undefined
+                }
               />
             </Grid>
             <Grid item xs={6} sm={6} md={3}>
