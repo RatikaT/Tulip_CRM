@@ -369,14 +369,16 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   name="service_enrolled"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Enrolled">
-                      <MenuItem value="">None</MenuItem>
-                      {SERVICE_ENROLLED_OPTIONS.map((s) => (
-                        <MenuItem key={s} value={s}>
-                          {s}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                    <Autocomplete
+                      freeSolo
+                      options={SERVICE_ENROLLED_OPTIONS}
+                      value={field.value || ''}
+                      onChange={(_, newValue) => field.onChange(newValue || '')}
+                      onInputChange={(_, newInputValue) => field.onChange(newInputValue || '')}
+                      renderInput={(params) => (
+                        <TextField {...params} fullWidth label="Service Enrolled" />
+                      )}
+                    />
                   )}
                 />
               </Grid>

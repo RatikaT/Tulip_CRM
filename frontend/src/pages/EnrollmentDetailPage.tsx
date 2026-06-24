@@ -649,22 +649,18 @@ export default function EnrollmentDetailPage() {
                 </TextField>
               </Grid>
               <Grid item xs={12} sm={6} md={4}>
-                <TextField
-                  select
-                  fullWidth
-                  label="Service Enrolled"
-                  value={formData.service_enrolled || ''}
-                  onChange={(e) => handleInputChange('service_enrolled', e.target.value || null)}
+                <Autocomplete
+                  freeSolo
+                  options={SERVICE_ENROLLED_OPTIONS}
+                  inputValue={formData.service_enrolled || ''}
                   disabled={!canEdit('service_enrolled')}
-                  size="small"
-                >
-                  <MenuItem value="">Select Service</MenuItem>
-                  {SERVICE_ENROLLED_OPTIONS.map((option) => (
-                    <MenuItem key={option} value={option}>
-                      {option}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  onInputChange={(_, newInputValue) =>
+                    handleInputChange('service_enrolled', newInputValue || null)
+                  }
+                  renderInput={(params) => (
+                    <TextField {...params} fullWidth label="Service Enrolled" size="small" />
+                  )}
+                />
               </Grid>
               <Grid item xs={12} sm={6} md={4}>
                 <TextField

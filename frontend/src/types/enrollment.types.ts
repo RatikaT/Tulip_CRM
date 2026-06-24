@@ -228,13 +228,12 @@ export const TRIMESTER_OPTIONS: Trimester[] = [
   'Not Conceived',
 ];
 
+// Standardized to 3 services (matches SERVICE_REQUESTED_OPTIONS). Free-solo
+// dropdowns still display any legacy values on existing enrollments.
 export const SERVICE_ENROLLED_OPTIONS: string[] = [
-  'Tulip Pre-Conception',
-  'Tulip Antenatal',
-  'Tulip Wellness',
-  'Tulip Pre-Conception + Antenatal',
-  'Tulip Antenatal + Wellness',
-  'Tulip Pre-Conception + Antenatal + Wellness',
+  'Antenatal',
+  'PreConception',
+  'MaternityWellness',
 ];
 
 // Package options for Package Name Enrolled

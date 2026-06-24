@@ -476,24 +476,26 @@ export default function EnrollmentConfirmModal({
             </Grid>
 
             <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                required
-                select
-                label="Service Enrolled"
-                value={formData.service_enrolled}
-                onChange={(e) => handleChange('service_enrolled', e.target.value)}
-                size="small"
-                error={!!errors.service_enrolled}
-                helperText={errors.service_enrolled ? 'Required' : undefined}
-              >
-                <MenuItem value="">None</MenuItem>
-                {SERVICE_ENROLLED_OPTIONS.map((s) => (
-                  <MenuItem key={s} value={s}>
-                    {s}
-                  </MenuItem>
-                ))}
-              </TextField>
+              <Autocomplete
+                freeSolo
+                options={SERVICE_ENROLLED_OPTIONS}
+                value={formData.service_enrolled || ''}
+                onChange={(_, newValue) => handleChange('service_enrolled', newValue || '')}
+                onInputChange={(_, newInputValue) =>
+                  handleChange('service_enrolled', newInputValue || '')
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    required
+                    label="Service Enrolled"
+                    size="small"
+                    error={!!errors.service_enrolled}
+                    helperText={errors.service_enrolled ? 'Required' : undefined}
+                  />
+                )}
+              />
             </Grid>
 
             <Grid item xs={12} sm={6}>

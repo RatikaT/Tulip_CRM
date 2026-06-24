@@ -414,14 +414,16 @@ export default function LeadCreateModal({ open, onClose, onSuccess }: LeadCreate
                   name="service_requested"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Requested">
-                      <MenuItem value="">None</MenuItem>
-                      {SERVICE_REQUESTED_OPTIONS.map((service) => (
-                        <MenuItem key={service} value={service}>
-                          {service}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                    <Autocomplete
+                      freeSolo
+                      options={SERVICE_REQUESTED_OPTIONS}
+                      value={field.value || ''}
+                      onChange={(_, newValue) => field.onChange(newValue || '')}
+                      onInputChange={(_, newInputValue) => field.onChange(newInputValue || '')}
+                      renderInput={(params) => (
+                        <TextField {...params} fullWidth label="Service Requested" />
+                      )}
+                    />
                   )}
                 />
               </Grid>

@@ -313,13 +313,12 @@ export const TRIMESTER_OPTIONS: Trimester[] = [
 
 export const LOOKING_FOR_OPTIONS: LookingFor[] = ['Self', 'Family Member'];
 
+// Standardized to 3 services. Free-solo dropdowns still display any legacy
+// values stored on existing leads/enrollments; new selections come from these.
 export const SERVICE_REQUESTED_OPTIONS: string[] = [
-  'Tulip Pre-Conception',
-  'Tulip Antenatal',
-  'Tulip Wellness',
-  'Tulip Pre-Conception + Antenatal',
-  'Tulip Antenatal + Wellness',
-  'Tulip Pre-Conception + Antenatal + Wellness',
+  'Antenatal',
+  'PreConception',
+  'MaternityWellness',
 ];
 
 export const SERVICE_PARTNER_OPTIONS: ServicePartner[] = [
