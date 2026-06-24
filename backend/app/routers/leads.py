@@ -1173,6 +1173,10 @@ async def restore_duplicate(lead_id: str, current_user: dict = Depends(get_curre
     lead.duplicate_of = None
     lead.duplicate_resolved_by = None
     lead.duplicate_resolved_at = None
+    # If it was confirmed with the legacy button (which overwrote the workflow
+    # status to "Duplicate"), reset it to a normal active status.
+    if lead.status == LeadStatus.DUPLICATE.value:
+        lead.status = LeadStatus.ENQUIRY_LEAD.value
     lead.updated_at = datetime.utcnow()
     lead.last_modified_by = current_user["user_id"]
     await lead.save()

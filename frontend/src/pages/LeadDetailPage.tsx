@@ -641,6 +641,11 @@ export default function LeadDetailPage() {
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Handled by {rl.assigned_to_name || 'Unassigned'}
                     </Typography>
+                    {rl.reason_for_no_sale && (
+                      <Typography variant="caption" sx={{ color: '#b26a00', fontWeight: 600 }}>
+                        No-sale: {rl.reason_for_no_sale}
+                      </Typography>
+                    )}
                     <Box sx={{ flexGrow: 1 }} />
                     <Button
                       size="small"

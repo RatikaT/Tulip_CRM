@@ -123,6 +123,9 @@ const LeadColumn = ({
       label="Status"
       value={<Chip label={lead.status} size="small" sx={getStatusChipSx(lead.status)} />}
     />
+    {lead.reason_for_no_sale && (
+      <DetailRow label="Reason for No Sale" value={lead.reason_for_no_sale} />
+    )}
     {footer && <Box sx={{ mt: 'auto', pt: 1.5 }}>{footer}</Box>}
   </Box>
 );
