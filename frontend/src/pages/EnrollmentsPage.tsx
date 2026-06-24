@@ -60,6 +60,7 @@ import {
   CONNECT_STATUS_OPTIONS,
   ACTION_TAKEN_OPTIONS,
   SERVICE_PARTNER_OPTIONS,
+  SERVICE_ENROLLED_OPTIONS,
 } from '../types/enrollment.types';
 import EnrollmentViewModal from '../components/enrollments/EnrollmentViewModal';
 import EnrollmentCreateModal from '../components/enrollments/EnrollmentCreateModal';
@@ -176,6 +177,8 @@ export default function EnrollmentsPage() {
   const [connectStatusFilter, setConnectStatusFilter] = useState<string[]>((savedEnrollmentFilters.connectStatusFilter as string[]) ?? []);
   const [actionTakenFilter, setActionTakenFilter] = useState<string[]>((savedEnrollmentFilters.actionTakenFilter as string[]) ?? []);
   const [servicePartnerFilter, setServicePartnerFilter] = useState<string[]>((savedEnrollmentFilters.servicePartnerFilter as string[]) ?? []);
+  const [serviceEnrolledFilter, setServiceEnrolledFilter] = useState<string[]>((savedEnrollmentFilters.serviceEnrolledFilter as string[]) ?? []);
+  const [packageFilter, setPackageFilter] = useState<string>((savedEnrollmentFilters.packageFilter as string) ?? '');
   const [uhidFilter, setUhidFilter] = useState<string[]>((savedEnrollmentFilters.uhidFilter as string[]) ?? []);
   const [hclhcSpocFilter, setHclhcSpocFilter] = useState<string>((savedEnrollmentFilters.hclhcSpocFilter as string) ?? '');
 
@@ -195,10 +198,10 @@ export default function EnrollmentsPage() {
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
+  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
 
   // Get total number of active filter values
-  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
+  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -223,14 +226,14 @@ export default function EnrollmentsPage() {
   // Persist filters so they survive navigating into an enrollment and back (all roles)
   useEffect(() => {
     savePersistedFilters(ENROLLMENTS_FILTERS_KEY, {
-      searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter,
+      searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter,
       hclhcSpocFilter,
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
       colorFilter, assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // Filter enrollments by color filter (client-side filter for highlight status)
@@ -344,6 +347,8 @@ export default function EnrollmentsPage() {
         connect_status: connectStatusFilter.length > 0 ? connectStatusFilter : undefined,
         action_taken: actionTakenFilter.length > 0 ? actionTakenFilter : undefined,
         service_partner: servicePartnerFilter.length > 0 ? servicePartnerFilter : undefined,
+        service_enrolled: serviceEnrolledFilter.length > 0 ? serviceEnrolledFilter : undefined,
+        package: packageFilter || undefined,
         uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
         hclhc_spoc: hclhcSpocFilter || undefined,
         created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
@@ -366,12 +371,12 @@ export default function EnrollmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
-  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   useEffect(() => {
     fetchEnrollments();
@@ -452,6 +457,8 @@ export default function EnrollmentsPage() {
     setConnectStatusFilter([]);
     setActionTakenFilter([]);
     setServicePartnerFilter([]);
+    setServiceEnrolledFilter([]);
+    setPackageFilter('');
     setUhidFilter([]);
     setHclhcSpocFilter('');
     setCreatedDateFrom(null);
@@ -1147,6 +1154,30 @@ export default function EnrollmentsPage() {
                   disableCloseOnSelect
                 />
 
+                {/* Service - Multi-select (freeSolo) */}
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  size="small"
+                  options={SERVICE_ENROLLED_OPTIONS}
+                  value={serviceEnrolledFilter}
+                  onChange={(_, newValue) => setServiceEnrolledFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Service" placeholder="" sx={{ ...compactInputSx, width: 150 }} />
+                  )}
+                  renderTags={() => null}
+                  disableCloseOnSelect
+                />
+
+                {/* Package - free text */}
+                <TextField
+                  size="small"
+                  label="Package"
+                  value={packageFilter}
+                  onChange={(e) => setPackageFilter(e.target.value)}
+                  sx={{ ...compactInputSx, width: 150 }}
+                />
+
                 {/* UHID - Multi-select (freeSolo: type any UHID) */}
                 <Autocomplete
                   multiple
@@ -1307,6 +1338,49 @@ export default function EnrollmentsPage() {
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
+                  {serviceEnrolledFilter.map((service) => (
+                    <Box
+                      key={`service-${service}`}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
+                      onClick={() => setServiceEnrolledFilter(prev => prev.filter(s => s !== service))}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Service: {service}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    </Box>
+                  ))}
+                  {packageFilter && (
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
+                      onClick={() => setPackageFilter('')}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Package: {packageFilter}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    </Box>
+                  )}
                   {uhidFilter.map((uhid) => (
                     <Box
                       key={`uhid-${uhid}`}

@@ -694,6 +694,8 @@ async def get_enrollments(
     connect_status: Optional[List[str]] = Query(None),
     action_taken: Optional[List[str]] = Query(None),
     service_partner: Optional[List[str]] = Query(None),
+    service_enrolled: Optional[List[str]] = Query(None),
+    package: Optional[str] = None,
     uhid: Optional[List[str]] = Query(None),
     hclhc_spoc: Optional[str] = None,
     created_date_from: Optional[str] = None,
@@ -719,6 +721,14 @@ async def get_enrollments(
             query["action_taken"] = {"$in": action_taken}
         if service_partner and len(service_partner) > 0:
             query["service_partner"] = {"$in": service_partner}
+        # Service enrolled (standardized field) - multi-select
+        if service_enrolled and len(service_enrolled) > 0:
+            svc_alt = "|".join(re.escape(s.strip()) for s in service_enrolled if s and s.strip())
+            if svc_alt:
+                query["service_enrolled"] = {"$regex": f"^\\s*({svc_alt})\\s*$", "$options": "i"}
+        # Package (free text) - partial, case-insensitive match on package_name_enrolled
+        if package and package.strip():
+            query["package_name_enrolled"] = {"$regex": re.escape(package.strip()), "$options": "i"}
         # UHID: whitespace-tolerant case-insensitive match (some rows have padding)
         if uhid and len(uhid) > 0:
             uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
