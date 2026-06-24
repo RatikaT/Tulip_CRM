@@ -185,6 +185,8 @@ class Lead(Document):
     #   'not_duplicate' -> reviewed & cleared, shown in Leads, not re-flagged
     duplicate_status: Optional[str] = None
     duplicate_of: Optional[str] = None  # lead_id of the primary (kept) lead
+    duplicate_resolved_by: Optional[str] = None  # user_id who confirmed
+    duplicate_resolved_at: Optional[datetime] = None  # when confirmed
 
     class Settings:
         name = "leads"

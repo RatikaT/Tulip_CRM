@@ -117,6 +117,8 @@ def lead_to_response(lead: Lead) -> dict:
         # Duplicate handling
         "duplicate_status": lead.duplicate_status,
         "duplicate_of": lead.duplicate_of,
+        "duplicate_resolved_by": lead.duplicate_resolved_by,
+        "duplicate_resolved_at": lead.duplicate_resolved_at,
     }
 
 
@@ -1048,11 +1050,40 @@ async def scan_duplicates(current_user: dict = Depends(get_current_super_admin))
     return {"message": f"{flagged} possible duplicate(s) flagged for review", "flagged": flagged}
 
 
+class ResolveDuplicateRequest(BaseModel):
+    keep_lead_id: str
+    remove_lead_id: str
+
+
+@router.get("/duplicates/summary")
+async def duplicates_summary(current_user: dict = Depends(get_current_super_admin)):
+    """Counts: real (active) leads vs pending/confirmed duplicates (Super Admin)."""
+    active = await Lead.find({"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}).count()
+    pending = await Lead.find({"is_deleted": False, "duplicate_status": "pending"}).count()
+    confirmed = await Lead.find({"is_deleted": False, "duplicate_status": "confirmed"}).count()
+    return {
+        "active_leads": active,
+        "pending": pending,
+        "confirmed": confirmed,
+        "total": active + pending + confirmed,
+    }
+
+
 @router.get("/duplicates")
-async def list_duplicate_leads(current_user: dict = Depends(get_current_super_admin)):
-    """List leads flagged as duplicates (pending/confirmed), with their primary lead (Super Admin)."""
+async def list_duplicate_leads(
+    state: str = Query("pending", description="pending | confirmed | all"),
+    current_user: dict = Depends(get_current_super_admin),
+):
+    """List duplicate leads with their primary lead (Super Admin). state = pending | confirmed | all."""
+    if state == "confirmed":
+        states = ["confirmed"]
+    elif state == "all":
+        states = dedup_service.HIDDEN_DUP_STATES
+    else:
+        states = ["pending"]
+
     dups = await Lead.find(
-        {"is_deleted": False, "duplicate_status": {"$in": dedup_service.HIDDEN_DUP_STATES}}
+        {"is_deleted": False, "duplicate_status": {"$in": states}}
     ).sort("-created_at").to_list()
 
     # Preload primaries referenced by duplicate_of
@@ -1062,6 +1093,17 @@ async def list_duplicate_leads(current_user: dict = Depends(get_current_super_ad
         for p in await Lead.find({"lead_id": {"$in": primary_ids}}).to_list():
             primaries[p.lead_id] = p
 
+    # Preload resolver names
+    resolver_ids = list({d.duplicate_resolved_by for d in dups if d.duplicate_resolved_by})
+    resolver_names = {}
+    for rid in resolver_ids:
+        try:
+            u = await User.get(rid)
+            if u:
+                resolver_names[rid] = u.full_name
+        except Exception:
+            pass
+
     items = []
     for d in dups:
         primary = primaries.get(d.duplicate_of)
@@ -1069,27 +1111,47 @@ async def list_duplicate_leads(current_user: dict = Depends(get_current_super_ad
             "lead": lead_to_response(d),
             "primary": lead_to_response(primary) if primary else None,
             "matched_on": dedup_service.same_person(d, primary) if primary else [],
+            "resolved_by_name": resolver_names.get(d.duplicate_resolved_by),
         })
     return {"duplicates": items, "total": len(items)}
 
 
-@router.post("/{lead_id}/duplicate/confirm")
-async def confirm_duplicate(lead_id: str, current_user: dict = Depends(get_current_super_admin)):
-    """Confirm a lead is a duplicate: mark status Duplicate, keep hidden from Leads (Super Admin)."""
-    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
-    if not lead:
+@router.post("/duplicate/resolve")
+async def resolve_duplicate(request: ResolveDuplicateRequest, current_user: dict = Depends(get_current_super_admin)):
+    """
+    Confirm a duplicate, choosing which lead to KEEP (Super Admin).
+    The keeper stays an active lead; the other becomes a confirmed duplicate
+    (hidden from Leads, archived in the Duplicates record). Workflow status is
+    preserved on both so nothing is lost.
+    """
+    keep = await Lead.find_one(Lead.lead_id == request.keep_lead_id, Lead.is_deleted == False)
+    remove = await Lead.find_one(Lead.lead_id == request.remove_lead_id, Lead.is_deleted == False)
+    if not keep or not remove:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
-    lead.duplicate_status = "confirmed"
-    lead.status = LeadStatus.DUPLICATE.value
-    lead.updated_at = datetime.utcnow()
-    lead.last_modified_by = current_user["user_id"]
-    await lead.save()
-    return {"message": "Lead confirmed as duplicate"}
+
+    now = datetime.utcnow()
+    # Keeper -> active, won't be re-flagged
+    keep.duplicate_status = "not_duplicate"
+    keep.duplicate_of = None
+    keep.updated_at = now
+    keep.last_modified_by = current_user["user_id"]
+    await keep.save()
+
+    # Removed -> confirmed duplicate of keeper (status preserved, only marked)
+    remove.duplicate_status = "confirmed"
+    remove.duplicate_of = keep.lead_id
+    remove.duplicate_resolved_by = current_user["user_id"]
+    remove.duplicate_resolved_at = now
+    remove.updated_at = now
+    remove.last_modified_by = current_user["user_id"]
+    await remove.save()
+
+    return {"message": f"{request.remove_lead_id} marked as duplicate; {request.keep_lead_id} kept"}
 
 
 @router.post("/{lead_id}/duplicate/dismiss")
 async def dismiss_duplicate(lead_id: str, current_user: dict = Depends(get_current_super_admin)):
-    """Move a flagged lead back to the Leads page (not a duplicate); won't be re-flagged (Super Admin)."""
+    """Not a duplicate: move the flagged lead back to Leads; won't be re-flagged (Super Admin)."""
     lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
@@ -1099,6 +1161,22 @@ async def dismiss_duplicate(lead_id: str, current_user: dict = Depends(get_curre
     lead.last_modified_by = current_user["user_id"]
     await lead.save()
     return {"message": "Lead moved to Leads"}
+
+
+@router.post("/{lead_id}/duplicate/restore")
+async def restore_duplicate(lead_id: str, current_user: dict = Depends(get_current_super_admin)):
+    """Undo a confirmed duplicate: move it back to Leads as an active lead (Super Admin)."""
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    lead.duplicate_status = "not_duplicate"
+    lead.duplicate_of = None
+    lead.duplicate_resolved_by = None
+    lead.duplicate_resolved_at = None
+    lead.updated_at = datetime.utcnow()
+    lead.last_modified_by = current_user["user_id"]
+    await lead.save()
+    return {"message": "Lead restored to Leads"}
 
 
 @router.get("/{lead_id}/related")

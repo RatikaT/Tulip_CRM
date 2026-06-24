@@ -42,12 +42,22 @@ export interface DuplicateItem {
   lead: Lead;
   primary: Lead | null;
   matched_on: string[];
+  resolved_by_name?: string | null;
 }
 
 export interface DuplicatesResponse {
   duplicates: DuplicateItem[];
   total: number;
 }
+
+export interface DuplicatesSummary {
+  active_leads: number;
+  pending: number;
+  confirmed: number;
+  total: number;
+}
+
+export type DuplicateState = 'pending' | 'confirmed' | 'all';
 
 export type RelatedLead = Lead & { matched_on: string[] };
 
@@ -128,18 +138,31 @@ export const leadService = {
     return response.data;
   },
 
-  getDuplicates: async (): Promise<DuplicatesResponse> => {
-    const response = await api.get<DuplicatesResponse>('/leads/duplicates');
+  getDuplicatesSummary: async (): Promise<DuplicatesSummary> => {
+    const response = await api.get<DuplicatesSummary>('/leads/duplicates/summary');
     return response.data;
   },
 
-  confirmDuplicate: async (leadId: string): Promise<{ message: string }> => {
-    const response = await api.post<{ message: string }>(`/leads/${leadId}/duplicate/confirm`);
+  getDuplicates: async (state: DuplicateState = 'pending'): Promise<DuplicatesResponse> => {
+    const response = await api.get<DuplicatesResponse>(`/leads/duplicates?state=${state}`);
+    return response.data;
+  },
+
+  resolveDuplicate: async (keepLeadId: string, removeLeadId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>('/leads/duplicate/resolve', {
+      keep_lead_id: keepLeadId,
+      remove_lead_id: removeLeadId,
+    });
     return response.data;
   },
 
   dismissDuplicate: async (leadId: string): Promise<{ message: string }> => {
     const response = await api.post<{ message: string }>(`/leads/${leadId}/duplicate/dismiss`);
+    return response.data;
+  },
+
+  restoreDuplicate: async (leadId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(`/leads/${leadId}/duplicate/restore`);
     return response.data;
   },
 

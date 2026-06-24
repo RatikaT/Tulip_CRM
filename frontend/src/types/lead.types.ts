@@ -150,6 +150,11 @@ export interface Lead {
 
   // System
   created_by: string | null;
+
+  // Duplicate tracking (optional, present on dedup endpoints)
+  duplicate_status?: string | null;
+  duplicate_of?: string | null;
+  duplicate_resolved_at?: string | null;
 }
 
 export interface LeadListResponse {

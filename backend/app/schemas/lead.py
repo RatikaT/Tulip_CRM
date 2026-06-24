@@ -225,6 +225,8 @@ class LeadResponse(BaseModel):
     # Duplicate handling
     duplicate_status: Optional[str] = None
     duplicate_of: Optional[str] = None
+    duplicate_resolved_by: Optional[str] = None
+    duplicate_resolved_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
