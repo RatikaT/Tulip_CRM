@@ -16,6 +16,7 @@ from app.models.enrollment import (
 )
 from app.utils.enrollment_id import generate_enrollment_id
 from app.database import get_database
+from app.services.journey_service import build_journey_for_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,12 @@ async def create_enrollment_from_lead(
         assigned_to=owner_id,                # ownership: the lead's agent
         assigned_to_name=owner_name,
     )
+
+    # Snapshot the service's care-journey template onto this enrollment.
+    enrollment.journey = await build_journey_for_service(
+        enrollment.service_enrolled, enrollment.created_at
+    )
+
     await enrollment.insert()
     logger.info(f"Created enrollment {enrollment_id} for lead {lead.lead_id}")
     return enrollment

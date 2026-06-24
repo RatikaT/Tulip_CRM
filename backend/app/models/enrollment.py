@@ -93,6 +93,12 @@ class Enrollment(Document):
     # Follow-ups History (multiple per enrollment)
     follow_ups: List[Dict[str, Any]] = Field(default_factory=list)
 
+    # Care Journey — snapshot of the service's journey template at enrollment time.
+    # Each item: {step_id, name, description, step_type, planned_date, status
+    # (pending|done|skipped), completed_date, completed_by, completed_by_name,
+    # notes, order, is_adhoc}. Worked by the follow-up SPOC.
+    journey: List[Dict[str, Any]] = Field(default_factory=list)
+
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None

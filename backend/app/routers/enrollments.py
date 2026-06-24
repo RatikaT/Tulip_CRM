@@ -26,9 +26,12 @@ from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditA
 from app.models.user import User
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
+from app.services.journey_service import build_journey_for_service
+from pydantic import BaseModel
 import logging
 import math
 import re
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +112,9 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
 
         # Follow-ups History
         "follow_ups": enrollment.follow_ups,
+
+        # Care Journey (snapshot of the service's journey template)
+        "journey": getattr(enrollment, "journey", []) or [],
 
         # Assignment
         "assigned_to": enrollment.assigned_to,
@@ -1202,6 +1208,164 @@ async def add_follow_up(
 
     logger.info(f"Follow-up #{follow_up_number} added to {enrollment_id} by {current_user['email']}")
 
+    return enrollment_to_response(enrollment)
+
+
+# ---------------------------------------------------------------------------
+# Care Journey execution (worked by the follow-up SPOC / admins)
+# ---------------------------------------------------------------------------
+
+class JourneyStepUpdateRequest(BaseModel):
+    status: Optional[str] = None            # pending | done | skipped
+    planned_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class JourneyStepCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    step_type: Optional[str] = "Other"
+    planned_date: Optional[datetime] = None
+
+
+def _require_spoc_or_admin(enrollment: Enrollment, current_user: dict):
+    """Only the current follow-up SPOC (or an admin) may work the journey."""
+    if current_user.get("role") == "agent":
+        user_name = current_user.get("full_name", "")
+        is_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
+        if not is_spoc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the assigned follow-up SPOC can update the care journey",
+            )
+
+
+async def _get_enrollment_or_404(enrollment_id: str) -> Enrollment:
+    enrollment = await Enrollment.find_one(
+        Enrollment.enrollment_id == enrollment_id,
+        Enrollment.is_deleted == False
+    )
+    if not enrollment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Enrollment not found"
+        )
+    return enrollment
+
+
+@router.post("/{enrollment_id}/journey/instantiate")
+async def instantiate_journey(
+    enrollment_id: str,
+    force: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Build (or rebuild) this enrollment's care journey from the current template
+    for its service. Used for enrollments created before journeys existed.
+    Skips if a journey already exists unless force=True.
+    """
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    if enrollment.journey and not force:
+        return enrollment_to_response(enrollment)
+
+    anchor = enrollment.created_at or datetime.utcnow()
+    enrollment.journey = await build_journey_for_service(enrollment.service_enrolled, anchor)
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.put("/{enrollment_id}/journey/{step_id}")
+async def update_journey_step(
+    enrollment_id: str,
+    step_id: str,
+    body: JourneyStepUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a single journey step: mark done/skipped, reschedule, or add notes."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    journey = enrollment.journey or []
+    step = next((s for s in journey if s.get("step_id") == step_id), None)
+    if not step:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journey step not found")
+
+    if body.status is not None:
+        if body.status not in ("pending", "done", "skipped"):
+            raise HTTPException(status_code=400, detail="status must be pending, done or skipped")
+        step["status"] = body.status
+        if body.status == "done":
+            step["completed_date"] = datetime.utcnow()
+            step["completed_by"] = current_user["user_id"]
+            step["completed_by_name"] = current_user.get("full_name", current_user["email"])
+        else:
+            # reverting to pending / skipping clears completion stamp
+            step["completed_date"] = None
+            step["completed_by"] = None
+            step["completed_by_name"] = None
+    if body.planned_date is not None:
+        step["planned_date"] = body.planned_date
+    if body.notes is not None:
+        step["notes"] = body.notes
+
+    enrollment.journey = journey
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/journey")
+async def add_journey_step(
+    enrollment_id: str,
+    body: JourneyStepCreateRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add an ad-hoc step to this one enrollment's journey (does not touch the template)."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    journey = enrollment.journey or []
+    max_order = max((s.get("order", 0) for s in journey), default=-1)
+    journey.append({
+        "step_id": uuid.uuid4().hex[:12],
+        "name": body.name.strip(),
+        "description": (body.description.strip() if body.description else None),
+        "step_type": body.step_type or "Other",
+        "planned_date": body.planned_date,
+        "status": "pending",
+        "completed_date": None,
+        "completed_by": None,
+        "completed_by_name": None,
+        "notes": None,
+        "order": max_order + 1,
+        "is_adhoc": True,
+    })
+    enrollment.journey = journey
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.delete("/{enrollment_id}/journey/{step_id}")
+async def delete_journey_step(
+    enrollment_id: str,
+    step_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Remove a step from this enrollment's journey."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    journey = enrollment.journey or []
+    new_journey = [s for s in journey if s.get("step_id") != step_id]
+    if len(new_journey) == len(journey):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journey step not found")
+    enrollment.journey = new_journey
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
     return enrollment_to_response(enrollment)
 
 
