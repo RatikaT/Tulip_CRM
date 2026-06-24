@@ -41,6 +41,15 @@ async def create_enrollment_from_lead(
     db = get_database()
     enrollment_id = await generate_enrollment_id(db)
 
+    # The enrollment should stay with the agent who handled the lead, NOT whoever
+    # happened to click "Enroll" (e.g. a super admin enrolling on the agent's behalf).
+    owner_id = lead.assigned_to or created_by_id
+    owner_name = lead.assigned_to_name or created_by_name
+
+    # SPOC carries from the lead; if the lead never had one, default it to the
+    # lead's agent so the SPOC and owner are the same person (not two strangers).
+    spoc = lead.hclhc_spoc or lead.assigned_to_name
+
     trimester_value = None
     if lead.trimester:
         try:
@@ -62,12 +71,12 @@ async def create_enrollment_from_lead(
         package_name_enrolled=lead.package_requested,
         service_partner=lead.service_partner or None,
         partner_centre_selected=lead.provider_location,
-        hclhc_spoc=lead.hclhc_spoc,
+        hclhc_spoc=spoc,
         connect_status=EnrollmentConnectStatus.CONNECTED,
-        created_by=created_by_id,
+        created_by=created_by_id,            # audit: who performed the enrollment
         created_by_name=created_by_name,
-        assigned_to=created_by_id,
-        assigned_to_name=created_by_name,
+        assigned_to=owner_id,                # ownership: the lead's agent
+        assigned_to_name=owner_name,
     )
     await enrollment.insert()
     logger.info(f"Created enrollment {enrollment_id} for lead {lead.lead_id}")

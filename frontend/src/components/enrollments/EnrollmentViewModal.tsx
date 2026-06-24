@@ -105,7 +105,6 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
 
   // Users for HCLHC SPOC dropdown
   const [users, setUsers] = useState<UserOption[]>([]);
-  const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
 
   const { register, handleSubmit, control, setValue, watch } = useForm();
 
@@ -160,20 +159,13 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
       setDob(enrollment.dob ? parseISO(enrollment.dob) : null);
       setFollowUpDate(enrollment.follow_up_date ? parseISO(enrollment.follow_up_date) : null);
       setNextFollowUpDate(enrollment.next_follow_up_date ? parseISO(enrollment.next_follow_up_date) : null);
-
-      // Set selected SPOC user (will be matched when users are loaded)
-      if (enrollment.hclhc_spoc && users.length > 0) {
-        const matchedUser = users.find(u => u.full_name === enrollment.hclhc_spoc);
-        setSelectedSpoc(matchedUser || null);
-      }
     }
-  }, [enrollment, setValue, users]);
+  }, [enrollment, setValue]);
 
   const handleClose = () => {
     setEditMode(false);
     setShowAddFollowUp(false);
     setTabValue(0);
-    setSelectedSpoc(null);
     onClose();
   };
 
@@ -348,18 +340,14 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                   </Grid>
                   <Grid item xs={12} sm={4}>
                     <Autocomplete
+                      freeSolo
                       size="small"
-                      options={users}
-                      getOptionLabel={(option) => option.full_name}
-                      value={selectedSpoc}
-                      onChange={(_, newValue) => {
-                        setSelectedSpoc(newValue);
-                        setValue('hclhc_spoc', newValue?.full_name || '');
-                      }}
+                      options={users.map((u) => u.full_name)}
+                      inputValue={watch('hclhc_spoc') || ''}
+                      onInputChange={(_, newValue) => setValue('hclhc_spoc', newValue || '')}
                       renderInput={(params) => (
                         <TextField {...params} fullWidth label="HCLHC SPOC" />
                       )}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
                     />
                   </Grid>
                   <Grid item xs={12} sm={4}>

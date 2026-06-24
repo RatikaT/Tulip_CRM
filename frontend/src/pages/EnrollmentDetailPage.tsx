@@ -573,16 +573,15 @@ export default function EnrollmentDetailPage() {
               <Grid item xs={12} sm={6} md={4}>
                 {canEdit('hclhc_spoc') ? (
                   <Autocomplete
-                    options={users}
-                    getOptionLabel={(option) => option.full_name}
-                    value={users.find(u => u.full_name === formData.hclhc_spoc) || null}
-                    onChange={(_, newValue) => {
-                      handleInputChange('hclhc_spoc', newValue?.full_name || '');
-                    }}
+                    freeSolo
+                    options={users.map((u) => u.full_name)}
+                    inputValue={formData.hclhc_spoc || ''}
+                    onInputChange={(_, newValue) =>
+                      handleInputChange('hclhc_spoc', newValue || '')
+                    }
                     renderInput={(params) => (
                       <TextField {...params} fullWidth label="HCLHC SPOC" size="small" />
                     )}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
                   />
                 ) : (
                   <TextField
