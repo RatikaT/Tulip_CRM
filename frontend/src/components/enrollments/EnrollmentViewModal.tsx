@@ -81,7 +81,14 @@ interface EnrollmentViewModalProps {
 export default function EnrollmentViewModal({ open, enrollment, onClose, onSuccess }: EnrollmentViewModalProps) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  const canEdit = isAdmin || user?.role === 'agent'; // Agents can also edit
+  // An agent can edit / log follow-ups only when they are the current HCLHC SPOC.
+  // The agent who enrolled the lead can view it (monitor) but is read-only once
+  // it's handed off to another SPOC — mirrors the backend permission check.
+  const isFollowUpSpoc =
+    user?.role === 'agent' &&
+    !!enrollment.hclhc_spoc &&
+    enrollment.hclhc_spoc.trim().toLowerCase() === (user?.full_name || '').trim().toLowerCase();
+  const canEdit = isAdmin || isFollowUpSpoc;
 
   const [tabValue, setTabValue] = useState(0);
   const [editMode, setEditMode] = useState(false);

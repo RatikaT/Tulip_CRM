@@ -702,17 +702,34 @@ async def get_enrollments(
     created_date_to: Optional[str] = None,
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
+    my_role: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollments with pagination and filters"""
     try:
         query = {"is_deleted": False}
 
-        # Agents can only see enrollments where they are HCLHC SPOC
+        # Visibility for agents: an enrollment shows on their page if they are the
+        # current follow-up SPOC OR they are the agent who enrolled it (monitor view).
+        # `my_role` lets the agent split the two:
+        #   'following_up' = mine to act on (I'm the SPOC)
+        #   'enrolled'     = I enrolled it but someone else now follows up (read-only)
+        agent_or = None
         if current_user.get("role") == "agent":
             user_name = current_user.get("full_name", "")
-            # Match by HCLHC SPOC (case-insensitive)
-            query["hclhc_spoc"] = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
+            user_id = current_user["user_id"]
+            spoc_regex = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
+            spoc_match = {"hclhc_spoc": spoc_regex}
+            enrolled_monitor = {"$and": [
+                {"created_by": user_id},
+                {"hclhc_spoc": {"$not": spoc_regex}},
+            ]}
+            if my_role == "following_up":
+                agent_or = [spoc_match]
+            elif my_role == "enrolled":
+                agent_or = [enrolled_monitor]
+            else:
+                agent_or = [spoc_match, {"created_by": user_id}]
 
         # Apply filters (support multiple values with $in)
         if connect_status and len(connect_status) > 0:
@@ -765,6 +782,7 @@ async def get_enrollments(
                 pass
 
         # Search across all common identifying fields (escape regex special chars for security)
+        search_conditions = None
         if search and search.strip():
             escaped_search = re.escape(search.strip())
             search_conditions = [
@@ -784,11 +802,15 @@ async def get_enrollments(
                 {"reassign_to_name": {"$regex": escaped_search, "$options": "i"}},
                 {"created_by_name": {"$regex": escaped_search, "$options": "i"}},
             ]
-            # Combine with existing $or if agent filter is applied
-            if "$or" in query:
-                query["$and"] = [{"$or": query.pop("$or")}, {"$or": search_conditions}]
-            else:
-                query["$or"] = search_conditions
+
+        # Combine agent visibility and search as ANDed $or groups (each must hold)
+        and_groups = []
+        if agent_or is not None:
+            and_groups.append({"$or": agent_or})
+        if search_conditions is not None:
+            and_groups.append({"$or": search_conditions})
+        if and_groups:
+            query.setdefault("$and", []).extend(and_groups)
 
         # "Assigned today" quick filter: assigned_date OR reassigned_date is today (IST).
         # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper.
@@ -1094,6 +1116,17 @@ async def add_follow_up(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Enrollment not found"
         )
+
+    # Only the current follow-up SPOC (or an admin) may log follow-ups. The agent
+    # who enrolled the lead can see it but is read-only once it's handed off.
+    if current_user.get("role") == "agent":
+        user_name = current_user.get("full_name", "")
+        is_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
+        if not is_spoc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the assigned follow-up SPOC can add follow-ups"
+            )
 
     # Create follow-up entry
     follow_up_number = len(enrollment.follow_ups) + 1

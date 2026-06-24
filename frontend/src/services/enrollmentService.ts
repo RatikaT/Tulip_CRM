@@ -25,6 +25,7 @@ export interface EnrollmentQueryParams {
   created_date_to?: string;
   next_follow_up_date?: string;
   assigned_today?: boolean;
+  my_role?: 'following_up' | 'enrolled';
 }
 
 export const enrollmentService = {

@@ -14,6 +14,7 @@ import {
   CardContent,
   Autocomplete,
   Collapse,
+  MenuItem,
   ToggleButtonGroup,
   ToggleButton,
   Accordion,
@@ -181,6 +182,7 @@ export default function EnrollmentsPage() {
   const [packageFilter, setPackageFilter] = useState<string>((savedEnrollmentFilters.packageFilter as string) ?? '');
   const [uhidFilter, setUhidFilter] = useState<string[]>((savedEnrollmentFilters.uhidFilter as string[]) ?? []);
   const [hclhcSpocFilter, setHclhcSpocFilter] = useState<string>((savedEnrollmentFilters.hclhcSpocFilter as string) ?? '');
+  const [myRoleFilter, setMyRoleFilter] = useState<'' | 'following_up' | 'enrolled'>((savedEnrollmentFilters.myRoleFilter as '' | 'following_up' | 'enrolled') ?? '');
 
   // Debounce search input → searchTerm (350ms)
   useEffect(() => {
@@ -198,10 +200,10 @@ export default function EnrollmentsPage() {
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
+  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter || (user?.role === 'agent' && !!myRoleFilter);
 
   // Get total number of active filter values
-  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
+  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0) + (user?.role === 'agent' && myRoleFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -227,13 +229,13 @@ export default function EnrollmentsPage() {
   useEffect(() => {
     savePersistedFilters(ENROLLMENTS_FILTERS_KEY, {
       searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter,
-      hclhcSpocFilter,
+      hclhcSpocFilter, myRoleFilter,
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
       colorFilter, assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // Filter enrollments by color filter (client-side filter for highlight status)
@@ -351,6 +353,7 @@ export default function EnrollmentsPage() {
         package: packageFilter || undefined,
         uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
         hclhc_spoc: hclhcSpocFilter || undefined,
+        my_role: myRoleFilter || undefined,
         created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
         created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
         next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
@@ -371,12 +374,12 @@ export default function EnrollmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
-  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   useEffect(() => {
     fetchEnrollments();
@@ -461,6 +464,7 @@ export default function EnrollmentsPage() {
     setPackageFilter('');
     setUhidFilter([]);
     setHclhcSpocFilter('');
+    setMyRoleFilter('');
     setCreatedDateFrom(null);
     setCreatedDateTo(null);
     setNextFollowUpDateFilter(null);
@@ -568,7 +572,7 @@ export default function EnrollmentsPage() {
     }
   };
 
-  const columns: GridColDef[] = [
+  const columns: GridColDef[] = ([
     {
       field: 'enrollment_id',
       headerName: 'Enrollment ID',
@@ -597,6 +601,21 @@ export default function EnrollmentsPage() {
       minWidth: 120,
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
     },
+    user?.role === 'agent' ? {
+      field: 'my_role',
+      headerName: 'My Role',
+      width: 140,
+      sortable: false,
+      renderCell: (params: GridRenderCellParams) => {
+        const row = params.row as Enrollment;
+        const isSpoc = !!row.hclhc_spoc && row.hclhc_spoc.trim().toLowerCase() === (user?.full_name || '').trim().toLowerCase();
+        return isSpoc ? (
+          <Chip label="Following up" size="small" sx={softChipSx('#16a34a')} />
+        ) : (
+          <Chip label="Enrolled by me" size="small" sx={softChipSx('#64748b')} />
+        );
+      },
+    } : null,
     {
       field: 'employee_id',
       headerName: 'EmployeeID',
@@ -724,7 +743,7 @@ export default function EnrollmentsPage() {
         </Box>
       ),
     },
-  ];
+  ] as (GridColDef | null)[]).filter(Boolean) as GridColDef[];
 
   // Compact styles for filter inputs
   const compactInputSx = {
@@ -1178,6 +1197,22 @@ export default function EnrollmentsPage() {
                   sx={{ ...compactInputSx, width: 150 }}
                 />
 
+                {/* My Role - only shown for agents */}
+                {user?.role === 'agent' && (
+                  <TextField
+                    select
+                    size="small"
+                    label="My Role"
+                    value={myRoleFilter}
+                    onChange={(e) => setMyRoleFilter(e.target.value as '' | 'following_up' | 'enrolled')}
+                    sx={{ ...compactInputSx, width: 150 }}
+                  >
+                    <MenuItem value="">All roles</MenuItem>
+                    <MenuItem value="following_up">Following up</MenuItem>
+                    <MenuItem value="enrolled">Enrolled by me</MenuItem>
+                  </TextField>
+                )}
+
                 {/* UHID - Multi-select (freeSolo: type any UHID) */}
                 <Autocomplete
                   multiple
@@ -1378,6 +1413,29 @@ export default function EnrollmentsPage() {
                       onClick={() => setPackageFilter('')}
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Package: {packageFilter}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    </Box>
+                  )}
+                  {user?.role === 'agent' && myRoleFilter && (
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
+                      onClick={() => setMyRoleFilter('')}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
+                        Role: {myRoleFilter === 'following_up' ? 'Following up' : 'Enrolled by me'}
+                      </Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
