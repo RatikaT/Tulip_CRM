@@ -17,6 +17,7 @@ interface LeadFilters {
   lead_source?: string[];
   uhid?: string[];
   package_requested?: string[];
+  service_requested?: string[];
   city?: string;
   assigned_to?: string;
   reassign_to?: string;

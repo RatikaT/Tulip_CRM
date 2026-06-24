@@ -570,6 +570,7 @@ async def get_leads(
     lead_source: Optional[List[str]] = Query(None),
     uhid: Optional[List[str]] = Query(None),
     package_requested: Optional[List[str]] = Query(None),
+    service_requested: Optional[List[str]] = Query(None),
     city: Optional[str] = None,
     assigned_to: Optional[str] = None,
     reassign_to: Optional[str] = None,
@@ -614,6 +615,10 @@ async def get_leads(
         pkg_alternation = "|".join(re.escape(p.strip()) for p in package_requested if p and p.strip())
         if pkg_alternation:
             query["package_requested"] = {"$regex": f"^\\s*({pkg_alternation})\\s*$", "$options": "i"}
+    if service_requested and len(service_requested) > 0:
+        svc_alternation = "|".join(re.escape(s.strip()) for s in service_requested if s and s.strip())
+        if svc_alternation:
+            query["service_requested"] = {"$regex": f"^\\s*({svc_alternation})\\s*$", "$options": "i"}
 
     # Single value filters
     if city:

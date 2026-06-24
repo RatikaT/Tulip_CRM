@@ -53,7 +53,7 @@ import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { formatShortDateIST } from '../utils/dateUtils';
 import { leadService } from '../services/leadService';
-import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '../types/lead.types';
+import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SERVICE_REQUESTED_OPTIONS } from '../types/lead.types';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
 import api from '../services/api';
 import { brandColors } from '../theme';
@@ -172,6 +172,7 @@ export default function LeadsPage() {
   const [sourceFilter, setSourceFilter] = useState<string[]>((savedLeadFilters.sourceFilter as string[]) ?? []);
   const [uhidFilter, setUhidFilter] = useState<string[]>((savedLeadFilters.uhidFilter as string[]) ?? []);
   const [packageRequestedFilter, setPackageRequestedFilter] = useState<string[]>((savedLeadFilters.packageRequestedFilter as string[]) ?? []);
+  const [serviceRequestedFilter, setServiceRequestedFilter] = useState<string[]>((savedLeadFilters.serviceRequestedFilter as string[]) ?? []);
   const [assignedToFilter, setAssignedToFilter] = useState<string>((savedLeadFilters.assignedToFilter as string) ?? '');
   const [reassignedToFilter, setReassignedToFilter] = useState<string>((savedLeadFilters.reassignedToFilter as string) ?? '');
   const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(toDateOrNull(savedLeadFilters.createdDateFrom));
@@ -192,10 +193,10 @@ export default function LeadsPage() {
   const [agents, setAgents] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = statusFilter.length > 0 || sourceFilter.length > 0 || uhidFilter.length > 0 || packageRequestedFilter.length > 0 || assignedToFilter || reassignedToFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
+  const hasActiveFilters = statusFilter.length > 0 || sourceFilter.length > 0 || uhidFilter.length > 0 || packageRequestedFilter.length > 0 || serviceRequestedFilter.length > 0 || assignedToFilter || reassignedToFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
 
   // Get total number of active filter values
-  const activeFilterCount = statusFilter.length + sourceFilter.length + uhidFilter.length + packageRequestedFilter.length + (assignedToFilter ? 1 : 0) + (reassignedToFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
+  const activeFilterCount = statusFilter.length + sourceFilter.length + uhidFilter.length + packageRequestedFilter.length + serviceRequestedFilter.length + (assignedToFilter ? 1 : 0) + (reassignedToFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -223,14 +224,14 @@ export default function LeadsPage() {
   // Persist filters so they survive navigating into a lead and back (all roles)
   useEffect(() => {
     savePersistedFilters(LEADS_FILTERS_KEY, {
-      searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter,
+      searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter,
       assignedToFilter, reassignedToFilter,
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
       colorFilter, assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // Filter leads by color filter (client-side filter for highlight status)
@@ -358,6 +359,7 @@ export default function LeadsPage() {
         lead_source: sourceFilter.length > 0 ? sourceFilter : undefined,
         uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
         package_requested: packageRequestedFilter.length > 0 ? packageRequestedFilter : undefined,
+        service_requested: serviceRequestedFilter.length > 0 ? serviceRequestedFilter : undefined,
         assigned_to: assignedToFilter || undefined,
         reassign_to: reassignedToFilter || undefined,
         created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
@@ -386,12 +388,12 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [paginationModel, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
-  }, [searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   useEffect(() => {
     fetchLeads();
@@ -470,6 +472,7 @@ export default function LeadsPage() {
     setSourceFilter([]);
     setUhidFilter([]);
     setPackageRequestedFilter([]);
+    setServiceRequestedFilter([]);
     setAssignedToFilter('');
     setReassignedToFilter('');
     setCreatedDateFrom(null);
@@ -1211,7 +1214,32 @@ export default function LeadsPage() {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Package Requested"
+                      label="Package"
+                      placeholder="Type & Enter"
+                      sx={{
+                        width: 160,
+                        '& .MuiInputBase-root': { fontSize: '0.75rem' },
+                        '& .MuiInputLabel-root': { fontSize: '0.75rem' },
+                        '& .MuiOutlinedInput-root': { bgcolor: 'white' },
+                      }}
+                    />
+                  )}
+                  renderTags={() => null}
+                  disableCloseOnSelect
+                />
+
+                {/* Service - Multi-select (freeSolo: type any service) */}
+                <Autocomplete
+                  multiple
+                  freeSolo
+                  size="small"
+                  options={SERVICE_REQUESTED_OPTIONS}
+                  value={serviceRequestedFilter}
+                  onChange={(_, newValue) => setServiceRequestedFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Service"
                       placeholder="Type & Enter"
                       sx={{
                         width: 160,
@@ -1442,6 +1470,28 @@ export default function LeadsPage() {
                       onClick={() => setPackageRequestedFilter(prev => prev.filter(p => p !== pkg))}
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Package: {pkg}</Typography>
+                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    </Box>
+                  ))}
+                  {serviceRequestedFilter.map((svc) => (
+                    <Box
+                      key={`svc-${svc}`}
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        cursor: 'pointer',
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: '999px',
+                        bgcolor: 'rgba(30,64,136,0.08)',
+                        border: '1px solid rgba(30,64,136,0.18)',
+                        transition: 'all 0.15s ease',
+                        '&:hover': { bgcolor: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)' },
+                      }}
+                      onClick={() => setServiceRequestedFilter(prev => prev.filter(s => s !== svc))}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>Service: {svc}</Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   ))}
