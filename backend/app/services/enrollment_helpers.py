@@ -1,0 +1,74 @@
+"""
+Helper to create an Enrollment from a Lead.
+
+Used wherever a lead becomes "Enrolled" — the lead-update endpoint, bulk upload,
+and a one-time backfill — so an enrollment is ALWAYS created (not only when an
+agent goes through the Confirm Enrollment modal).
+"""
+import logging
+from typing import Optional
+
+from app.models.lead import Lead
+from app.models.enrollment import (
+    Enrollment,
+    ConnectStatus as EnrollmentConnectStatus,
+    Trimester as EnrollmentTrimester,
+)
+from app.utils.enrollment_id import generate_enrollment_id
+from app.database import get_database
+
+logger = logging.getLogger(__name__)
+
+
+async def create_enrollment_from_lead(
+    lead: Lead,
+    created_by_id: str,
+    created_by_name: str,
+    skip_if_exists: bool = True,
+) -> Optional[Enrollment]:
+    """
+    Create an Enrollment mirroring the lead's values. Returns the new enrollment,
+    or None if one already exists for this lead (when skip_if_exists=True).
+    """
+    if skip_if_exists:
+        existing = await Enrollment.find_one(
+            Enrollment.linked_lead_id == lead.lead_id,
+            Enrollment.is_deleted == False,
+        )
+        if existing:
+            return None
+
+    db = get_database()
+    enrollment_id = await generate_enrollment_id(db)
+
+    trimester_value = None
+    if lead.trimester:
+        try:
+            trimester_value = EnrollmentTrimester(lead.trimester)
+        except ValueError:
+            trimester_value = None
+
+    enrollment = Enrollment(
+        enrollment_id=enrollment_id,
+        linked_lead_id=lead.lead_id,
+        subscriber_name=lead.name,
+        employee_id=lead.employee_id or "",
+        phone_number=lead.phone_number,
+        email=lead.email,
+        uhid=lead.uhid,
+        trimester=trimester_value,
+        doctor_name=lead.doctor_name,
+        service_enrolled=lead.service_requested,          # standardized: service flows lead -> enrollment
+        package_name_enrolled=lead.package_requested,
+        service_partner=lead.service_partner or None,
+        partner_centre_selected=lead.provider_location,
+        hclhc_spoc=lead.hclhc_spoc,
+        connect_status=EnrollmentConnectStatus.CONNECTED,
+        created_by=created_by_id,
+        created_by_name=created_by_name,
+        assigned_to=created_by_id,
+        assigned_to_name=created_by_name,
+    )
+    await enrollment.insert()
+    logger.info(f"Created enrollment {enrollment_id} for lead {lead.lead_id}")
+    return enrollment

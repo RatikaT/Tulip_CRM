@@ -22,6 +22,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
+import { toast } from 'react-toastify';
 import { Lead } from '../../types/lead.types';
 import {
   CONNECT_STATUS_OPTIONS,
@@ -118,6 +119,9 @@ export default function EnrollmentConfirmModal({
     remarks: '',
   });
 
+  // Validation errors for mandatory fields
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+
   // Date picker states
   const [billedDate, setBilledDate] = useState<Date | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
@@ -179,14 +183,41 @@ export default function EnrollmentConfirmModal({
       setDob(null);
       setFollowUpDate(null);
       setNextFollowUpDate(null);
+      // Reset validation errors
+      setErrors({});
     }
   }, [open, lead, currentFormData]);
 
   const handleChange = (field: keyof EnrollmentPreviewData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    // Clear this field's validation error once the user fills it
+    if (value) {
+      setErrors((prev) => {
+        if (!prev[field]) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
   };
 
   const handleConfirm = () => {
+    // Validate mandatory fields before enrolling
+    const newErrors: Record<string, boolean> = {};
+    if (!billedDate) newErrors.billed_date = true;
+    if (!formData.package_billed) newErrors.package_billed = true;
+    if (!formData.hclhc_spoc) newErrors.hclhc_spoc = true;
+    if (!formData.trimester) newErrors.trimester = true;
+    if (!formData.service_enrolled) newErrors.service_enrolled = true;
+    if (!formData.service_partner) newErrors.service_partner = true;
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      toast.error('Please fill all required fields before enrolling');
+      return;
+    }
+    setErrors({});
+
     // Include date values in the form data
     const dataWithDates = {
       ...formData,
@@ -333,18 +364,39 @@ export default function EnrollmentConfirmModal({
               <DatePicker
                 label="Billed Date"
                 value={billedDate}
-                onChange={setBilledDate}
-                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                onChange={(newValue) => {
+                  setBilledDate(newValue);
+                  if (newValue) {
+                    setErrors((prev) => {
+                      if (!prev.billed_date) return prev;
+                      const next = { ...prev };
+                      delete next.billed_date;
+                      return next;
+                    });
+                  }
+                }}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: 'small',
+                    required: true,
+                    error: !!errors.billed_date,
+                    helperText: errors.billed_date ? 'Required' : undefined,
+                  },
+                }}
               />
             </Grid>
 
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                required
                 label="Package Billed"
                 value={formData.package_billed}
                 onChange={(e) => handleChange('package_billed', e.target.value)}
                 size="small"
+                error={!!errors.package_billed}
+                helperText={errors.package_billed ? 'Required' : undefined}
               />
             </Grid>
 
@@ -362,7 +414,15 @@ export default function EnrollmentConfirmModal({
                 inputValue={formData.hclhc_spoc}
                 onInputChange={(_, newValue) => handleChange('hclhc_spoc', newValue || '')}
                 renderInput={(params) => (
-                  <TextField {...params} fullWidth label="HCLHC SPOC" size="small" />
+                  <TextField
+                    {...params}
+                    fullWidth
+                    required
+                    label="HCLHC SPOC"
+                    size="small"
+                    error={!!errors.hclhc_spoc}
+                    helperText={errors.hclhc_spoc ? 'Required' : undefined}
+                  />
                 )}
               />
             </Grid>
@@ -387,11 +447,14 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                required
                 select
                 label="Trimester"
                 value={formData.trimester}
                 onChange={(e) => handleChange('trimester', e.target.value)}
                 size="small"
+                error={!!errors.trimester}
+                helperText={errors.trimester ? 'Required' : undefined}
               >
                 <MenuItem value="">None</MenuItem>
                 {TRIMESTER_OPTIONS.map((t) => (
@@ -415,11 +478,14 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                required
                 select
                 label="Service Enrolled"
                 value={formData.service_enrolled}
                 onChange={(e) => handleChange('service_enrolled', e.target.value)}
                 size="small"
+                error={!!errors.service_enrolled}
+                helperText={errors.service_enrolled ? 'Required' : undefined}
               >
                 <MenuItem value="">None</MenuItem>
                 {SERVICE_ENROLLED_OPTIONS.map((s) => (
@@ -451,6 +517,7 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                required
                 select
                 label="Service Partner"
                 value={formData.service_partner}
@@ -459,6 +526,8 @@ export default function EnrollmentConfirmModal({
                   handleChange('partner_centre_selected', '');
                 }}
                 size="small"
+                error={!!errors.service_partner}
+                helperText={errors.service_partner ? 'Required' : undefined}
               >
                 <MenuItem value="">None</MenuItem>
                 {SERVICE_PARTNER_OPTIONS.map((p) => (

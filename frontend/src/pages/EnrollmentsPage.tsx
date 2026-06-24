@@ -669,6 +669,13 @@ export default function EnrollmentsPage() {
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
     },
     {
+      field: 'service_enrolled',
+      headerName: 'Service',
+      flex: 0.8,
+      minWidth: 110,
+      renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
+    },
+    {
       field: 'created_at',
       headerName: 'Created',
       flex: 0.7,

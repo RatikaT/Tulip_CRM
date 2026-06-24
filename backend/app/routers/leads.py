@@ -24,6 +24,7 @@ from app.models.enrollment import Enrollment, ConnectStatus as EnrollmentConnect
 from app.utils.enrollment_id import generate_enrollment_id
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
 from app.services import dedup_service
+from app.services.enrollment_helpers import create_enrollment_from_lead
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
@@ -522,6 +523,13 @@ async def bulk_upload_leads(
 
                 await lead.insert()
                 created_count += 1
+
+                # If uploaded already as "Enrolled", create the enrollment too
+                if lead.status == LeadStatus.ENROLLED.value:
+                    try:
+                        await create_enrollment_from_lead(lead, current_user["user_id"], current_user["full_name"])
+                    except Exception as ee:
+                        logger.error(f"Bulk upload: failed to create enrollment for {lead.lead_id}: {ee}")
 
             except Exception as e:
                 errors.append({"row": row_num, "error": str(e)})
@@ -1183,6 +1191,25 @@ async def restore_duplicate(lead_id: str, current_user: dict = Depends(get_curre
     return {"message": "Lead restored to Leads"}
 
 
+@router.post("/enrollments/backfill")
+async def backfill_enrollments(current_user: dict = Depends(get_current_super_admin)):
+    """Create enrollments for existing 'Enrolled' leads that don't have one yet (Super Admin)."""
+    leads = await Lead.find({
+        "is_deleted": False,
+        "status": LeadStatus.ENROLLED.value,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+    }).to_list()
+    created = 0
+    for lead in leads:
+        try:
+            e = await create_enrollment_from_lead(lead, current_user["user_id"], current_user["full_name"])
+            if e:
+                created += 1
+        except Exception as ex:
+            logger.error(f"Backfill enrollment failed for {lead.lead_id}: {ex}")
+    return {"message": f"Created {created} enrollment(s) for existing Enrolled leads", "created": created, "checked": len(leads)}
+
+
 @router.get("/{lead_id}/related")
 async def get_related_leads(lead_id: str, current_user: dict = Depends(get_current_user)):
     """Returning-customer history: other leads of the same person (all roles)."""
@@ -1557,50 +1584,11 @@ async def update_lead(
     await lead.save()
 
     # Auto-enrollment: Create enrollment when status changes to "Enrolled"
+    # (skips if one already exists for this lead — avoids duplicates on re-save)
     status_change = next((c for c in changes if c["field"] == "status" and c["new_value"] == LeadStatus.ENROLLED.value), None)
     if status_change:
         try:
-            db = get_database()
-            enrollment_id = await generate_enrollment_id(db)
-
-            # Map lead's service_partner to enrollment's service_partner
-            service_partner_value = lead.service_partner if lead.service_partner else None
-
-            # Map trimester
-            trimester_value = None
-            if lead.trimester:
-                from app.models.enrollment import Trimester as EnrollmentTrimester
-                try:
-                    trimester_value = EnrollmentTrimester(lead.trimester)
-                except ValueError:
-                    pass
-
-            # Log lead values being mapped to enrollment
-            logger.info(f"Creating enrollment from lead {lead_id} with values: uhid={lead.uhid}, service_requested={lead.service_requested}, package_requested={lead.package_requested}, provider_location={lead.provider_location}")
-
-            enrollment = Enrollment(
-                enrollment_id=enrollment_id,
-                linked_lead_id=lead.lead_id,
-                subscriber_name=lead.name,
-                employee_id=lead.employee_id or "",
-                phone_number=lead.phone_number,
-                email=lead.email,
-                uhid=lead.uhid,
-                trimester=trimester_value,
-                doctor_name=lead.doctor_name,
-                service_enrolled=lead.service_requested,
-                package_name_enrolled=lead.package_requested,
-                service_partner=service_partner_value,
-                partner_centre_selected=lead.provider_location,
-                hclhc_spoc=lead.hclhc_spoc,
-                connect_status=EnrollmentConnectStatus.CONNECTED,
-                created_by=current_user["user_id"],
-                created_by_name=current_user["full_name"],
-                assigned_to=current_user["user_id"],
-                assigned_to_name=current_user["full_name"],
-            )
-            await enrollment.insert()
-            logger.info(f"Auto-created enrollment {enrollment_id} for lead {lead_id}")
+            await create_enrollment_from_lead(lead, current_user["user_id"], current_user["full_name"])
         except Exception as e:
             logger.error(f"Failed to auto-create enrollment for lead {lead_id}: {str(e)}")
 
