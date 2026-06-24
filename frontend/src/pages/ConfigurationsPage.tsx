@@ -40,6 +40,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import GroupIcon from '@mui/icons-material/Group';
 import TuneIcon from '@mui/icons-material/Tune';
 import ListIcon from '@mui/icons-material/List';
+import RouteIcon from '@mui/icons-material/Route';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { User } from '../types/user.types';
@@ -53,6 +54,8 @@ import {
 import UserCreateModal from '../components/users/UserCreateModal';
 import UserEditModal from '../components/users/UserEditModal';
 import DropdownOptionsTab from '../components/configurations/DropdownOptionsTab';
+import CareJourneysTab from '../components/configurations/CareJourneysTab';
+import { useAuthStore } from '../stores/authStore';
 import { brandColors } from '../theme';
 
 const colors = {
@@ -135,6 +138,8 @@ const initialFormData: FieldFormData = {
 };
 
 export default function ConfigurationsPage() {
+  const { user } = useAuthStore();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [tabValue, setTabValue] = useState(0);
 
   // Users state
@@ -488,6 +493,15 @@ export default function ConfigurationsPage() {
               id="config-tab-2"
               aria-controls="config-tabpanel-2"
             />
+            {isSuperAdmin && (
+              <Tab
+                icon={<RouteIcon />}
+                iconPosition="start"
+                label="Care Journeys"
+                id="config-tab-3"
+                aria-controls="config-tabpanel-3"
+              />
+            )}
           </Tabs>
         </Box>
 
@@ -745,6 +759,13 @@ export default function ConfigurationsPage() {
         <TabPanel value={tabValue} index={2}>
           <DropdownOptionsTab />
         </TabPanel>
+
+        {/* Care Journeys Tab (super admin) */}
+        {isSuperAdmin && (
+          <TabPanel value={tabValue} index={3}>
+            <CareJourneysTab />
+          </TabPanel>
+        )}
       </Paper>
 
       {/* User Modals */}

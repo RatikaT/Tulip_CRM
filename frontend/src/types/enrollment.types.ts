@@ -1,4 +1,5 @@
 // Enrollment Types
+import { JourneyStepInstance } from './journey.types';
 
 export type ConnectStatus = 'Connected' | 'No Response' | 'Follow Up Required' | 'Others';
 
@@ -83,6 +84,9 @@ export interface Enrollment {
 
   // Follow-ups History
   follow_ups: FollowUpEntry[];
+
+  // Care Journey (snapshot of the service's journey template)
+  journey?: JourneyStepInstance[];
 
   // Assignment
   assigned_to: string | null;

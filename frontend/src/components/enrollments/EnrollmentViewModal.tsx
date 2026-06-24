@@ -36,6 +36,7 @@ import { format, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDateTimeIST, formatShortDateIST } from '../../utils/dateUtils';
+import CareJourneyPanel from './CareJourneyPanel';
 import { enrollmentService } from '../../services/enrollmentService';
 import api from '../../services/api';
 import {
@@ -284,6 +285,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ px: 2 }}>
           <Tab label="Details" />
           <Tab label={`Follow-ups (${enrollment.follow_ups?.length || 0})`} />
+          <Tab label={`Care Journey (${enrollment.journey?.length || 0})`} />
         </Tabs>
 
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -736,6 +738,10 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                   No follow-ups recorded yet
                 </Typography>
               )}
+            </TabPanel>
+
+            <TabPanel value={tabValue} index={2}>
+              <CareJourneyPanel enrollment={enrollment} canEdit={canEdit} onChanged={onSuccess} />
             </TabPanel>
           </DialogContent>
 
