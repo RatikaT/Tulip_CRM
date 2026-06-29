@@ -87,4 +87,16 @@ export const enrollmentService = {
     const response = await api.get<EnrollmentAuditTrailResponse>(`/enrollments/${enrollmentId}/audit`);
     return response.data;
   },
+
+  // Super-admin one-time fix: fill blank HCLHC SPOCs from the enrolling agent.
+  backfillSpoc: async (): Promise<{
+    message: string;
+    checked: number;
+    updated: number;
+    assigned_filled: number;
+    skipped_no_creator: number;
+  }> => {
+    const response = await api.post('/enrollments/backfill-spoc');
+    return response.data;
+  },
 };

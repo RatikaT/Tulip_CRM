@@ -49,6 +49,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import SearchIcon from '@mui/icons-material/Search';
+import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import InputAdornment from '@mui/material/InputAdornment';
 import { format, isToday, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -155,6 +156,7 @@ export default function EnrollmentsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
   const canCreate = isAdmin || user?.role === 'agent'; // Agents can also create enrollments
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -548,6 +550,31 @@ export default function EnrollmentsPage() {
     </Grid>
   );
 
+  // Super-admin one-time fix: fill blank HCLHC SPOCs from the enrolling agent.
+  const [backfillingSpoc, setBackfillingSpoc] = useState(false);
+  const handleBackfillSpoc = async () => {
+    setBackfillingSpoc(true);
+    try {
+      const result = await enrollmentService.backfillSpoc();
+      toast.success(
+        result.updated > 0
+          ? `Backfilled HCLHC SPOC on ${result.updated} enrollment(s)`
+          : 'No enrollments needed a SPOC backfill'
+      );
+      // Refresh so the updated SPOCs show immediately
+      fetchEnrollments();
+      fetchStats();
+    } catch (error) {
+      console.error('Backfill SPOC failed:', error);
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to backfill HCLHC SPOC';
+      toast.error(msg);
+    } finally {
+      setBackfillingSpoc(false);
+    }
+  };
+
   const handleExport = async () => {
     setExporting(true);
     try {
@@ -808,6 +835,21 @@ export default function EnrollmentsPage() {
           >
             {exporting ? 'Exporting...' : 'Export'}
           </Button>
+          {isSuperAdmin && (
+            <Tooltip title="Fill blank HCLHC SPOCs on old enrollments from the enrolling agent">
+              <span>
+                <Button
+                  variant="outlined"
+                  startIcon={<GroupAddIcon />}
+                  onClick={handleBackfillSpoc}
+                  disabled={backfillingSpoc}
+                  size="small"
+                >
+                  {backfillingSpoc ? 'Backfilling...' : 'Backfill SPOC'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
           {isAdmin && (
             <Button
               variant="outlined"
