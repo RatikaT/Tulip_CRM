@@ -24,7 +24,7 @@ from app.models.lead import Trimester, ServicePartner, ServiceEnrolled
 from app.models.audit_log import AuditLog, AuditAction
 from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditAction
 from app.models.user import User
-from app.middleware.auth_middleware import get_current_user, get_current_admin
+from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
 from app.database import get_database
 from app.services.journey_service import build_journey_for_service
 from pydantic import BaseModel
@@ -918,6 +918,90 @@ async def create_enrollment(
     return enrollment_to_response(enrollment)
 
 
+@router.post("/backfill-spoc")
+async def backfill_hclhc_spoc(current_user: dict = Depends(get_current_super_admin)):
+    """
+    One-time data fix (Super Admin): fill the HCLHC SPOC on old enrollments that
+    were created before SPOC was mandatory.
+
+    For every enrollment whose hclhc_spoc is null / empty / missing, look up the
+    enrolling agent (created_by) and set hclhc_spoc = that user's full_name. Also
+    fill assigned_to / assigned_to_name from the same user IF they are blank.
+
+    Never overwrites an enrollment that already has a non-empty hclhc_spoc.
+    Returns counts of what was changed.
+    """
+    # Defined as a literal path BEFORE the dynamic /{enrollment_id} routes so it
+    # is matched as an action, not as an enrollment id.
+    blank_spoc_query = {
+        "is_deleted": False,
+        "$or": [
+            {"hclhc_spoc": None},
+            {"hclhc_spoc": ""},
+            {"hclhc_spoc": {"$exists": False}},
+        ],
+    }
+    candidates = await Enrollment.find(blank_spoc_query).to_list()
+
+    user_cache: dict = {}          # created_by id -> full_name (or None if not found)
+    updated = 0
+    skipped_no_creator = 0
+    assigned_filled = 0
+
+    for enr in candidates:
+        # Safety: never touch one that already has a non-empty SPOC.
+        if enr.hclhc_spoc and enr.hclhc_spoc.strip():
+            continue
+
+        creator_id = enr.created_by
+        if not creator_id:
+            skipped_no_creator += 1
+            continue
+
+        if creator_id in user_cache:
+            full_name = user_cache[creator_id]
+        else:
+            full_name = None
+            try:
+                u = await User.get(creator_id)
+                if u:
+                    full_name = u.full_name
+            except Exception:
+                full_name = None
+            user_cache[creator_id] = full_name
+
+        if not full_name:
+            skipped_no_creator += 1
+            continue
+
+        enr.hclhc_spoc = full_name
+
+        # Fill assignment only when blank — don't disturb an existing owner.
+        if not enr.assigned_to:
+            enr.assigned_to = creator_id
+            assigned_filled += 1
+        if not enr.assigned_to_name:
+            enr.assigned_to_name = full_name
+
+        enr.updated_at = datetime.utcnow()
+        enr.last_modified_by = current_user["user_id"]
+        await enr.save()
+        updated += 1
+
+    logger.info(
+        f"backfill-spoc by {current_user['email']}: "
+        f"checked={len(candidates)}, updated={updated}, "
+        f"assigned_filled={assigned_filled}, skipped_no_creator={skipped_no_creator}"
+    )
+    return {
+        "message": f"Backfilled HCLHC SPOC on {updated} enrollment(s)",
+        "checked": len(candidates),
+        "updated": updated,
+        "assigned_filled": assigned_filled,
+        "skipped_no_creator": skipped_no_creator,
+    }
+
+
 @router.get("/{enrollment_id}", response_model=EnrollmentResponse)
 async def get_enrollment(
     enrollment_id: str,
@@ -934,17 +1018,36 @@ async def get_enrollment(
             detail="Enrollment not found"
         )
 
-    # Agents can only view enrollments where they are HCLHC SPOC
-    if current_user.get("role") == "agent":
-        user_name = current_user.get("full_name", "")
-        is_hclhc_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
-        if not is_hclhc_spoc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only view enrollments where you are the HCLHC SPOC"
-            )
+    # Agents can view enrollments where they are HCLHC SPOC — or, for legacy
+    # blank-SPOC enrollments, where they are the agent who enrolled it. Mirrors
+    # the edit/follow-up/journey safety net (_agent_can_act).
+    if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view enrollments where you are the HCLHC SPOC"
+        )
 
     return enrollment_to_response(enrollment)
+
+
+def _agent_can_act(enrollment: Enrollment, current_user: dict) -> bool:
+    """
+    Whether a non-admin agent may edit / log follow-ups / work the journey on
+    this enrollment.
+
+    True when:
+      - the agent is the current HCLHC SPOC, OR
+      - (safety net for old enrollments created before SPOC was mandatory) the
+        enrollment has no SPOC yet AND the agent is the one who enrolled it
+        (created_by == this user).
+    """
+    user_name = (current_user.get("full_name") or "").strip().lower()
+    spoc = (enrollment.hclhc_spoc or "").strip()
+    if spoc and spoc.lower() == user_name:
+        return True
+    if not spoc and enrollment.created_by and enrollment.created_by == current_user.get("user_id"):
+        return True
+    return False
 
 
 @router.put("/{enrollment_id}", response_model=EnrollmentResponse)
@@ -965,15 +1068,13 @@ async def update_enrollment(
             detail="Enrollment not found"
         )
 
-    # Agents can only update enrollments where they are HCLHC SPOC
-    if current_user.get("role") == "agent":
-        user_name = current_user.get("full_name", "")
-        is_hclhc_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
-        if not is_hclhc_spoc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only edit enrollments where you are the HCLHC SPOC"
-            )
+    # Agents can update enrollments where they are HCLHC SPOC — or, for legacy
+    # blank-SPOC enrollments, where they are the agent who enrolled it.
+    if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only edit enrollments where you are the HCLHC SPOC"
+        )
 
     # Track changes for audit log
     changes = []
@@ -1124,15 +1225,13 @@ async def add_follow_up(
         )
 
     # Only the current follow-up SPOC (or an admin) may log follow-ups. The agent
-    # who enrolled the lead can see it but is read-only once it's handed off.
-    if current_user.get("role") == "agent":
-        user_name = current_user.get("full_name", "")
-        is_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
-        if not is_spoc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the assigned follow-up SPOC can add follow-ups"
-            )
+    # who enrolled the lead can see it but is read-only once it's handed off — except
+    # for legacy blank-SPOC enrollments, where the enroller may still act.
+    if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned follow-up SPOC can add follow-ups"
+        )
 
     # Create follow-up entry
     follow_up_number = len(enrollment.follow_ups) + 1
@@ -1229,15 +1328,15 @@ class JourneyStepCreateRequest(BaseModel):
 
 
 def _require_spoc_or_admin(enrollment: Enrollment, current_user: dict):
-    """Only the current follow-up SPOC (or an admin) may work the journey."""
-    if current_user.get("role") == "agent":
-        user_name = current_user.get("full_name", "")
-        is_spoc = enrollment.hclhc_spoc and enrollment.hclhc_spoc.lower() == user_name.lower()
-        if not is_spoc:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the assigned follow-up SPOC can update the care journey",
-            )
+    """
+    Only the current follow-up SPOC (or an admin) may work the journey — plus, for
+    legacy blank-SPOC enrollments, the agent who enrolled it (see _agent_can_act).
+    """
+    if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the assigned follow-up SPOC can update the care journey",
+        )
 
 
 async def _get_enrollment_or_404(enrollment_id: str) -> Enrollment:
