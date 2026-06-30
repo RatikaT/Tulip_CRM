@@ -44,12 +44,24 @@ GENERIC_SERVICE = "GENERIC"
 CARE_SERVICES = ["Antenatal", "PreConception", "MaternityWellness"]
 
 
-def make_outreach_key(status: str, service: Optional[str]) -> str:
+def _enum_value(v) -> str:
+    """Coerce a value (possibly a str-Enum like LeadStatus) to its plain string.
+
+    Needed because f-string formatting of a (str, Enum) member yields
+    'LeadStatus.NOT_INTERESTED' on Python 3.11+, not the value 'Not Interested'.
+    """
+    if v is None:
+        return ""
+    return str(v.value) if hasattr(v, "value") else str(v)
+
+
+def make_outreach_key(status, service) -> str:
     """Build an outreach trigger_key: '<status>::<service>' or '<status>::GENERIC'."""
-    svc = (service or "").strip()
+    st = _enum_value(status).strip()
+    svc = _enum_value(service).strip()
     if svc not in CARE_SERVICES:
         svc = GENERIC_SERVICE
-    return f"{status}::{svc}"
+    return f"{st}::{svc}"
 
 
 class JourneyStepDef(BaseModel):

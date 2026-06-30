@@ -19,6 +19,14 @@ def test_outreach_key():
     assert make_outreach_key("Follow up-No Response", "SomethingElse") == f"Follow up-No Response::{GENERIC_SERVICE}"
 
 
+def test_outreach_key_with_enum_status():
+    # Regression: lead.status may be a (str, Enum) member at trigger time; the key
+    # must use the .value, not the 'LeadStatus.X' f-string form (Python 3.11+).
+    from app.models.lead import LeadStatus
+    assert make_outreach_key(LeadStatus.NOT_INTERESTED, "Antenatal") == "Not Interested::Antenatal"
+    assert make_outreach_key(LeadStatus.LEAD_CLOSED_NO_RESPONSE, None) == f"Lead Closed-No Response::{GENERIC_SERVICE}"
+
+
 def test_service_cadence_offsets():
     # Service-specific = Mail@15, Mail@30, WhatsApp@30 (final)
     steps = _outreach_service_steps()

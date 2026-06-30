@@ -1283,6 +1283,7 @@ async def outreach_worklist(
     now = datetime.utcnow()
     leads = await Lead.find({
         "is_deleted": False,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
         "journey_status": "active",
         "journey": {"$exists": True, "$ne": []},
     }).to_list()
