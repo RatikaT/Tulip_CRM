@@ -188,6 +188,25 @@ class Lead(Document):
     duplicate_resolved_by: Optional[str] = None  # user_id who confirmed
     duplicate_resolved_at: Optional[datetime] = None  # when confirmed
 
+    # Outreach Journey — snapshot of the outreach template when the lead is closed
+    # (Not Interested / Lead Closed-No Response / Follow up-No Response). Owned and
+    # worked CENTRALLY by admin/super-admin; agents see it read-only. Same instance
+    # shape as Enrollment.journey.
+    journey: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Journey-level controls (mirror Enrollment).
+    journey_status: str = "active"            # active | stopped
+    journey_stopped_reason: Optional[str] = None
+    journey_stopped_by: Optional[str] = None
+    journey_stopped_by_name: Optional[str] = None
+    journey_stopped_at: Optional[datetime] = None
+
+    # Do-Not-Contact — hard-stops all journeys; no new touchpoints generate.
+    do_not_contact: bool = False
+    dnc_reason: Optional[str] = None
+    dnc_set_by: Optional[str] = None
+    dnc_at: Optional[datetime] = None
+
     class Settings:
         name = "leads"
         use_state_management = True

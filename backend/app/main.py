@@ -31,6 +31,12 @@ async def lifespan(app: FastAPI):
     await connect_to_database()
     await create_default_admin()
     await create_default_super_admin()
+    # Journey templates: migrate legacy keys + seed Care/Outreach defaults (idempotent).
+    try:
+        from app.services.journey_seed import migrate_and_seed_journeys
+        await migrate_and_seed_journeys()
+    except Exception as e:
+        logger.error(f"Journey migrate/seed failed (non-fatal): {e}")
     logger.info("CRM API started successfully")
 
     yield

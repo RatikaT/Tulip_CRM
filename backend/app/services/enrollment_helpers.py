@@ -81,8 +81,15 @@ async def create_enrollment_from_lead(
     )
 
     # Snapshot the service's care-journey template onto this enrollment.
+    # Pass trimester so an Antenatal loop materializes immediately when set; with a
+    # blank / "Not Conceived" trimester the engine builds only the non-recurring
+    # steps (the loop is generated later when the agent sets a real trimester).
+    trimester_ctx = lead.trimester if lead.trimester else None
     enrollment.journey = await build_journey_for_service(
-        enrollment.service_enrolled, enrollment.created_at
+        enrollment.service_enrolled,
+        enrollment.created_at,
+        ctx={"trimester": trimester_ctx} if trimester_ctx else None,
+        do_not_contact=bool(getattr(lead, "do_not_contact", False)),
     )
 
     await enrollment.insert()

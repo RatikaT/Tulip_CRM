@@ -96,8 +96,22 @@ class Enrollment(Document):
     # Care Journey — snapshot of the service's journey template at enrollment time.
     # Each item: {step_id, name, description, step_type, planned_date, status
     # (pending|done|skipped), completed_date, completed_by, completed_by_name,
-    # notes, order, is_adhoc}. Worked by the follow-up SPOC.
+    # notes, order, is_adhoc, is_optional, occurrence_index}. Worked by the SPOC.
     journey: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Journey-level controls. "stopped" cancels remaining pending steps (reason
+    # kept) but retains done/skipped history for attribution/reporting.
+    journey_status: str = "active"            # active | stopped
+    journey_stopped_reason: Optional[str] = None
+    journey_stopped_by: Optional[str] = None
+    journey_stopped_by_name: Optional[str] = None
+    journey_stopped_at: Optional[datetime] = None
+
+    # Do-Not-Contact — hard-stops all journeys; no new touchpoints generate.
+    do_not_contact: bool = False
+    dnc_reason: Optional[str] = None
+    dnc_set_by: Optional[str] = None
+    dnc_at: Optional[datetime] = None
 
     # Assignment
     assigned_to: Optional[str] = None
