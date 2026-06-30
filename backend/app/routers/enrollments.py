@@ -1402,6 +1402,13 @@ async def instantiate_journey(
     enrollment.journey_status = "active"
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
+    logger.info(
+        "instantiate %s: service=%r trimester=%r built=%d",
+        enrollment_id,
+        enrollment.journey_classification or enrollment.service_enrolled,
+        (enrollment.trimester.value if hasattr(enrollment.trimester, "value") else enrollment.trimester),
+        len(enrollment.journey or []),
+    )
     return enrollment_to_response(enrollment)
 
 

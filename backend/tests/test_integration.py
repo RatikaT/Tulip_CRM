@@ -23,7 +23,7 @@ from app.models.journey_template import JourneyTemplate
 
 from app.services.journey_seed import migrate_and_seed_journeys
 from app.services.journey_ops import build_outreach_for_lead, stop_journey_steps
-from app.services.journey_service import build_journey_for_service
+from app.services.journey_service import build_journey_for_service, get_template
 from app.services.enrollment_helpers import reinstantiate_care_journey
 
 TEST_DB = "tulip_test_journeys"
@@ -113,6 +113,40 @@ async def main():
     pc = await build_journey_for_service("PreConception", MONDAY)
     loop_steps = [s for s in pc if s.get("template_step_id") == "pc_keepintouch"]
     check("PreConception keep-in-touch ~12 occurrences (AC9)", len(loop_steps) == 12)
+
+    # ---- Duplicate/empty-template resilience (the instantiate-empty bug) ----
+    coll = db.journey_templates
+    try:
+        await coll.drop_index("context_trigger_unique")
+    except Exception:
+        pass
+    # Inject an EMPTY duplicate Antenatal care template (simulates the bad record).
+    await coll.insert_one({
+        "context": "care", "trigger_key": "Antenatal", "steps": [],
+        "updated_at": datetime.utcnow(), "updated_by_name": "bad-empty-dup",
+    })
+    dup_count = await JourneyTemplate.find({"context": "care", "trigger_key": "Antenatal"}).count()
+    check("setup: 2 Antenatal care templates (one empty)", dup_count == 2)
+    best = await get_template("care", "Antenatal")
+    check("get_template returns the NON-empty one on duplicates (fix)",
+          best is not None and len(best.steps or []) > 0)
+    # Re-run startup task -> dedups + recreates the unique index.
+    await migrate_and_seed_journeys()
+    after = await JourneyTemplate.find({"context": "care", "trigger_key": "Antenatal"}).count()
+    survivor = await get_template("care", "Antenatal")
+    check("dedup leaves exactly 1 Antenatal care template", after == 1)
+    check("dedup keeps the non-empty survivor", survivor is not None and len(survivor.steps or []) > 0)
+
+    # ---- _ensure_template fills an existing-but-empty template ----
+    await coll.delete_many({"context": "care", "trigger_key": "MaternityWellness"})
+    await coll.insert_one({
+        "context": "care", "trigger_key": "MaternityWellness", "steps": [],
+        "updated_at": datetime.utcnow(), "updated_by_name": "empty",
+    })
+    await migrate_and_seed_journeys()
+    mw = await get_template("care", "MaternityWellness")
+    check("seed fills an existing-but-empty template (fix)",
+          mw is not None and len(mw.steps or []) > 0)
 
     # cleanup
     await client.drop_database(TEST_DB)

@@ -11,6 +11,7 @@ Runs once at startup (idempotent):
 """
 import logging
 import uuid
+from datetime import datetime
 from typing import List, Dict, Any
 
 from app.database import get_database
@@ -101,11 +102,22 @@ def _outreach_generic_steps() -> List[JourneyStepDef]:
 
 
 async def _ensure_template(context: str, trigger_key: str, steps: List[JourneyStepDef]):
-    """Insert a default template only if (context, trigger_key) doesn't exist."""
+    """
+    Seed a default template. Creates it when missing, OR fills it when it exists
+    but has zero steps (so an accidentally-empty record gets the defaults).
+    Never overwrites a template that already has steps (preserves admin edits).
+    Returns True when it created or filled one.
+    """
     existing = await JourneyTemplate.find_one(
         {"context": context, "trigger_key": trigger_key}
     )
     if existing:
+        if not (existing.steps or []):
+            existing.steps = steps
+            existing.updated_by_name = "system (seed)"
+            existing.updated_at = datetime.utcnow()
+            await existing.save()
+            return True
         return False
     await JourneyTemplate(
         context=context,
@@ -147,6 +159,28 @@ async def migrate_and_seed_journeys():
     except Exception as e:
         logger.warning(f"journey migration: template key migration failed: {e}")
 
+    # 2a. Deduplicate (context, trigger_key): keep the richest record (most steps,
+    # newest as tie-break), delete the rest. Prevents an empty duplicate from
+    # winning the lookup AND lets the unique index below succeed.
+    try:
+        from collections import defaultdict
+        from datetime import datetime as _dt
+        groups = defaultdict(list)
+        async for doc in coll.find({}):
+            groups[(doc.get("context"), doc.get("trigger_key"))].append(doc)
+        removed = 0
+        for _key, docs in groups.items():
+            if len(docs) <= 1:
+                continue
+            docs.sort(key=lambda d: (len(d.get("steps") or []), d.get("updated_at") or _dt.min), reverse=True)
+            for extra in docs[1:]:
+                await coll.delete_one({"_id": extra["_id"]})
+                removed += 1
+        if removed:
+            logger.info(f"journey dedup: removed {removed} duplicate template(s)")
+    except Exception as e:
+        logger.warning(f"journey dedup failed: {e}")
+
     # 2b. Create the composite unique index NOW (after legacy docs have keys, so
     # we don't hit duplicate (null, null)). Idempotent.
     try:
@@ -174,5 +208,5 @@ async def migrate_and_seed_journeys():
             seeded += 1
 
     if seeded:
-        logger.info(f"journey seed: created {seeded} default template(s)")
+        logger.info(f"journey seed: created/filled {seeded} default template(s)")
     return {"seeded": seeded}

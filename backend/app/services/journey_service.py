@@ -154,12 +154,20 @@ def expand_steps(
 # DB-backed template lookup + journey build
 # --------------------------------------------------------------------------- #
 async def get_template(context: str, trigger_key: str) -> Optional[JourneyTemplate]:
-    """Find the template for a (context, trigger_key). trigger_key matched exactly."""
+    """Find the template for (context, trigger_key). If duplicates exist, return the
+    one with the most steps (newest as tie-break) so an empty duplicate never wins."""
     if not trigger_key:
         return None
-    return await JourneyTemplate.find_one(
+    matches = await JourneyTemplate.find(
         {"context": context, "trigger_key": trigger_key}
+    ).to_list()
+    if not matches:
+        return None
+    matches.sort(
+        key=lambda t: (len(t.steps or []), t.updated_at or datetime.min),
+        reverse=True,
     )
+    return matches[0]
 
 
 async def build_journey(
