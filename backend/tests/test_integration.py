@@ -130,6 +130,14 @@ async def main():
     best = await get_template("care", "Antenatal")
     check("get_template returns the NON-empty one on duplicates (fix)",
           best is not None and len(best.steps or []) > 0)
+    # End-to-end: with the empty duplicate STILL present (pre-dedup state, exactly
+    # what the user hit), the instantiate code path must still build a full journey.
+    enr_inst = Enrollment(enrollment_id="ENR-INST-1", service_enrolled="Antenatal",
+                          subscriber_name="Mom2", phone_number="9000000009",
+                          trimester="Trimester 1", created_at=MONDAY)
+    enr_inst.journey = await reinstantiate_care_journey(enr_inst)
+    check("instantiate builds non-empty even with empty duplicate present (bug fixed)",
+          len(enr_inst.journey) > 3)
     # Re-run startup task -> dedups + recreates the unique index.
     await migrate_and_seed_journeys()
     after = await JourneyTemplate.find({"context": "care", "trigger_key": "Antenatal"}).count()
