@@ -1,5 +1,5 @@
 // Enrollment Types
-import { JourneyStepInstance } from './journey.types';
+import { JourneyStepInstance, JourneyTriggers } from './journey.types';
 
 export type ConnectStatus = 'Connected' | 'No Response' | 'Follow Up Required' | 'Others';
 
@@ -87,6 +87,17 @@ export interface Enrollment {
 
   // Care Journey (snapshot of the service's journey template)
   journey?: JourneyStepInstance[];
+  journey_status?: string;
+  journey_stopped_reason?: string | null;
+  journey_stopped_by_name?: string | null;
+  journey_stopped_at?: string | null;
+  journey_flag?: string | null;
+  journey_flag_note?: string | null;
+  journey_classification?: string | null;
+  converted_to_lead_id?: string | null;
+  do_not_contact?: boolean;
+  dnc_reason?: string | null;
+  journey_triggers?: JourneyTriggers;
 
   // Assignment
   assigned_to: string | null;

@@ -1,4 +1,5 @@
 // Lead Types
+import { JourneyStepInstance } from './journey.types';
 
 export type LeadStatus =
   | 'Not Interested'
@@ -155,6 +156,15 @@ export interface Lead {
   duplicate_status?: string | null;
   duplicate_of?: string | null;
   duplicate_resolved_at?: string | null;
+
+  // Outreach Journey (central, admin-owned; agents read-only)
+  journey?: JourneyStepInstance[];
+  journey_status?: string;
+  journey_stopped_reason?: string | null;
+  journey_stopped_by_name?: string | null;
+  journey_stopped_at?: string | null;
+  do_not_contact?: boolean;
+  dnc_reason?: string | null;
 }
 
 export interface LeadListResponse {

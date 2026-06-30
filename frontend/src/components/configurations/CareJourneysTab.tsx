@@ -43,7 +43,10 @@ export default function CareJourneysTab() {
     try {
       const res = await journeyService.listTemplates();
       const map: Record<string, JourneyTemplate> = {};
-      res.templates.forEach((t) => { map[t.service] = t; });
+      res.templates.forEach((t) => {
+        const key = t.service || t.trigger_key;
+        if (key) map[key] = t;
+      });
       setTemplates(map);
     } catch {
       toast.error('Failed to load journey templates');
