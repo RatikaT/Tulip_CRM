@@ -120,6 +120,23 @@ def remove_step(journey: List[Dict[str, Any]], step_id: str) -> Tuple[List[Dict[
     return new_journey, (len(new_journey) != len(journey))
 
 
+def compute_care_triggers(service, trimester) -> Dict[str, Any]:
+    """
+    Agent-facing trigger hints for a care enrollment (see spec 4e):
+      - needs_trimester:          Antenatal with a blank trimester -> prompt to add it.
+      - trimester_contradiction:  Antenatal with "Not Conceived" -> correct or flag admin.
+      - is_preconception:         PreConception -> offers "Mark conceived" conversion.
+    """
+    svc = (service.value if hasattr(service, "value") else (service or "")).strip().lower()
+    tri = (trimester.value if hasattr(trimester, "value") else (trimester or "")).strip()
+    is_antenatal = svc == "antenatal"
+    return {
+        "needs_trimester": is_antenatal and not tri,
+        "trimester_contradiction": is_antenatal and tri == "Not Conceived",
+        "is_preconception": svc == "preconception",
+    }
+
+
 def overdue_pending_steps(journey: List[Dict[str, Any]], now: Optional[datetime] = None) -> List[Dict[str, Any]]:
     """Pending steps whose planned_date is in the past."""
     now = now or datetime.utcnow()

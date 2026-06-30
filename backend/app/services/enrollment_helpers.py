@@ -95,3 +95,39 @@ async def create_enrollment_from_lead(
     await enrollment.insert()
     logger.info(f"Created enrollment {enrollment_id} for lead {lead.lead_id}")
     return enrollment
+
+
+def _coerce(v):
+    return v.value if hasattr(v, "value") else v
+
+
+async def reinstantiate_care_journey(enrollment) -> list:
+    """
+    Rebuild an enrollment's care journey from the (possibly reclassified) service
+    template, using its trimester. Preserves done/skipped attribution for steps
+    that still exist by step_id, and carries over ad-hoc steps. Used when the agent
+    sets/changes the trimester or an admin reclassifies the record.
+    """
+    from datetime import datetime as _dt
+    service = enrollment.journey_classification or enrollment.service_enrolled
+    trimester = _coerce(enrollment.trimester)
+    new_journey = await build_journey_for_service(
+        service,
+        enrollment.created_at or _dt.utcnow(),
+        ctx={"trimester": trimester} if trimester else None,
+        do_not_contact=bool(getattr(enrollment, "do_not_contact", False)),
+    )
+    old = enrollment.journey or []
+    old_by_id = {s.get("step_id"): s for s in old}
+    for s in new_journey:
+        prev = old_by_id.get(s["step_id"])
+        if prev and prev.get("status") in ("done", "skipped"):
+            s["status"] = prev["status"]
+            s["completed_date"] = prev.get("completed_date")
+            s["completed_by"] = prev.get("completed_by")
+            s["completed_by_name"] = prev.get("completed_by_name")
+            if prev.get("notes"):
+                s["notes"] = prev.get("notes")
+    # Carry over ad-hoc steps (not part of the template).
+    new_journey.extend([s for s in old if s.get("is_adhoc")])
+    return new_journey

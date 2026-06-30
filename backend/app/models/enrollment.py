@@ -113,6 +113,16 @@ class Enrollment(Document):
     dnc_set_by: Optional[str] = None
     dnc_at: Optional[datetime] = None
 
+    # Agent->Admin flag (e.g. Antenatal with "Not Conceived" trimester). Cleared
+    # on reclassify. journey_classification overrides the snapshot source service.
+    journey_flag: Optional[str] = None            # e.g. "trimester_contradiction"
+    journey_flag_note: Optional[str] = None
+    journey_flagged_at: Optional[datetime] = None
+    journey_classification: Optional[str] = None  # admin reclassification target
+
+    # PreConception -> Antenatal conversion link.
+    converted_to_lead_id: Optional[str] = None
+
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None

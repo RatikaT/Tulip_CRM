@@ -207,6 +207,9 @@ class Lead(Document):
     dnc_set_by: Optional[str] = None
     dnc_at: Optional[datetime] = None
 
+    # Set when this lead was spawned from a PreConception enrollment that conceived.
+    converted_from_enrollment_id: Optional[str] = None
+
     class Settings:
         name = "leads"
         use_state_management = True

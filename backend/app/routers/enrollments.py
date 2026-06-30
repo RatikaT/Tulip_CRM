@@ -20,13 +20,16 @@ from app.schemas.enrollment import (
     BulkUploadResponse
 )
 from app.models.enrollment import Enrollment, ConnectStatus, ActionTaken
-from app.models.lead import Trimester, ServicePartner, ServiceEnrolled
+from app.models.lead import Trimester, ServicePartner, ServiceEnrolled, Lead, LeadStatus
+from app.utils.lead_id import generate_lead_id
 from app.models.audit_log import AuditLog, AuditAction
 from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditAction
 from app.models.user import User
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
 from app.database import get_database
 from app.services.journey_service import build_journey_for_service
+from app.services.enrollment_helpers import reinstantiate_care_journey
+from app.services.journey_ops import compute_care_triggers, stop_journey_steps
 from pydantic import BaseModel
 import logging
 import math
@@ -115,6 +118,20 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
 
         # Care Journey (snapshot of the service's journey template)
         "journey": getattr(enrollment, "journey", []) or [],
+        "journey_status": getattr(enrollment, "journey_status", "active"),
+        "journey_stopped_reason": getattr(enrollment, "journey_stopped_reason", None),
+        "journey_stopped_by_name": getattr(enrollment, "journey_stopped_by_name", None),
+        "journey_stopped_at": getattr(enrollment, "journey_stopped_at", None),
+        "journey_flag": getattr(enrollment, "journey_flag", None),
+        "journey_flag_note": getattr(enrollment, "journey_flag_note", None),
+        "journey_classification": getattr(enrollment, "journey_classification", None),
+        "converted_to_lead_id": getattr(enrollment, "converted_to_lead_id", None),
+        "do_not_contact": bool(getattr(enrollment, "do_not_contact", False)),
+        "dnc_reason": getattr(enrollment, "dnc_reason", None),
+        # Agent-facing trigger hints (spec 4e).
+        "journey_triggers": compute_care_triggers(
+            enrollment.service_enrolled, enrollment.trimester
+        ),
 
         # Assignment
         "assigned_to": enrollment.assigned_to,
@@ -1131,6 +1148,17 @@ async def update_enrollment(
     enrollment.last_modified_by = current_user["user_id"]
     await enrollment.save()
 
+    # Trimester change on a care journey (esp. Antenatal blank/"Not Conceived" ->
+    # a real trimester) re-instantiates the journey so the loop materializes.
+    # Preserves completed-step attribution + ad-hoc steps. Skips stopped journeys.
+    trimester_changed = any(c["field"] == "trimester" for c in changes)
+    if trimester_changed and enrollment.journey_status == "active" and not enrollment.do_not_contact:
+        try:
+            enrollment.journey = await reinstantiate_care_journey(enrollment)
+            await enrollment.save()
+        except Exception as e:
+            logger.error(f"Failed to re-instantiate journey for {enrollment_id}: {e}")
+
     # Create audit log only if there were changes
     if changes:
         audit = EnrollmentAuditLog(
@@ -1369,8 +1397,9 @@ async def instantiate_journey(
     if enrollment.journey and not force:
         return enrollment_to_response(enrollment)
 
-    anchor = enrollment.created_at or datetime.utcnow()
-    enrollment.journey = await build_journey_for_service(enrollment.service_enrolled, anchor)
+    # Trimester-aware rebuild that preserves done/skipped attribution + ad-hoc steps.
+    enrollment.journey = await reinstantiate_care_journey(enrollment)
+    enrollment.journey_status = "active"
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
     return enrollment_to_response(enrollment)
@@ -1466,6 +1495,189 @@ async def delete_journey_step(
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
     return enrollment_to_response(enrollment)
+
+
+class JourneyStopRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class DncRequest(BaseModel):
+    do_not_contact: bool = True
+    reason: Optional[str] = None
+
+
+class JourneyFlagRequest(BaseModel):
+    flag: str = "trimester_contradiction"
+    note: Optional[str] = None
+
+
+class ReclassifyRequest(BaseModel):
+    target: str        # "PreConception" | "Antenatal" | "Outreach"
+
+
+@router.post("/{enrollment_id}/journey/stop")
+async def stop_enrollment_journey(
+    enrollment_id: str,
+    body: JourneyStopRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Stop the care journey (SPOC/admin): cancel pending steps, keep history."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    enrollment.journey = stop_journey_steps(enrollment.journey or [])
+    enrollment.journey_status = "stopped"
+    enrollment.journey_stopped_reason = body.reason
+    enrollment.journey_stopped_by = current_user["user_id"]
+    enrollment.journey_stopped_by_name = current_user.get("full_name", current_user["email"])
+    enrollment.journey_stopped_at = datetime.utcnow()
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/dnc")
+async def set_enrollment_dnc(
+    enrollment_id: str,
+    body: DncRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Set/clear Do-Not-Contact (SPOC/admin). Setting it hard-stops the journey."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    enrollment.do_not_contact = bool(body.do_not_contact)
+    if enrollment.do_not_contact:
+        enrollment.dnc_reason = body.reason
+        enrollment.dnc_set_by = current_user["user_id"]
+        enrollment.dnc_at = datetime.utcnow()
+        enrollment.journey = stop_journey_steps(enrollment.journey or [])
+        enrollment.journey_status = "stopped"
+        enrollment.journey_stopped_reason = enrollment.journey_stopped_reason or "Do Not Contact"
+        enrollment.journey_stopped_at = datetime.utcnow()
+    else:
+        enrollment.dnc_reason = None
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/journey/flag")
+async def flag_enrollment_journey(
+    enrollment_id: str,
+    body: JourneyFlagRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Agent flags the record to Admin (e.g. Antenatal + 'Not Conceived')."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    enrollment.journey_flag = body.flag
+    enrollment.journey_flag_note = body.note
+    enrollment.journey_flagged_at = datetime.utcnow()
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/journey/reclassify")
+async def reclassify_enrollment_journey(
+    enrollment_id: str,
+    body: ReclassifyRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """
+    Admin reclassifies a flagged record's journey (spec 4e):
+      - PreConception / Antenatal -> set service_enrolled to the target and rebuild
+        the care journey (preserving completed steps).
+      - Outreach -> stop the care journey; the lead is handled via outreach.
+    Clears the agent flag.
+    """
+    target = (body.target or "").strip()
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+
+    if target.lower() in ("preconception", "antenatal", "maternitywellness"):
+        canonical = next(
+            (s for s in ("PreConception", "Antenatal", "MaternityWellness")
+             if s.lower() == target.lower()), target
+        )
+        enrollment.service_enrolled = canonical
+        enrollment.journey_classification = canonical
+        enrollment.journey_status = "active"
+        enrollment.journey = await reinstantiate_care_journey(enrollment)
+    elif target.lower() == "outreach":
+        enrollment.journey_classification = "Outreach"
+        enrollment.journey = stop_journey_steps(enrollment.journey or [])
+        enrollment.journey_status = "stopped"
+        enrollment.journey_stopped_reason = "Reclassified to outreach"
+        enrollment.journey_stopped_at = datetime.utcnow()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="target must be PreConception, Antenatal, MaternityWellness or Outreach",
+        )
+
+    enrollment.journey_flag = None
+    enrollment.journey_flag_note = None
+    enrollment.updated_at = datetime.utcnow()
+    enrollment.last_modified_by = current_user["user_id"]
+    await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/convert-to-antenatal")
+async def convert_to_antenatal(
+    enrollment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    PreConception -> Antenatal happy path (SPOC/admin): spawn a new pre-filled
+    Antenatal lead (carrying contact details, linked back to this enrollment) and
+    stop the PreConception keep-in-touch loop (reason "Conceived").
+    """
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    if enrollment.converted_to_lead_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Already converted to lead {enrollment.converted_to_lead_id}",
+        )
+
+    db = get_database()
+    new_lead_id = await generate_lead_id(db)
+    new_lead = Lead(
+        lead_id=new_lead_id,
+        lead_creation_date=date.today(),
+        status=LeadStatus.ENQUIRY_LEAD.value,
+        name=enrollment.name or enrollment.subscriber_name or "Unknown",
+        email=enrollment.email,
+        phone_number=enrollment.phone_number,
+        employee_id=enrollment.employee_id or None,
+        uhid=enrollment.uhid,
+        service_requested="Antenatal",
+        assigned_to=enrollment.assigned_to,
+        assigned_to_name=enrollment.assigned_to_name,
+        assigned_date=datetime.utcnow(),
+        hclhc_spoc=enrollment.hclhc_spoc,
+        converted_from_enrollment_id=enrollment.enrollment_id,
+        created_by=current_user["user_id"],
+    )
+    await new_lead.insert()
+
+    # Stop the PreConception keep-in-touch loop, keep history.
+    enrollment.journey = stop_journey_steps(enrollment.journey or [])
+    enrollment.journey_status = "stopped"
+    enrollment.journey_stopped_reason = "Conceived"
+    enrollment.journey_stopped_by = current_user["user_id"]
+    enrollment.journey_stopped_by_name = current_user.get("full_name", current_user["email"])
+    enrollment.journey_stopped_at = datetime.utcnow()
+    enrollment.converted_to_lead_id = new_lead_id
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+
+    return {
+        "message": f"Created Antenatal lead {new_lead_id} from enrollment {enrollment_id}",
+        "lead_id": new_lead_id,
+        "enrollment": enrollment_to_response(enrollment),
+    }
 
 
 @router.get("/{enrollment_id}/audit")
