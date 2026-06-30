@@ -25,6 +25,14 @@ from app.utils.enrollment_id import generate_enrollment_id
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
 from app.services import dedup_service
 from app.services.enrollment_helpers import create_enrollment_from_lead
+from app.services.journey_ops import (
+    OUTREACH_TRIGGER_STATUSES,
+    build_outreach_for_lead,
+    stop_journey_steps,
+    apply_step_update,
+    add_adhoc_step,
+    remove_step,
+)
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
@@ -120,6 +128,15 @@ def lead_to_response(lead: Lead) -> dict:
         "duplicate_of": lead.duplicate_of,
         "duplicate_resolved_by": lead.duplicate_resolved_by,
         "duplicate_resolved_at": lead.duplicate_resolved_at,
+
+        # Outreach Journey (central, admin-owned; agents see read-only)
+        "journey": getattr(lead, "journey", []) or [],
+        "journey_status": getattr(lead, "journey_status", "active"),
+        "journey_stopped_reason": getattr(lead, "journey_stopped_reason", None),
+        "journey_stopped_by_name": getattr(lead, "journey_stopped_by_name", None),
+        "journey_stopped_at": getattr(lead, "journey_stopped_at", None),
+        "do_not_contact": bool(getattr(lead, "do_not_contact", False)),
+        "dnc_reason": getattr(lead, "dnc_reason", None),
     }
 
 
@@ -1215,6 +1232,239 @@ async def backfill_enrollments(current_user: dict = Depends(get_current_super_ad
     return {"message": f"Created {created} enrollment(s) for existing Enrolled leads", "created": created, "checked": len(leads)}
 
 
+# ---------------------------------------------------------------------------
+# Outreach journey (central, ADMIN/super-admin owned). Agents see it read-only
+# via the lead payload but cannot action its touchpoints. Agents keep full
+# normal control of the lead itself (status / follow-ups / edits) elsewhere.
+# ---------------------------------------------------------------------------
+
+class JourneyStepUpdateRequest(BaseModel):
+    status: Optional[str] = None            # pending | done | skipped
+    planned_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class JourneyStepCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    step_type: Optional[str] = "Other"
+    planned_date: Optional[datetime] = None
+
+
+class JourneyStopRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class ReopenLeadRequest(BaseModel):
+    reassign_to: Optional[str] = None       # optional: route to a different agent
+
+
+class DncRequest(BaseModel):
+    do_not_contact: bool = True
+    reason: Optional[str] = None
+
+
+async def _get_lead_or_404(lead_id: str) -> Lead:
+    lead = await Lead.find_one(Lead.lead_id == lead_id, Lead.is_deleted == False)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    return lead
+
+
+@router.get("/outreach/worklist")
+async def outreach_worklist(
+    overdue: bool = False,
+    current_user: dict = Depends(get_current_admin),
+):
+    """
+    Central outreach worklist (Admin/Super Admin): every pending outreach
+    touchpoint across leads. `overdue=true` returns only past-due ones.
+    """
+    now = datetime.utcnow()
+    leads = await Lead.find({
+        "is_deleted": False,
+        "journey_status": "active",
+        "journey": {"$exists": True, "$ne": []},
+    }).to_list()
+
+    items = []
+    for lead in leads:
+        for step in lead.journey or []:
+            if step.get("status") != "pending":
+                continue
+            pd = step.get("planned_date")
+            is_overdue = isinstance(pd, datetime) and pd < now
+            if overdue and not is_overdue:
+                continue
+            items.append({
+                "lead_id": lead.lead_id,
+                "lead_name": lead.name,
+                "phone_number": lead.phone_number,
+                "status": lead.status,
+                "service_requested": lead.service_requested,
+                "assigned_to_name": lead.assigned_to_name,
+                "step_id": step.get("step_id"),
+                "step_name": step.get("name"),
+                "step_type": step.get("step_type"),
+                "planned_date": pd,
+                "is_optional": step.get("is_optional", False),
+                "is_overdue": is_overdue,
+            })
+    items.sort(key=lambda x: (x["planned_date"] or now))
+    return {"items": items, "total": len(items), "overdue_only": overdue}
+
+
+@router.put("/{lead_id}/journey/{step_id}")
+async def update_lead_journey_step(
+    lead_id: str,
+    step_id: str,
+    body: JourneyStepUpdateRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Action an outreach step (Admin only): done/skip/reschedule/notes."""
+    lead = await _get_lead_or_404(lead_id)
+    journey, ok, err = apply_step_update(
+        lead.journey or [], step_id,
+        status=body.status, planned_date=body.planned_date, notes=body.notes,
+        user_id=current_user["user_id"],
+        user_name=current_user.get("full_name", current_user["email"]),
+    )
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST if err and "status" in err else status.HTTP_404_NOT_FOUND, detail=err)
+    lead.journey = journey
+    lead.updated_at = datetime.utcnow()
+    lead.last_modified_by = current_user["user_id"]
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.post("/{lead_id}/journey")
+async def add_lead_journey_step(
+    lead_id: str,
+    body: JourneyStepCreateRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Add an ad-hoc outreach touchpoint (Admin only)."""
+    lead = await _get_lead_or_404(lead_id)
+    lead.journey = add_adhoc_step(
+        lead.journey or [], name=body.name, description=body.description,
+        step_type=body.step_type or "Other", planned_date=body.planned_date,
+    )
+    lead.updated_at = datetime.utcnow()
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.delete("/{lead_id}/journey/{step_id}")
+async def delete_lead_journey_step(
+    lead_id: str,
+    step_id: str,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Remove an outreach step (Admin only)."""
+    lead = await _get_lead_or_404(lead_id)
+    journey, removed = remove_step(lead.journey or [], step_id)
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journey step not found")
+    lead.journey = journey
+    lead.updated_at = datetime.utcnow()
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.post("/{lead_id}/journey/stop")
+async def stop_lead_journey(
+    lead_id: str,
+    body: JourneyStopRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Stop the outreach journey (Admin only): cancel pending steps, keep history."""
+    lead = await _get_lead_or_404(lead_id)
+    lead.journey = stop_journey_steps(lead.journey or [])
+    lead.journey_status = "stopped"
+    lead.journey_stopped_reason = body.reason
+    lead.journey_stopped_by = current_user["user_id"]
+    lead.journey_stopped_by_name = current_user.get("full_name", current_user["email"])
+    lead.journey_stopped_at = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.post("/{lead_id}/journey/instantiate")
+async def instantiate_lead_journey(
+    lead_id: str,
+    current_user: dict = Depends(get_current_admin),
+):
+    """(Re)build the outreach journey from the current template (Admin only)."""
+    lead = await _get_lead_or_404(lead_id)
+    lead.journey = await build_outreach_for_lead(lead, datetime.utcnow())
+    lead.journey_status = "active"
+    lead.journey_stopped_reason = None
+    lead.updated_at = datetime.utcnow()
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.post("/{lead_id}/reopen")
+async def reopen_lead(
+    lead_id: str,
+    body: ReopenLeadRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """
+    Re-engage a closed lead (Admin only): status -> Follow up-In Process, stop the
+    outreach journey (history kept), route back to the original assigned agent —
+    or reassign to a different agent if provided.
+    """
+    lead = await _get_lead_or_404(lead_id)
+    # Stop the outreach journey, keep history.
+    lead.journey = stop_journey_steps(lead.journey or [])
+    lead.journey_status = "stopped"
+    lead.journey_stopped_reason = "Re-engaged"
+    lead.journey_stopped_by = current_user["user_id"]
+    lead.journey_stopped_by_name = current_user.get("full_name", current_user["email"])
+    lead.journey_stopped_at = datetime.utcnow()
+    # Reopen the lead for the agent.
+    lead.status = LeadStatus.FOLLOWUP_IN_PROCESS.value
+    if body.reassign_to:
+        agent = await User.get(body.reassign_to)
+        if not agent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reassign target not found")
+        lead.assigned_to = body.reassign_to
+        lead.assigned_to_name = agent.full_name
+        lead.assigned_date = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+    lead.last_modified_by = current_user["user_id"]
+    await lead.save()
+    return lead_to_response(lead)
+
+
+@router.post("/{lead_id}/dnc")
+async def set_lead_dnc(
+    lead_id: str,
+    body: DncRequest,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Set/clear Do-Not-Contact (Admin only). Setting it hard-stops the journey."""
+    lead = await _get_lead_or_404(lead_id)
+    lead.do_not_contact = bool(body.do_not_contact)
+    if lead.do_not_contact:
+        lead.dnc_reason = body.reason
+        lead.dnc_set_by = current_user["user_id"]
+        lead.dnc_at = datetime.utcnow()
+        # Hard-stop: cancel pending steps, keep history.
+        lead.journey = stop_journey_steps(lead.journey or [])
+        lead.journey_status = "stopped"
+        lead.journey_stopped_reason = lead.journey_stopped_reason or "Do Not Contact"
+        lead.journey_stopped_at = datetime.utcnow()
+    else:
+        lead.dnc_reason = None
+    lead.updated_at = datetime.utcnow()
+    await lead.save()
+    return lead_to_response(lead)
+
+
 @router.get("/{lead_id}/related")
 async def get_related_leads(lead_id: str, current_user: dict = Depends(get_current_user)):
     """Returning-customer history: other leads of the same person (all roles)."""
@@ -1596,6 +1846,27 @@ async def update_lead(
             await create_enrollment_from_lead(lead, current_user["user_id"], current_user["full_name"])
         except Exception as e:
             logger.error(f"Failed to auto-create enrollment for lead {lead_id}: {str(e)}")
+
+    # Outreach trigger: when a lead is CLOSED (Not Interested / Lead Closed-No
+    # Response / Follow up-No Response), snapshot the central outreach journey,
+    # anchored to now. Skips if an active outreach journey already exists or DNC.
+    outreach_change = next(
+        (c for c in changes if c["field"] == "status" and c["new_value"] in OUTREACH_TRIGGER_STATUSES),
+        None,
+    )
+    if outreach_change and not lead.do_not_contact:
+        already_active = lead.journey and lead.journey_status == "active"
+        if not already_active:
+            try:
+                lead.journey = await build_outreach_for_lead(lead, datetime.utcnow())
+                lead.journey_status = "active"
+                lead.journey_stopped_reason = None
+                lead.journey_stopped_by = None
+                lead.journey_stopped_by_name = None
+                lead.journey_stopped_at = None
+                await lead.save()
+            except Exception as e:
+                logger.error(f"Failed to build outreach journey for lead {lead_id}: {str(e)}")
 
     # Create audit log if there are changes
     if changes:
