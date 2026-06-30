@@ -138,6 +138,13 @@ async def main():
     enr_inst.journey = await reinstantiate_care_journey(enr_inst)
     check("instantiate builds non-empty even with empty duplicate present (bug fixed)",
           len(enr_inst.journey) > 3)
+    # Regression: the API response_model must NOT strip the journey (the bug where
+    # GET returned 0 steps to the agent despite the DB having them).
+    from app.routers.enrollments import enrollment_to_response
+    from app.schemas.enrollment import EnrollmentResponse
+    resp = EnrollmentResponse(**enrollment_to_response(enr_inst)).model_dump()
+    check("EnrollmentResponse keeps journey (response_model not stripping)",
+          len(resp.get("journey") or []) == len(enr_inst.journey))
     # Re-run startup task -> dedups + recreates the unique index.
     await migrate_and_seed_journeys()
     after = await JourneyTemplate.find({"context": "care", "trigger_key": "Antenatal"}).count()

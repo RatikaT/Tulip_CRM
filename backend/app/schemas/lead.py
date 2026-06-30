@@ -228,6 +228,15 @@ class LeadResponse(BaseModel):
     duplicate_resolved_by: Optional[str] = None
     duplicate_resolved_at: Optional[datetime] = None
 
+    # Outreach Journey (snapshot + controls)
+    journey: List[dict] = []
+    journey_status: Optional[str] = "active"
+    journey_stopped_reason: Optional[str] = None
+    journey_stopped_by_name: Optional[str] = None
+    journey_stopped_at: Optional[datetime] = None
+    do_not_contact: bool = False
+    dnc_reason: Optional[str] = None
+
     class Config:
         from_attributes = True
 

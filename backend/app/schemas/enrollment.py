@@ -167,6 +167,20 @@ class EnrollmentResponse(BaseModel):
     # Follow-ups History
     follow_ups: List[dict] = []
 
+    # Care Journey (snapshot + controls + agent trigger hints)
+    journey: List[dict] = []
+    journey_status: Optional[str] = "active"
+    journey_stopped_reason: Optional[str] = None
+    journey_stopped_by_name: Optional[str] = None
+    journey_stopped_at: Optional[datetime] = None
+    journey_flag: Optional[str] = None
+    journey_flag_note: Optional[str] = None
+    journey_classification: Optional[str] = None
+    converted_to_lead_id: Optional[str] = None
+    do_not_contact: bool = False
+    dnc_reason: Optional[str] = None
+    journey_triggers: Optional[dict] = None
+
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None
