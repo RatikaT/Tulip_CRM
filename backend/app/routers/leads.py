@@ -1271,6 +1271,39 @@ async def _get_lead_or_404(lead_id: str) -> Lead:
     return lead
 
 
+@router.get("/attention/sla")
+async def sla_attention(
+    days: int = 14,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    SLA attention list: leads stuck in "Enquiry Lead" with no activity for more
+    than `days` (default 14). Agents see their own; admins see all. Not a journey
+    — an agent-side nudge surfaced in their attention list.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    query: dict = {
+        "is_deleted": False,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+        "status": LeadStatus.ENQUIRY_LEAD.value,
+        "updated_at": {"$lt": cutoff},
+    }
+    if current_user["role"] == "agent":
+        uid = current_user["user_id"]
+        query["$or"] = [{"assigned_to": uid}, {"reassign_to": uid}]
+
+    leads = await Lead.find(query).sort("updated_at").to_list()
+    items = [{
+        "lead_id": l.lead_id,
+        "name": l.name,
+        "phone_number": l.phone_number,
+        "assigned_to_name": l.assigned_to_name,
+        "updated_at": l.updated_at,
+        "days_stale": (datetime.utcnow() - l.updated_at).days if l.updated_at else None,
+    } for l in leads]
+    return {"items": items, "total": len(items), "threshold_days": days}
+
+
 @router.get("/outreach/worklist")
 async def outreach_worklist(
     overdue: bool = False,

@@ -24,7 +24,10 @@ from app.models.journey_template import (
     make_outreach_key,
 )
 from app.services.journey_seed import OUTREACH_STATUSES
-from app.middleware.auth_middleware import get_current_user, get_current_super_admin
+from app.middleware.auth_middleware import get_current_user, get_current_super_admin, get_current_admin
+from app.models.lead import Lead
+from app.models.enrollment import Enrollment
+from datetime import datetime as _datetime
 
 router = APIRouter()
 
@@ -137,6 +140,73 @@ async def get_catalogue(current_user: dict = Depends(get_current_user)):
         gkey = make_outreach_key(st, None)
         outreach.append({"context": "outreach", "trigger_key": gkey, "label": f"{st} · Generic"})
     return {"care": care, "outreach": outreach, "statuses": OUTREACH_STATUSES, "services": CARE_SERVICES}
+
+
+@router.get("/report/summary")
+async def report_summary(current_user: dict = Depends(get_current_admin)):
+    """
+    Basic journey reporting (Admin): PreConception->Antenatal conversions,
+    outreach re-engagement, and overdue pending-step counts per owner.
+    (Full dashboards later; this is the read endpoint.)
+    """
+    now = _datetime.utcnow()
+
+    # PreConception -> Antenatal conversions
+    conversions = await Enrollment.find(
+        {"is_deleted": False, "converted_to_lead_id": {"$ne": None}}
+    ).count()
+
+    # Outreach: active journeys + re-engaged (stopped with reason "Re-engaged")
+    leads = await Lead.find({
+        "is_deleted": False,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+        "journey": {"$exists": True, "$ne": []},
+    }).to_list()
+    outreach_active = sum(1 for l in leads if l.journey_status == "active")
+    reengaged = await Lead.find({
+        "is_deleted": False,
+        "journey_stopped_reason": "Re-engaged",
+    }).count()
+
+    # Overdue pending outreach steps per owner (agent who owns the lead)
+    overdue_outreach_by_owner: dict = {}
+    overdue_outreach_total = 0
+    for l in leads:
+        if l.journey_status != "active":
+            continue
+        for s in l.journey or []:
+            pd = s.get("planned_date")
+            if s.get("status") == "pending" and isinstance(pd, datetime) and pd < now:
+                owner = l.assigned_to_name or "Unassigned"
+                overdue_outreach_by_owner[owner] = overdue_outreach_by_owner.get(owner, 0) + 1
+                overdue_outreach_total += 1
+
+    # Overdue pending care steps per SPOC
+    enrollments = await Enrollment.find({
+        "is_deleted": False,
+        "journey": {"$exists": True, "$ne": []},
+    }).to_list()
+    overdue_care_by_owner: dict = {}
+    overdue_care_total = 0
+    for e in enrollments:
+        if getattr(e, "journey_status", "active") != "active":
+            continue
+        for s in e.journey or []:
+            pd = s.get("planned_date")
+            if s.get("status") == "pending" and isinstance(pd, datetime) and pd < now:
+                owner = e.hclhc_spoc or "Unassigned"
+                overdue_care_by_owner[owner] = overdue_care_by_owner.get(owner, 0) + 1
+                overdue_care_total += 1
+
+    return {
+        "preconception_to_antenatal_conversions": conversions,
+        "outreach_active_journeys": outreach_active,
+        "outreach_reengaged": reengaged,
+        "overdue_outreach_total": overdue_outreach_total,
+        "overdue_outreach_by_owner": overdue_outreach_by_owner,
+        "overdue_care_total": overdue_care_total,
+        "overdue_care_by_owner": overdue_care_by_owner,
+    }
 
 
 @router.get("/list")
