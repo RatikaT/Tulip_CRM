@@ -32,6 +32,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
+import CareJourneyPanel from '../components/enrollments/CareJourneyPanel';
 import { toISTForPicker, fromISTPickerToUTC, formatDateIST, formatFullDateTimeIST } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
 import {
@@ -104,6 +105,13 @@ export default function EnrollmentDetailPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  // SPOC-based edit flag for the Care Journey tab (mirrors EnrollmentViewModal).
+  // Distinct name from the existing canEdit(field) helper to avoid a collision.
+  const isFollowUpSpoc =
+    user?.role === 'agent' &&
+    !!enrollment?.hclhc_spoc &&
+    enrollment.hclhc_spoc.trim().toLowerCase() === (user?.full_name || '').trim().toLowerCase();
+  const canEditJourney = isAdmin || isFollowUpSpoc;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -763,6 +771,7 @@ export default function EnrollmentDetailPage() {
           >
             <Tab label="Follow-ups" />
             <Tab label="Remarks & Feedback" />
+            <Tab label={`Care Journey (${enrollment?.journey?.length || 0})`} />
             {isAdmin && <Tab label="Audit Trail" />}
           </Tabs>
 
@@ -1014,9 +1023,22 @@ export default function EnrollmentDetailPage() {
             </Box>
           </TabPanel>
 
+          {/* Care Journey Tab */}
+          <TabPanel value={tabValue} index={2}>
+            <Box sx={{ px: 2 }}>
+              {enrollment && (
+                <CareJourneyPanel
+                  enrollment={enrollment}
+                  canEdit={canEditJourney}
+                  onChanged={fetchEnrollment}
+                />
+              )}
+            </Box>
+          </TabPanel>
+
           {/* Audit Trail Tab (Admin only) */}
           {isAdmin && (
-            <TabPanel value={tabValue} index={2}>
+            <TabPanel value={tabValue} index={3}>
               <Box sx={{ px: 2 }}>
                 {auditTrail.length > 0 ? (
                   auditTrail.map((log, index) => (
