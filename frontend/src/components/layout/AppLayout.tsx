@@ -34,6 +34,7 @@ import {
   Home as HomeIcon,
   HowToReg as EnrollmentIcon,
   ContentCopy as ContentCopyIcon,
+  Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../stores/authStore';
 import { brandColors } from '../../theme';
@@ -54,6 +55,7 @@ const navItems: NavItem[] = [
   { title: 'Dashboard', path: '/tulip/dashboard', icon: <DashboardIcon />, adminOnly: true },
   { title: 'Leads', path: '/tulip/leads', icon: <LeadsIcon /> },
   { title: 'Enrollments', path: '/tulip/enrollments', icon: <EnrollmentIcon /> },
+  { title: 'Outreach', path: '/tulip/outreach', icon: <CampaignIcon />, adminOnly: true },
   { title: 'Bulk Upload', path: '/tulip/bulk-upload', icon: <UploadIcon />, adminOnly: true },
   { title: 'Duplicates', path: '/tulip/duplicates', icon: <ContentCopyIcon />, superAdminOnly: true },
   { title: 'Summaries', path: '/tulip/summaries', icon: <SummaryIcon /> },

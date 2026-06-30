@@ -48,6 +48,7 @@ import { useDropdownOptions, useConditionalDropdownOptions } from '../hooks/useD
 import { brandColors } from '../theme';
 import api from '../services/api';
 import EnrollmentConfirmModal, { EnrollmentPreviewData } from '../components/leads/EnrollmentConfirmModal';
+import LeadOutreachPanel from '../components/leads/LeadOutreachPanel';
 
 interface UserOption {
   id: string;
@@ -1141,6 +1142,20 @@ export default function LeadDetailPage() {
             </AccordionDetails>
           </Accordion>
         </Box>
+
+        {/* Outreach Journey */}
+        {lead.journey && lead.journey.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+              Outreach Journey
+            </Typography>
+            <LeadOutreachPanel
+              lead={lead}
+              canEdit={user?.role === 'admin' || user?.role === 'super_admin'}
+              onChanged={fetchLead}
+            />
+          </Paper>
+        )}
 
         {/* Tabs Section */}
         <Paper sx={{ mb: 3 }}>

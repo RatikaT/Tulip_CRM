@@ -12,6 +12,7 @@ import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import ConfigurationsPage from './pages/ConfigurationsPage';
 import DuplicatesPage from './pages/DuplicatesPage';
+import OutreachWorklistPage from './pages/OutreachWorklistPage';
 import CRMHomePage from './pages/CRMHomePage';
 import ComingSoonPage from './pages/ComingSoonPage';
 
@@ -152,6 +153,14 @@ export const router = createBrowserRouter([
           <SuperAdminRoute>
             <DuplicatesPage />
           </SuperAdminRoute>
+        ),
+      },
+      {
+        path: 'outreach',
+        element: (
+          <AdminRoute>
+            <OutreachWorklistPage />
+          </AdminRoute>
         ),
       },
     ],

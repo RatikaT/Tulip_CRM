@@ -12,7 +12,6 @@ import {
   CircularProgress,
   Paper,
   Divider,
-  Alert,
   Collapse,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -24,11 +23,11 @@ import AddIcon from '@mui/icons-material/Add';
 import { toast } from 'react-toastify';
 import { journeyService } from '../../services/journeyService';
 import { JourneyStepInstance, JourneyStepStatus, STEP_TYPE_OPTIONS } from '../../types/journey.types';
-import { Enrollment } from '../../types/enrollment.types';
+import { Lead } from '../../types/lead.types';
 import { formatShortDateIST } from '../../utils/dateUtils';
 
-interface CareJourneyPanelProps {
-  enrollment: Enrollment;
+interface LeadOutreachPanelProps {
+  lead: Lead;
   canEdit: boolean;
   onChanged?: () => void;
 }
@@ -36,6 +35,7 @@ interface CareJourneyPanelProps {
 const typeColor: Record<string, string> = {
   Call: '#2563eb',
   Email: '#7c3aed',
+  WhatsApp: '#059669',
   Appointment: '#0891b2',
   Lab: '#ca8a04',
   Other: '#64748b',
@@ -56,15 +56,22 @@ function isOverdue(step: JourneyStepInstance): boolean {
   return planned < today;
 }
 
-export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: CareJourneyPanelProps) {
-  const [journey, setJourney] = useState<JourneyStepInstance[]>(enrollment.journey || []);
+const errDetail = (e: unknown, fallback: string) =>
+  (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || fallback;
+
+export default function LeadOutreachPanel({ lead, canEdit, onChanged }: LeadOutreachPanelProps) {
+  const [journey, setJourney] = useState<JourneyStepInstance[]>(lead.journey || []);
+  const [journeyStatus, setJourneyStatus] = useState<string | undefined>(lead.journey_status);
+  const [stoppedReason, setStoppedReason] = useState<string | null | undefined>(lead.journey_stopped_reason);
+  const [doNotContact, setDoNotContact] = useState<boolean | undefined>(lead.do_not_contact);
+  const [dncCurrentReason, setDncCurrentReason] = useState<string | null | undefined>(lead.dnc_reason);
+
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [instantiating, setInstantiating] = useState(false);
 
   // Add-step form
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<string>('Other');
+  const [newType, setNewType] = useState<string>('Call');
   const [newDate, setNewDate] = useState<Date | null>(null);
 
   // Journey-level controls
@@ -75,29 +82,23 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   const [dncReason, setDncReason] = useState('');
 
   useEffect(() => {
-    setJourney(enrollment.journey || []);
-  }, [enrollment]);
+    setJourney(lead.journey || []);
+    setJourneyStatus(lead.journey_status);
+    setStoppedReason(lead.journey_stopped_reason);
+    setDoNotContact(lead.do_not_contact);
+    setDncCurrentReason(lead.dnc_reason);
+  }, [lead]);
 
   const sorted = [...journey].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const doneCount = journey.filter((s) => s.status === 'done').length;
 
-  const applyResult = (updated: Enrollment) => {
+  const applyResult = (updated: Lead) => {
     setJourney(updated.journey || []);
+    setJourneyStatus(updated.journey_status);
+    setStoppedReason(updated.journey_stopped_reason);
+    setDoNotContact(updated.do_not_contact);
+    setDncCurrentReason(updated.dnc_reason);
     onChanged?.();
-  };
-
-  const handleInstantiate = async () => {
-    setInstantiating(true);
-    try {
-      const updated = await journeyService.instantiate(enrollment.enrollment_id);
-      applyResult(updated);
-      toast.success('Care journey created from the template');
-    } catch (e) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'No journey template found for this service';
-      toast.error(msg);
-    } finally {
-      setInstantiating(false);
-    }
   };
 
   const updateStep = async (
@@ -106,11 +107,10 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   ) => {
     setBusyId(step.step_id);
     try {
-      const updated = await journeyService.updateStep(enrollment.enrollment_id, step.step_id, body);
+      const updated = await journeyService.updateLeadStep(lead.lead_id, step.step_id, body);
       applyResult(updated);
     } catch (e) {
-      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update step';
-      toast.error(msg);
+      toast.error(errDetail(e, 'Failed to update step'));
     } finally {
       setBusyId(null);
     }
@@ -139,10 +139,10 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   const handleDelete = async (step: JourneyStepInstance) => {
     setBusyId(step.step_id);
     try {
-      const updated = await journeyService.deleteStep(enrollment.enrollment_id, step.step_id);
+      const updated = await journeyService.deleteLeadStep(lead.lead_id, step.step_id);
       applyResult(updated);
-    } catch {
-      toast.error('Failed to remove step');
+    } catch (e) {
+      toast.error(errDetail(e, 'Failed to remove step'));
     } finally {
       setBusyId(null);
     }
@@ -155,38 +155,46 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
     }
     setBusyId('__new__');
     try {
-      const updated = await journeyService.addStep(enrollment.enrollment_id, {
+      const updated = await journeyService.addLeadStep(lead.lead_id, {
         name: newName.trim(),
         step_type: newType,
         planned_date: newDate ? newDate.toISOString() : null,
       });
       applyResult(updated);
       setNewName('');
-      setNewType('Other');
+      setNewType('Call');
       setNewDate(null);
       setShowAdd(false);
-    } catch {
-      toast.error('Failed to add step');
+    } catch (e) {
+      toast.error(errDetail(e, 'Failed to add step'));
     } finally {
       setBusyId(null);
     }
   };
 
-  const errDetail = (e: unknown, fallback: string) =>
-    (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || fallback;
-
-  const triggers = enrollment.journey_triggers || {};
-
   const handleStopJourney = async () => {
     setActionBusy('stop');
     try {
-      const updated = await journeyService.stopEnrollmentJourney(enrollment.enrollment_id, stopReason.trim() || undefined);
+      const updated = await journeyService.stopLeadJourney(lead.lead_id, stopReason.trim() || undefined);
       applyResult(updated);
       setShowStop(false);
       setStopReason('');
-      toast.success('Journey stopped');
+      toast.success('Outreach stopped');
     } catch (e) {
       toast.error(errDetail(e, 'Failed to stop journey'));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handleReopen = async () => {
+    setActionBusy('reopen');
+    try {
+      const updated = await journeyService.reopenLead(lead.lead_id);
+      applyResult(updated);
+      toast.success('Lead reopened');
+    } catch (e) {
+      toast.error(errDetail(e, 'Failed to reopen lead'));
     } finally {
       setActionBusy(null);
     }
@@ -195,8 +203,8 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   const handleSetDnc = async (value: boolean) => {
     setActionBusy('dnc');
     try {
-      const updated = await journeyService.setEnrollmentDnc(
-        enrollment.enrollment_id,
+      const updated = await journeyService.setLeadDnc(
+        lead.lead_id,
         value,
         value ? dncReason.trim() || undefined : undefined,
       );
@@ -211,102 +219,31 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
     }
   };
 
-  const handleFlagContradiction = async () => {
-    setActionBusy('flag');
-    try {
-      const updated = await journeyService.flagEnrollment(enrollment.enrollment_id, 'trimester_contradiction');
-      applyResult(updated);
-      toast.success('Flagged to Admin');
-    } catch (e) {
-      toast.error(errDetail(e, 'Failed to flag enrollment'));
-    } finally {
-      setActionBusy(null);
-    }
-  };
+  // Empty journey: render a tiny muted note, no instantiate button.
+  if (journey.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        No outreach journey
+      </Typography>
+    );
+  }
 
-  const handleConvertToAntenatal = async () => {
-    setActionBusy('convert');
-    try {
-      const res = await journeyService.convertToAntenatal(enrollment.enrollment_id);
-      toast.success(res.message);
-      onChanged?.();
-    } catch (e) {
-      toast.error(errDetail(e, 'Failed to convert to Antenatal'));
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  // Banners always render (even without a journey or canEdit).
-  const banners = (
-    <Stack spacing={1.25}>
-      {triggers.needs_trimester && (
-        <Alert severity="info">
-          Add a trimester to start the Antenatal follow-up schedule.
-        </Alert>
-      )}
-      {triggers.trimester_contradiction && (
-        <Alert
-          severity="warning"
-          action={
-            canEdit ? (
-              enrollment.journey_flag ? (
-                <Button color="inherit" size="small" disabled>
-                  Flagged to Admin
-                </Button>
-              ) : (
-                <Button
-                  color="inherit"
-                  size="small"
-                  onClick={handleFlagContradiction}
-                  disabled={actionBusy === 'flag'}
-                >
-                  {actionBusy === 'flag' ? <CircularProgress size={16} /> : 'Flag to Admin'}
-                </Button>
-              )
-            ) : undefined
-          }
-        >
-          Antenatal with 'Not Conceived' — correct the trimester, or flag to Admin.
-        </Alert>
-      )}
-      {triggers.is_preconception && canEdit && (
-        <Alert
-          severity="success"
-          action={
-            enrollment.converted_to_lead_id ? (
-              <Button color="inherit" size="small" disabled>
-                Converted to lead {enrollment.converted_to_lead_id}
-              </Button>
-            ) : (
-              <Button
-                color="inherit"
-                size="small"
-                onClick={handleConvertToAntenatal}
-                disabled={actionBusy === 'convert'}
-              >
-                {actionBusy === 'convert' ? <CircularProgress size={16} /> : 'Mark conceived → create Antenatal lead'}
-              </Button>
-            )
-          }
-        >
-          Customer conceived?
-        </Alert>
-      )}
-
-      {enrollment.journey_status === 'stopped' && (
+  // Banners (render regardless of canEdit).
+  const banners = (journeyStatus === 'stopped' || doNotContact) && (
+    <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 1.5 }}>
+      {journeyStatus === 'stopped' && (
         <Chip
-          label={`Journey stopped — ${enrollment.journey_stopped_reason || 'stopped'}`}
+          label={`Outreach stopped — ${stoppedReason || 'stopped'}`}
           size="small"
-          sx={{ alignSelf: 'flex-start', bgcolor: 'grey.200', color: 'text.secondary', fontWeight: 600 }}
+          sx={{ bgcolor: 'grey.200', color: 'text.secondary', fontWeight: 600 }}
         />
       )}
-      {enrollment.do_not_contact && (
+      {doNotContact && (
         <Chip
-          label={`Do Not Contact${enrollment.dnc_reason ? ` — ${enrollment.dnc_reason}` : ''}`}
+          label={`Do Not Contact${dncCurrentReason ? ` — ${dncCurrentReason}` : ''}`}
           size="small"
           color="error"
-          sx={{ alignSelf: 'flex-start', fontWeight: 600 }}
+          sx={{ fontWeight: 600 }}
         />
       )}
     </Stack>
@@ -314,14 +251,23 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
 
   // Journey-level action controls (canEdit only).
   const controls = canEdit && (
-    <Box sx={{ mt: 1 }}>
+    <Box sx={{ mb: 1.5 }}>
       <Stack direction="row" spacing={1} flexWrap="wrap">
-        {enrollment.journey_status !== 'stopped' && (
+        {journeyStatus !== 'stopped' && (
           <Button size="small" color="warning" variant="outlined" onClick={() => setShowStop((v) => !v)}>
             Stop journey
           </Button>
         )}
-        {enrollment.do_not_contact ? (
+        <Button
+          size="small"
+          color="primary"
+          variant="outlined"
+          onClick={handleReopen}
+          disabled={actionBusy === 'reopen'}
+        >
+          {actionBusy === 'reopen' ? <CircularProgress size={16} /> : 'Reopen lead'}
+        </Button>
+        {doNotContact ? (
           <Button
             size="small"
             color="inherit"
@@ -382,35 +328,13 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
     </Box>
   );
 
-  if (journey.length === 0) {
-    return (
-      <Box>
-        {banners}
-        <Box sx={{ textAlign: 'center', py: 5 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            No care journey on this enrollment yet.
-          </Typography>
-          {canEdit && (
-            <Button variant="outlined" onClick={handleInstantiate} disabled={instantiating} startIcon={instantiating ? <CircularProgress size={16} /> : undefined}>
-              Create from {enrollment.service_enrolled || 'service'} template
-            </Button>
-          )}
-          {controls}
-        </Box>
-      </Box>
-    );
-  }
-
   return (
     <Box>
       {banners}
-      {(triggers.needs_trimester || triggers.trimester_contradiction || triggers.is_preconception ||
-        enrollment.journey_status === 'stopped' || enrollment.do_not_contact) && <Box sx={{ mb: 1.5 }} />}
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
         <Typography variant="subtitle2" color="text.secondary">
           {doneCount}/{journey.length} steps done
-          {enrollment.service_enrolled ? ` · ${enrollment.service_enrolled}` : ''}
         </Typography>
         {canEdit && (
           <Button size="small" startIcon={<AddIcon />} onClick={() => setShowAdd((v) => !v)}>
@@ -419,7 +343,7 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
         )}
       </Stack>
 
-      {controls && <Box sx={{ mb: 1.5 }}>{controls}</Box>}
+      {controls}
 
       {showAdd && canEdit && (
         <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, bgcolor: 'grey.50' }}>
@@ -495,6 +419,7 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
                     {step.step_type && (
                       <Chip label={step.step_type} size="small" sx={softChipSx(tcolor)} />
                     )}
+                    {step.is_optional && <Chip label="Optional" size="small" sx={softChipSx('#0891b2')} />}
                     {step.is_adhoc && <Chip label="Added" size="small" sx={softChipSx('#475569')} />}
                     {overdue && <Chip label="Overdue" size="small" sx={softChipSx('#dc2626')} />}
                     {step.status === 'skipped' && <Chip label="Skipped" size="small" sx={softChipSx('#64748b')} />}
@@ -575,7 +500,7 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
         <>
           <Divider sx={{ my: 1.5 }} />
           <Typography variant="caption" color="text.secondary">
-            You are viewing this enrollment as the enroller — only the follow-up SPOC can update the journey.
+            This outreach journey is managed centrally — you are viewing it read-only.
           </Typography>
         </>
       )}
