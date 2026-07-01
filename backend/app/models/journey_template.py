@@ -55,10 +55,34 @@ def _enum_value(v) -> str:
     return str(v.value) if hasattr(v, "value") else str(v)
 
 
+def normalize_service(service) -> str:
+    """
+    Map a service value to one of the 3 standardized care services, so legacy /
+    packaged values still resolve to a template. Handles the old "Tulip …" combos
+    (e.g. "Tulip Pre-Conception" -> "PreConception") and casing/spacing/hyphens.
+    Unknown values are returned unchanged. For combos, Antenatal takes precedence
+    (active pregnancy care), then PreConception, then MaternityWellness.
+    """
+    raw = _enum_value(service)
+    if not raw or not raw.strip():
+        return raw
+    s = " ".join(raw.strip().lower().replace("-", " ").replace("_", " ").split())
+    for svc in CARE_SERVICES:
+        if s == svc.lower():
+            return svc
+    if "antenatal" in s:
+        return "Antenatal"
+    if "conception" in s:            # "pre conception" / "preconception"
+        return "PreConception"
+    if "wellness" in s or "maternity" in s:
+        return "MaternityWellness"
+    return raw
+
+
 def make_outreach_key(status, service) -> str:
     """Build an outreach trigger_key: '<status>::<service>' or '<status>::GENERIC'."""
     st = _enum_value(status).strip()
-    svc = _enum_value(service).strip()
+    svc = normalize_service(service)
     if svc not in CARE_SERVICES:
         svc = GENERIC_SERVICE
     return f"{st}::{svc}"

@@ -59,6 +59,19 @@ def test_maternitywellness_loop_count():
     assert len(occurrence_offsets(checkin, None)) == 6
 
 
+def test_legacy_service_normalization():
+    # Legacy "Tulip ..." values must resolve to a standard care service so the
+    # template lookup (and instantiate) works. Regression for "Tulip Pre-Conception".
+    from app.models.journey_template import normalize_service, CARE_SERVICES
+    assert normalize_service("Tulip Pre-Conception") == "PreConception"
+    assert normalize_service("Tulip Antenatal") == "Antenatal"
+    assert normalize_service("Tulip Wellness") == "MaternityWellness"
+    assert normalize_service("Tulip Pre-Conception + Antenatal") == "Antenatal"  # combo -> Antenatal
+    assert normalize_service("PreConception") == "PreConception"
+    for s in CARE_SERVICES:
+        assert normalize_service(s) == s
+
+
 def _run_all():
     fns = [v for k, v in globals().items() if k.startswith("test_") and callable(v)]
     for fn in fns:

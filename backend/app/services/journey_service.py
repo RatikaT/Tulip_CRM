@@ -30,6 +30,7 @@ from app.models.journey_template import (
     JourneyContext,
     JourneyStepDef,
     CARE_SERVICES,
+    normalize_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -193,9 +194,11 @@ async def build_journey(
 
 
 def _canonical_service(service: Optional[str]) -> Optional[str]:
+    # Map legacy / packaged service values ("Tulip Pre-Conception", combos, casing)
+    # to a standardized care service so the template lookup resolves.
     if not service:
         return service
-    return next((s for s in CARE_SERVICES if s.lower() == service.strip().lower()), service)
+    return normalize_service(service)
 
 
 async def build_journey_for_service(
