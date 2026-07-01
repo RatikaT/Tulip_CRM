@@ -209,6 +209,7 @@ export default function DuplicatesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkActing, setBulkActing] = useState(false);
 
   const state = tab === 0 ? 'pending' : 'confirmed';
 
@@ -238,6 +239,56 @@ export default function DuplicatesPage() {
       toast.error('Failed to delete selected leads');
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  // Bulk "Confirm as duplicates": confirm each selected item as a duplicate of
+  // its matched primary (pending tab only). Reuses the per-item resolve endpoint.
+  const handleBulkConfirm = async () => {
+    const chosen = items.filter((i) => selectedIds.includes(i.lead.lead_id) && i.primary);
+    if (chosen.length === 0) {
+      toast.error('None of the selected items have a matched primary to confirm against');
+      return;
+    }
+    setBulkActing(true);
+    try {
+      const results = await Promise.allSettled(
+        chosen.map((i) => leadService.resolveDuplicate(i.primary!.lead_id, i.lead.lead_id))
+      );
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      toast.success(`Confirmed ${ok} duplicate(s)`);
+      setSelectedIds([]);
+      await Promise.all([loadDuplicates(state), loadSummary()]);
+    } catch (error) {
+      console.error('Failed to bulk confirm duplicates:', error);
+      toast.error('Failed to confirm selected duplicates');
+    } finally {
+      setBulkActing(false);
+    }
+  };
+
+  // Bulk "Move to Leads": dismiss (pending) or restore (confirmed) each selected
+  // duplicate back to an active lead. Reuses the per-item endpoints.
+  const handleBulkMoveToLeads = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkActing(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((id) =>
+          state === 'confirmed'
+            ? leadService.restoreDuplicate(id)
+            : leadService.dismissDuplicate(id)
+        )
+      );
+      const ok = results.filter((r) => r.status === 'fulfilled').length;
+      toast.success(`Moved ${ok} lead(s) to Leads`);
+      setSelectedIds([]);
+      await Promise.all([loadDuplicates(state), loadSummary()]);
+    } catch (error) {
+      console.error('Failed to bulk move to leads:', error);
+      toast.error('Failed to move selected leads');
+    } finally {
+      setBulkActing(false);
     }
   };
 
@@ -653,14 +704,34 @@ export default function DuplicatesPage() {
                 Select all
               </Button>
             )}
-            <Button size="small" onClick={clearSelection}>
+            <Button size="small" onClick={clearSelection} disabled={bulkActing || bulkDeleting}>
               Clear
+            </Button>
+            {tab === 0 && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="secondary"
+                disabled={bulkActing || bulkDeleting}
+                onClick={handleBulkConfirm}
+              >
+                Confirm as duplicates
+              </Button>
+            )}
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={bulkActing || bulkDeleting}
+              onClick={handleBulkMoveToLeads}
+            >
+              Move to Leads
             </Button>
             <Button
               size="small"
               variant="contained"
               color="error"
               startIcon={<DeleteIcon />}
+              disabled={bulkActing || bulkDeleting}
               onClick={() => setBulkDeleteDialogOpen(true)}
             >
               Delete selected
