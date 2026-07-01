@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -109,6 +109,9 @@ const getRelatedStatusChipSx = (status: string) => {
 export default function LeadDetailPage() {
   const { leadId } = useParams<{ leadId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Return to the originating screen (e.g. My Tasks) when set; else the Leads list.
+  const backTarget = (location.state as { from?: string } | null)?.from || '/tulip/leads';
 
   // Dynamic dropdown options (from Configurations), with static fallback inside the hook
   const { options: LEAD_STATUS_OPTIONS } = useDropdownOptions('lead_status');
@@ -507,7 +510,7 @@ export default function LeadDetailPage() {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error">{error || 'Lead not found'}</Alert>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/tulip/leads')} sx={{ mt: 2 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backTarget)} sx={{ mt: 2 }}>
           Back to Leads
         </Button>
       </Box>
@@ -519,7 +522,7 @@ export default function LeadDetailPage() {
       <Box>
         {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <IconButton onClick={() => navigate('/tulip/leads')} sx={{ mr: 2 }}>
+          <IconButton onClick={() => navigate(backTarget)} sx={{ mr: 2 }}>
             <ArrowBackIcon />
           </IconButton>
           <Typography variant="h5" sx={{ fontWeight: 600 }}>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -101,6 +101,9 @@ const disabledFieldSx = {
 export default function EnrollmentDetailPage() {
   const { enrollmentId } = useParams<{ enrollmentId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Return to the originating screen (e.g. My Tasks) when set; else the Enrollments list.
+  const backTarget = (location.state as { from?: string } | null)?.from || '/tulip/enrollments';
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
@@ -345,7 +348,7 @@ export default function EnrollmentDetailPage() {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error">{error || 'Enrollment not found'}</Alert>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/tulip/enrollments')} sx={{ mt: 2 }}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(backTarget)} sx={{ mt: 2 }}>
           Back to Enrollments
         </Button>
       </Box>
@@ -359,7 +362,7 @@ export default function EnrollmentDetailPage() {
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
           <Button
             startIcon={<ArrowBackIcon />}
-            onClick={() => navigate('/tulip/enrollments')}
+            onClick={() => navigate(backTarget)}
             sx={{ mr: 2 }}
           >
             Back

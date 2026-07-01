@@ -35,6 +35,7 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { taskService } from '../services/taskService';
 import { journeyService } from '../services/journeyService';
+import { leadService } from '../services/leadService';
 import { MyTask } from '../types/task.types';
 import { formatShortDateIST } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
@@ -225,6 +226,46 @@ export default function MyTasksPage() {
     }
   };
 
+  // --- Lead follow-up actions (wired to the LEAD services, not the journey) ---
+  const handleFollowUpReschedule = async (task: MyTask, date: Date | null) => {
+    if (!task.lead_id || !date) return;
+    const key = rowKey(task);
+    setRowBusy(key, true);
+    try {
+      await leadService.updateLead(task.lead_id, { follow_up_date: date.toISOString() });
+      toast.success('Follow-up rescheduled');
+      await load();
+    } catch (error) {
+      console.error('Failed to reschedule follow-up:', error);
+      toast.error('Failed to reschedule follow-up');
+    } finally {
+      setRowBusy(key, false);
+    }
+  };
+
+  const handleSaveFollowUpRemark = async (task: MyTask) => {
+    if (!task.lead_id) return;
+    const key = rowKey(task);
+    const text = remarks[key]?.trim();
+    if (!text) return;
+    setRowBusy(key, true);
+    try {
+      await leadService.addComment(task.lead_id, { text });
+      toast.success('Remark saved');
+      setRemarks((r) => {
+        const next = { ...r };
+        delete next[key];
+        return next;
+      });
+      await load();
+    } catch (error) {
+      console.error('Failed to save remark:', error);
+      toast.error('Failed to save remark');
+    } finally {
+      setRowBusy(key, false);
+    }
+  };
+
   const emptyCopy: Record<TabKey, { title: string; body: string }> = {
     due_now: { title: 'No tasks due — you’re all caught up 🎉', body: 'Nothing overdue or due today.' },
     overdue: { title: 'Nothing overdue 🎉', body: 'You have no overdue tasks.' },
@@ -353,7 +394,7 @@ export default function MyTasksPage() {
             <IconButton
               size="small"
               disabled={!task.enrollment_id}
-              onClick={() => task.enrollment_id && navigate(`/tulip/enrollments/${task.enrollment_id}`)}
+              onClick={() => task.enrollment_id && navigate(`/tulip/enrollments/${task.enrollment_id}`, { state: { from: '/tulip/my-tasks' } })}
             >
               <OpenInNewIcon fontSize="small" />
             </IconButton>
@@ -363,20 +404,51 @@ export default function MyTasksPage() {
     </Stack>
   );
 
-  const renderFollowUpActions = (task: MyTask) => (
-    <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <Tooltip title="Open lead">
-        <span>
-          <IconButton
-            size="small"
-            disabled={!task.lead_id}
-            onClick={() => task.lead_id && navigate(`/tulip/leads/${task.lead_id}`)}
-          >
-            <OpenInNewIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-    </Box>
+  const renderFollowUpActions = (task: MyTask, key: string, isBusy: boolean) => (
+    <Stack spacing={0.75} sx={{ minWidth: 220 }}>
+      <TextField
+        size="small"
+        placeholder="Remarks (optional) — e.g. why rescheduled"
+        value={remarks[key] ?? ''}
+        onChange={(e) => setRemarks((r) => ({ ...r, [key]: e.target.value }))}
+        disabled={isBusy}
+        multiline
+        maxRows={3}
+      />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, justifyContent: 'flex-end' }}>
+        <Tooltip title="Save remark">
+          <span>
+            <IconButton
+              size="small"
+              disabled={isBusy || !(remarks[key]?.trim())}
+              onClick={() => handleSaveFollowUpRemark(task)}
+            >
+              <SaveIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Box sx={{ width: 140 }}>
+          <DatePicker
+            label="Reschedule"
+            value={null}
+            onChange={(date) => handleFollowUpReschedule(task, date as Date | null)}
+            disabled={isBusy}
+            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+          />
+        </Box>
+        <Tooltip title="Open lead">
+          <span>
+            <IconButton
+              size="small"
+              disabled={!task.lead_id}
+              onClick={() => task.lead_id && navigate(`/tulip/leads/${task.lead_id}`, { state: { from: '/tulip/my-tasks' } })}
+            >
+              <OpenInNewIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
+    </Stack>
   );
 
   const renderTable = () => (
@@ -454,7 +526,7 @@ export default function MyTasksPage() {
                 </TableCell>
                 <TableCell>{renderDue(task)}</TableCell>
                 <TableCell align="right">
-                  {isCare ? renderCareActions(task, key, isBusy) : renderFollowUpActions(task)}
+                  {isCare ? renderCareActions(task, key, isBusy) : renderFollowUpActions(task, key, isBusy)}
                 </TableCell>
               </TableRow>
             );
