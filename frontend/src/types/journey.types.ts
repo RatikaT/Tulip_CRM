@@ -89,7 +89,9 @@ export interface OutreachWorklistItem {
   step_id: string;
   step_name?: string | null;
   step_type?: string | null;
+  step_status?: string | null;      // pending | done | skipped
   planned_date?: string | null;
+  order?: number;
   is_optional?: boolean;
   is_overdue?: boolean;
 }

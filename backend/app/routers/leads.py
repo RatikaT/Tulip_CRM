@@ -1311,8 +1311,10 @@ async def outreach_worklist(
     current_user: dict = Depends(get_current_admin),
 ):
     """
-    Central outreach worklist (Admin/Super Admin): every pending outreach
-    touchpoint across leads. `overdue=true` returns only past-due ones.
+    Central outreach worklist (Admin/Super Admin). Returns EVERY step (pending +
+    done + skipped) of each active-journey lead so the client can group by lead,
+    compute progress (done/total) and next-due, and render urgency tabs.
+    `overdue` is accepted for backward compatibility; filtering is now client-side.
     """
     now = datetime.utcnow()
     leads = await Lead.find({
@@ -1325,12 +1327,9 @@ async def outreach_worklist(
     items = []
     for lead in leads:
         for step in lead.journey or []:
-            if step.get("status") != "pending":
-                continue
             pd = step.get("planned_date")
-            is_overdue = isinstance(pd, datetime) and pd < now
-            if overdue and not is_overdue:
-                continue
+            st = step.get("status")
+            is_overdue = st == "pending" and isinstance(pd, datetime) and pd < now
             items.append({
                 "lead_id": lead.lead_id,
                 "lead_name": lead.name,
@@ -1341,11 +1340,13 @@ async def outreach_worklist(
                 "step_id": step.get("step_id"),
                 "step_name": step.get("name"),
                 "step_type": step.get("step_type"),
+                "step_status": st,
                 "planned_date": pd,
+                "order": step.get("order", 0),
                 "is_optional": step.get("is_optional", False),
                 "is_overdue": is_overdue,
             })
-    items.sort(key=lambda x: (x["planned_date"] or now))
+    items.sort(key=lambda x: (x["lead_id"], x["order"], x["planned_date"] or now))
     return {"items": items, "total": len(items), "overdue_only": overdue}
 
 
