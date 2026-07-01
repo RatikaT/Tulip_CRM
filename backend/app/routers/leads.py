@@ -88,6 +88,7 @@ def lead_to_response(lead: Lead) -> dict:
 
         # Reason for No Sale
         "reason_for_no_sale": lead.reason_for_no_sale if lead.reason_for_no_sale else None,
+        "reason_for_no_sale_other": getattr(lead, "reason_for_no_sale_other", None),
 
         # Doctor/Consultation Details
         "doctor_name": lead.doctor_name,
@@ -1664,6 +1665,24 @@ async def update_lead(
     # Track changes for audit
     changes = []
     update_data = request.model_dump(exclude_unset=True)
+
+    # Mandatory reason-for-no-sale when the status is being set to "Not Interested".
+    _new_status = update_data.get("status")
+    _new_status = _new_status.value if hasattr(_new_status, "value") else _new_status
+    if _new_status == LeadStatus.NOT_INTERESTED.value:
+        reason = update_data.get("reason_for_no_sale", lead.reason_for_no_sale)
+        if not (reason and str(reason).strip()):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A reason for no sale is required when the status is 'Not Interested'.",
+            )
+        if str(reason).strip().lower() == "others":
+            other = update_data.get("reason_for_no_sale_other", getattr(lead, "reason_for_no_sale_other", None))
+            if not (other and str(other).strip()):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Please specify the reason when 'Others' is selected.",
+                )
 
     # Agents cannot update assignment fields
     if current_user["role"] == "agent":

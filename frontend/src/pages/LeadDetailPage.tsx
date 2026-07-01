@@ -228,6 +228,7 @@ export default function LeadDetailPage() {
         provider_location: data.provider_location || undefined,
         hclhc_spoc: data.hclhc_spoc || undefined,
         reason_for_no_sale: data.reason_for_no_sale || undefined,
+        reason_for_no_sale_other: data.reason_for_no_sale_other || undefined,
         // Medical/Clinical Details
         doctor_name: data.doctor_name || undefined,
         doctor_speciality: data.doctor_speciality || undefined,
@@ -364,6 +365,18 @@ export default function LeadDetailPage() {
 
   const handleSave = async () => {
     if (!leadId) return;
+
+    // Mandatory reason-for-no-sale when marking a lead "Not Interested".
+    if (formData.status === 'Not Interested') {
+      if (!formData.reason_for_no_sale) {
+        toast.error('Please select a reason for no sale before marking Not Interested');
+        return;
+      }
+      if (formData.reason_for_no_sale === 'Others' && !formData.reason_for_no_sale_other?.trim()) {
+        toast.error("Please specify the reason when 'Others' is selected");
+        return;
+      }
+    }
 
     // If status is being changed to "Enrolled", show confirmation modal
     if (formData.status === 'Enrolled' && lead?.status !== 'Enrolled') {
@@ -546,13 +559,20 @@ export default function LeadDetailPage() {
             </Grid>
             <Grid item xs={12} md={3}>
               <Typography variant="caption" color="text.secondary">
-                Reason for No Sale
+                Reason for No Sale{formData.status === 'Not Interested' ? ' *' : ''}
               </Typography>
               <Box sx={{ mt: 0.5 }}>
                 <TextField
                   select
                   size="small"
                   fullWidth
+                  required={formData.status === 'Not Interested'}
+                  error={formData.status === 'Not Interested' && !formData.reason_for_no_sale}
+                  helperText={
+                    formData.status === 'Not Interested' && !formData.reason_for_no_sale
+                      ? 'Required for Not Interested'
+                      : undefined
+                  }
                   value={formData.reason_for_no_sale || ''}
                   onChange={(e) => handleInputChange('reason_for_no_sale', e.target.value)}
                   disabled={!canEdit('reason_for_no_sale')}
@@ -564,6 +584,20 @@ export default function LeadDetailPage() {
                     </MenuItem>
                   ))}
                 </TextField>
+                {formData.reason_for_no_sale === 'Others' && (
+                  <TextField
+                    size="small"
+                    fullWidth
+                    sx={{ mt: 1 }}
+                    label="Specify reason"
+                    required
+                    error={!formData.reason_for_no_sale_other}
+                    helperText={!formData.reason_for_no_sale_other ? 'Please specify' : undefined}
+                    value={formData.reason_for_no_sale_other || ''}
+                    onChange={(e) => handleInputChange('reason_for_no_sale_other', e.target.value)}
+                    disabled={!canEdit('reason_for_no_sale')}
+                  />
+                )}
               </Box>
             </Grid>
             <Grid item xs={12} md={2}>

@@ -115,6 +115,7 @@ export interface Lead {
 
   // Reason for No Sale
   reason_for_no_sale: ReasonForNoSale | null;
+  reason_for_no_sale_other?: string | null;
 
   // Doctor/Consultation Details
   doctor_name: string | null;
@@ -202,6 +203,7 @@ export interface LeadCreateRequest {
   provider_location?: string;
   hclhc_spoc?: string;
   reason_for_no_sale?: ReasonForNoSale;
+  reason_for_no_sale_other?: string;
   doctor_name?: string;
   doctor_speciality?: string;
   consult_date?: string;
@@ -249,6 +251,7 @@ export interface LeadUpdateRequest {
   provider_location?: string;
   hclhc_spoc?: string;
   reason_for_no_sale?: ReasonForNoSale;
+  reason_for_no_sale_other?: string;
   doctor_name?: string;
   doctor_speciality?: string;
   consult_date?: string;

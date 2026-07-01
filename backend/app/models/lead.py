@@ -140,6 +140,7 @@ class Lead(Document):
 
     # Reason for No Sale
     reason_for_no_sale: Optional[str] = None
+    reason_for_no_sale_other: Optional[str] = None  # free text when reason == "Others"
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None

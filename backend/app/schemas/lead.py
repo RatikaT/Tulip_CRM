@@ -56,6 +56,7 @@ class LeadCreateRequest(BaseModel):
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
     reason_for_no_sale: Optional[str] = None
+    reason_for_no_sale_other: Optional[str] = None
     doctor_name: Optional[str] = None
     doctor_speciality: Optional[str] = None
     consult_date: Optional[date] = None
@@ -125,6 +126,7 @@ class LeadUpdateRequest(BaseModel):
     provider_location: Optional[str] = None
     hclhc_spoc: Optional[str] = None
     reason_for_no_sale: Optional[str] = None
+    reason_for_no_sale_other: Optional[str] = None
     doctor_name: Optional[str] = None
     doctor_speciality: Optional[str] = None
     consult_date: Optional[date] = None
@@ -187,6 +189,7 @@ class LeadResponse(BaseModel):
 
     # Reason for No Sale
     reason_for_no_sale: Optional[str] = None
+    reason_for_no_sale_other: Optional[str] = None
 
     # Doctor/Consultation Details
     doctor_name: Optional[str] = None
