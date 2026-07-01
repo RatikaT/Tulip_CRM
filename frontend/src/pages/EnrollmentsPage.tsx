@@ -50,6 +50,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import SearchIcon from '@mui/icons-material/Search';
 import GroupAddIcon from '@mui/icons-material/GroupAdd';
+import RouteIcon from '@mui/icons-material/Route';
 import InputAdornment from '@mui/material/InputAdornment';
 import { format, isToday, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -575,6 +576,30 @@ export default function EnrollmentsPage() {
     }
   };
 
+  // Super-admin one-click: build care journeys for existing enrolled leads.
+  const [backfillingJourneys, setBackfillingJourneys] = useState(false);
+  const handleBackfillJourneys = async () => {
+    setBackfillingJourneys(true);
+    try {
+      const result = await enrollmentService.backfillJourneys();
+      toast.success(
+        result.built > 0
+          ? `Built care journeys for ${result.built} enrollment(s)`
+          : 'All eligible enrollments already have a care journey'
+      );
+      fetchEnrollments();
+      fetchStats();
+    } catch (error) {
+      console.error('Backfill journeys failed:', error);
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to backfill care journeys';
+      toast.error(msg);
+    } finally {
+      setBackfillingJourneys(false);
+    }
+  };
+
   const handleExport = async () => {
     setExporting(true);
     try {
@@ -846,6 +871,21 @@ export default function EnrollmentsPage() {
                   size="small"
                 >
                   {backfillingSpoc ? 'Backfilling...' : 'Backfill SPOC'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {isSuperAdmin && (
+            <Tooltip title="Build care journeys for existing enrolled leads that don't have one (resolves legacy service names)">
+              <span>
+                <Button
+                  variant="outlined"
+                  startIcon={<RouteIcon />}
+                  onClick={handleBackfillJourneys}
+                  disabled={backfillingJourneys}
+                  size="small"
+                >
+                  {backfillingJourneys ? 'Building...' : 'Backfill Journeys'}
                 </Button>
               </span>
             </Tooltip>

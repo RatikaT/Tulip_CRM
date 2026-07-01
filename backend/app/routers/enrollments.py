@@ -935,6 +935,58 @@ async def create_enrollment(
     return enrollment_to_response(enrollment)
 
 
+@router.post("/journey/backfill")
+async def backfill_care_journeys(
+    force: bool = False,
+    current_user: dict = Depends(get_current_super_admin),
+):
+    """
+    One-click bulk fix (Super Admin): build the care journey for existing enrolled
+    leads that don't have one yet, resolving legacy service values (e.g.
+    "Tulip Pre-Conception" -> PreConception) to the right template.
+
+    By default only enrollments with an EMPTY journey are built (progress on
+    existing journeys is untouched). `force=true` rebuilds all active journeys
+    (preserving done/skipped step attribution). Skips stopped / Do-Not-Contact
+    enrollments. Read-only w.r.t. service values (never rewrites service_enrolled).
+    """
+    enrollments = await Enrollment.find({
+        "is_deleted": False,
+        "journey_status": {"$ne": "stopped"},
+        "do_not_contact": {"$ne": True},
+    }).to_list()
+
+    built = 0
+    skipped_has_journey = 0
+    skipped_no_template = 0
+    for enr in enrollments:
+        if enr.journey and not force:
+            skipped_has_journey += 1
+            continue
+        new_journey = await reinstantiate_care_journey(enr)
+        if new_journey:
+            enr.journey = new_journey
+            enr.updated_at = datetime.utcnow()
+            enr.last_modified_by = current_user["user_id"]
+            await enr.save()
+            built += 1
+        else:
+            # No template for this service (unknown/off-list) -> nothing to build.
+            skipped_no_template += 1
+
+    logger.info(
+        f"journey backfill by {current_user['email']}: checked={len(enrollments)} "
+        f"built={built} skipped_has_journey={skipped_has_journey} skipped_no_template={skipped_no_template}"
+    )
+    return {
+        "message": f"Built care journeys for {built} enrollment(s)",
+        "checked": len(enrollments),
+        "built": built,
+        "skipped_has_journey": skipped_has_journey,
+        "skipped_no_template": skipped_no_template,
+    }
+
+
 @router.post("/backfill-spoc")
 async def backfill_hclhc_spoc(current_user: dict = Depends(get_current_super_admin)):
     """

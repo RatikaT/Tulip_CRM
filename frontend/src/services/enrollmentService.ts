@@ -99,4 +99,17 @@ export const enrollmentService = {
     const response = await api.post('/enrollments/backfill-spoc');
     return response.data;
   },
+
+  // Super-admin one-click: build care journeys for existing enrolled leads that
+  // don't have one (resolves legacy service values to the right template).
+  backfillJourneys: async (): Promise<{
+    message: string;
+    checked: number;
+    built: number;
+    skipped_has_journey: number;
+    skipped_no_template: number;
+  }> => {
+    const response = await api.post('/enrollments/journey/backfill');
+    return response.data;
+  },
 };
