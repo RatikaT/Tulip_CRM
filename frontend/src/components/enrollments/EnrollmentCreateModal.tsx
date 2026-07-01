@@ -57,14 +57,17 @@ const createEnrollmentSchema = z.object({
   name: z.string().optional(),
   uhid: z.string().optional().or(z.literal('')),
   address: z.string().optional(),
-  package_billed: z.string().optional(),
-  hclhc_spoc: z.string().optional(),
+  // Mandatory on create (mirrors the status->Enrolled confirm flow):
+  // billed date (validated separately), package billed, SPOC, trimester,
+  // service enrolled, service partner.
+  package_billed: z.string().min(1, 'Package Billed is required'),
+  hclhc_spoc: z.string().min(1, 'HCLHC SPOC is required'),
   hcl_facility: z.string().optional(),
-  trimester: z.string().optional(),
-  service_enrolled: z.string().optional(),
+  trimester: z.string().min(1, 'Trimester is required'),
+  service_enrolled: z.string().min(1, 'Service Enrolled is required'),
   package_name_enrolled: z.string().optional(),
   doctor_name: z.string().optional(),
-  service_partner: z.string().optional(),
+  service_partner: z.string().min(1, 'Service Partner is required'),
   partner_centre_selected: z.string().optional(),
   partner_gynaecologist: z.string().optional(),
   connect_status: z.string().optional(),
@@ -90,6 +93,7 @@ interface EnrollmentCreateModalProps {
 export default function EnrollmentCreateModal({ open, onClose, onSuccess }: EnrollmentCreateModalProps) {
   const [saving, setSaving] = useState(false);
   const [billedDate, setBilledDate] = useState<Date | null>(null);
+  const [billedDateError, setBilledDateError] = useState(false);
   const [dob, setDob] = useState<Date | null>(null);
   const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
@@ -141,6 +145,13 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   };
 
   const onSubmit = async (data: CreateEnrollmentFormData) => {
+    // Billed Date is mandatory (it lives outside the zod schema as a DatePicker).
+    if (!billedDate) {
+      setBilledDateError(true);
+      toast.error('Billed Date is required');
+      return;
+    }
+    setBilledDateError(false);
     setSaving(true);
     try {
       const cleanData = {
@@ -302,15 +313,27 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               <Grid item xs={12} sm={6}>
                 <DatePicker
-                  label="Billed Date"
+                  label="Billed Date *"
                   value={billedDate}
-                  onChange={setBilledDate}
-                  slotProps={{ textField: { fullWidth: true } }}
+                  onChange={(d) => { setBilledDate(d); if (d) setBilledDateError(false); }}
+                  slotProps={{ textField: {
+                    fullWidth: true,
+                    required: true,
+                    error: billedDateError,
+                    helperText: billedDateError ? 'Billed Date is required' : undefined,
+                  } }}
                 />
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('package_billed')} fullWidth label="Package Billed" />
+                <TextField
+                  {...register('package_billed')}
+                  fullWidth
+                  required
+                  label="Package Billed"
+                  error={!!errors.package_billed}
+                  helperText={errors.package_billed?.message}
+                />
               </Grid>
 
               {/* HCLH Details */}
@@ -330,7 +353,14 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                     setValue('hclhc_spoc', newValue?.full_name || '');
                   }}
                   renderInput={(params) => (
-                    <TextField {...params} fullWidth label="HCLH SPOC" />
+                    <TextField
+                      {...params}
+                      fullWidth
+                      required
+                      label="HCLH SPOC"
+                      error={!!errors.hclhc_spoc}
+                      helperText={errors.hclhc_spoc?.message}
+                    />
                   )}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                 />
@@ -352,7 +382,15 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   name="trimester"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Current Trimester">
+                    <TextField
+                      {...field}
+                      fullWidth
+                      select
+                      required
+                      label="Current Trimester"
+                      error={!!errors.trimester}
+                      helperText={errors.trimester?.message}
+                    >
                       <MenuItem value="">None</MenuItem>
                       {TRIMESTER_OPTIONS.map((t) => (
                         <MenuItem key={t} value={t}>
@@ -376,7 +414,14 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                       onChange={(_, newValue) => field.onChange(newValue || '')}
                       onInputChange={(_, newInputValue) => field.onChange(newInputValue || '')}
                       renderInput={(params) => (
-                        <TextField {...params} fullWidth label="Service Enrolled" />
+                        <TextField
+                          {...params}
+                          fullWidth
+                          required
+                          label="Service Enrolled"
+                          error={!!errors.service_enrolled}
+                          helperText={errors.service_enrolled?.message}
+                        />
                       )}
                     />
                   )}
@@ -409,7 +454,15 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   name="service_partner"
                   control={control}
                   render={({ field }) => (
-                    <TextField {...field} fullWidth select label="Service Partner">
+                    <TextField
+                      {...field}
+                      fullWidth
+                      select
+                      required
+                      label="Service Partner"
+                      error={!!errors.service_partner}
+                      helperText={errors.service_partner?.message}
+                    >
                       <MenuItem value="">None</MenuItem>
                       {SERVICE_PARTNER_OPTIONS.map((p) => (
                         <MenuItem key={p} value={p}>
