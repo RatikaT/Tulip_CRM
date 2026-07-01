@@ -1111,10 +1111,17 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
             })
 
     # --- LEAD FOLLOW-UPS: due follow-ups on the user's assigned/reassigned leads ---
+    # Only ACTIVE follow-up statuses belong to the agent. Closed/outreach statuses
+    # (Not Interested, Lead Closed-No Response) are Admin outreach and must NOT
+    # appear here; Enrolled -> care step; Duplicate -> hidden.
+    AGENT_FOLLOWUP_STATUSES = [
+        LeadStatus.FOLLOWUP_IN_PROCESS.value,
+        LeadStatus.FOLLOWUP_NO_RESPONSE.value,
+    ]
     lead_query = {
         "is_deleted": False,
         "duplicate_status": {"$in": [None, "not_duplicate"]},
-        "status": {"$ne": LeadStatus.ENROLLED.value},   # enrolled -> counted as a care step
+        "status": {"$in": AGENT_FOLLOWUP_STATUSES},
         "follow_up_date": {"$ne": None},
         "$or": [{"assigned_to": uid}, {"reassign_to": uid}],
     }
