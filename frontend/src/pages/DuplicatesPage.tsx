@@ -11,10 +11,17 @@ import {
   CircularProgress,
   Tabs,
   Tab,
+  Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RestoreIcon from '@mui/icons-material/Restore';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from 'react-toastify';
 import { leadService, DuplicateItem, DuplicatesSummary } from '../services/leadService';
 import { Lead } from '../types/lead.types';
@@ -199,8 +206,40 @@ export default function DuplicatesPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const state = tab === 0 ? 'pending' : 'confirmed';
+
+  const toggleSelected = (leadId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(leadId) ? prev.filter((id) => id !== leadId) : [...prev, leadId]
+    );
+  };
+
+  const selectAllVisible = () => {
+    setSelectedIds(items.map((i) => i.lead.lead_id));
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await leadService.bulkDeleteLeads(selectedIds);
+      toast.success(`Deleted ${res.deleted_count} lead(s)`);
+      setBulkDeleteDialogOpen(false);
+      setSelectedIds([]);
+      await Promise.all([loadDuplicates(state), loadSummary()]);
+    } catch (error) {
+      console.error('Failed to bulk delete duplicate leads:', error);
+      toast.error('Failed to delete selected leads');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const loadSummary = useCallback(async () => {
     try {
@@ -333,6 +372,7 @@ export default function DuplicatesPage() {
         {items.map((item) => {
           const key = item.lead.lead_id;
           const isBusy = !!pending[key];
+          const isSelected = selectedIds.includes(key);
           const keepBtn = (keepLead: Lead, removeLead: Lead | null) => (
             <Button
               fullWidth
@@ -347,9 +387,21 @@ export default function DuplicatesPage() {
             </Button>
           );
           return (
-            <Card key={key} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: CARD_SHADOW }}>
+            <Card key={key} sx={{ borderRadius: 3, border: '1px solid', borderColor: isSelected ? 'error.main' : 'divider', boxShadow: CARD_SHADOW }}>
               <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
-                <MatchedOnChips matched={item.matched_on} />
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  <Checkbox
+                    checked={isSelected}
+                    onChange={() => toggleSelected(key)}
+                    disabled={isBusy}
+                    color="error"
+                    sx={{ p: 0.5, mt: -0.5 }}
+                    inputProps={{ 'aria-label': `Select duplicate lead ${key}` }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <MatchedOnChips matched={item.matched_on} />
+                  </Box>
+                </Box>
 
                 <Grid container spacing={2} alignItems="stretch">
                   <Grid item xs={12} md={6}>
@@ -420,11 +472,24 @@ export default function DuplicatesPage() {
         {items.map((item) => {
           const key = item.lead.lead_id;
           const isBusy = !!pending[key];
+          const isSelected = selectedIds.includes(key);
           const resolvedAt = item.lead.duplicate_resolved_at;
           return (
-            <Card key={key} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: CARD_SHADOW }}>
+            <Card key={key} sx={{ borderRadius: 3, border: '1px solid', borderColor: isSelected ? 'error.main' : 'divider', boxShadow: CARD_SHADOW }}>
               <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
-                <MatchedOnChips matched={item.matched_on} />
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                  <Checkbox
+                    checked={isSelected}
+                    onChange={() => toggleSelected(key)}
+                    disabled={isBusy}
+                    color="error"
+                    sx={{ p: 0.5, mt: -0.5 }}
+                    inputProps={{ 'aria-label': `Select duplicate lead ${key}` }}
+                  />
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <MatchedOnChips matched={item.matched_on} />
+                  </Box>
+                </Box>
 
                 <Grid container spacing={2} alignItems="stretch">
                   <Grid item xs={12} md={7}>
@@ -545,7 +610,10 @@ export default function DuplicatesPage() {
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider', mb: 2.5 }}>
         <Tabs
           value={tab}
-          onChange={(_, v) => setTab(v)}
+          onChange={(_, v) => {
+            setSelectedIds([]);
+            setTab(v);
+          }}
           sx={{
             '& .MuiTab-root': { textTransform: 'none', fontWeight: 600 },
             '& .Mui-selected': { color: brandColors.navyBlue },
@@ -557,6 +625,50 @@ export default function DuplicatesPage() {
         </Tabs>
       </Box>
 
+      {/* Bulk selection toolbar */}
+      {selectedIds.length > 0 && (
+        <Box
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 5,
+            mb: 2,
+            px: 2,
+            py: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderRadius: 3,
+            bgcolor: '#eaf0fa',
+            border: '1px solid',
+            borderColor: 'primary.light',
+          }}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.dark' }}>
+            {selectedIds.length} selected
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {selectedIds.length < items.length && (
+              <Button size="small" onClick={selectAllVisible}>
+                Select all
+              </Button>
+            )}
+            <Button size="small" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="error"
+              startIcon={<DeleteIcon />}
+              onClick={() => setBulkDeleteDialogOpen(true)}
+            >
+              Delete selected
+            </Button>
+          </Box>
+        </Box>
+      )}
+
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 320 }}>
           <CircularProgress />
@@ -566,6 +678,28 @@ export default function DuplicatesPage() {
       ) : (
         renderConfirmed()
       )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog
+        open={bulkDeleteDialogOpen}
+        onClose={() => !bulkDeleting && setBulkDeleteDialogOpen(false)}
+      >
+        <DialogTitle>Delete {selectedIds.length} duplicate lead(s)?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Delete {selectedIds.length} duplicate lead(s)? They will be soft-deleted and can be
+            restored.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkDeleteDialogOpen(false)} disabled={bulkDeleting}>
+            Cancel
+          </Button>
+          <Button onClick={handleBulkDeleteConfirm} color="error" variant="contained" disabled={bulkDeleting}>
+            {bulkDeleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

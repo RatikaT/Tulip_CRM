@@ -16,6 +16,7 @@ from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
 from bson import ObjectId
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -1047,4 +1048,105 @@ async def get_agent_activity(
         },
 
         "summary": summary
+    }
+
+
+@router.get("/my-tasks")
+async def get_my_tasks(current_user: dict = Depends(get_current_user)):
+    """
+    Unified "My Tasks" worklist for the current user (any role sees their own):
+    the ONE next thing to do per person — an earliest-due care step (where they
+    are the enrollment's HCLHC SPOC) or a due lead follow-up (assigned/reassigned
+    to them). Window = overdue OR due within the next 7 days. No far-future
+    recurring steps. Additive, read-only.
+    """
+    uid = current_user["user_id"]
+    user_name = (current_user.get("full_name") or "").strip()
+    today = date.today()
+    cutoff = today + timedelta(days=7)
+
+    def _due_info(dt):
+        """Return (date, is_overdue, in_window) for a due datetime."""
+        if not isinstance(dt, datetime):
+            return None, False, False
+        d = dt.date()
+        return d, (d < today), (d <= cutoff)
+
+    items = []
+
+    # --- CARE STEPS: earliest pending step on the user's SPOC enrollments ---
+    if user_name:
+        spoc_enrollments = await Enrollment.find({
+            "is_deleted": False,
+            "hclhc_spoc": {"$regex": f"^{re.escape(user_name)}$", "$options": "i"},
+            "journey_status": "active",
+            "do_not_contact": {"$ne": True},
+            "journey": {"$exists": True, "$ne": []},
+        }).to_list()
+        for enr in spoc_enrollments:
+            journey = enr.journey or []
+            pending = [s for s in journey if s.get("status") == "pending" and isinstance(s.get("planned_date"), datetime)]
+            if not pending:
+                continue
+            nxt = min(pending, key=lambda s: s["planned_date"])
+            due_date, is_overdue, in_window = _due_info(nxt.get("planned_date"))
+            if not in_window:
+                continue  # earliest pending is far-future -> not a task yet
+            done = sum(1 for s in journey if s.get("status") == "done")
+            items.append({
+                "task_type": "care_step",
+                "person_name": enr.subscriber_name or enr.name,
+                "phone_number": enr.phone_number,
+                "record_id": enr.enrollment_id,
+                "enrollment_id": enr.enrollment_id,
+                "lead_id": None,
+                "step_id": nxt.get("step_id"),
+                "action_name": nxt.get("name"),
+                "step_type": nxt.get("step_type"),
+                "service": enr.service_enrolled,
+                "due_date": nxt.get("planned_date"),
+                "is_overdue": is_overdue,
+                "done": done,
+                "total": len(journey),
+            })
+
+    # --- LEAD FOLLOW-UPS: due follow-ups on the user's assigned/reassigned leads ---
+    lead_query = {
+        "is_deleted": False,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+        "status": {"$ne": LeadStatus.ENROLLED.value},   # enrolled -> counted as a care step
+        "follow_up_date": {"$ne": None},
+        "$or": [{"assigned_to": uid}, {"reassign_to": uid}],
+    }
+    lead_tasks = await Lead.find(lead_query).to_list()
+    for lead in lead_tasks:
+        due_date, is_overdue, in_window = _due_info(lead.follow_up_date)
+        if not in_window:
+            continue
+        items.append({
+            "task_type": "lead_follow_up",
+            "person_name": lead.name,
+            "phone_number": lead.phone_number,
+            "record_id": lead.lead_id,
+            "enrollment_id": None,
+            "lead_id": lead.lead_id,
+            "step_id": None,
+            "action_name": "Follow-up",
+            "step_type": "Call",
+            "service": lead.service_requested,
+            "status": lead.status,
+            "due_date": lead.follow_up_date,
+            "is_overdue": is_overdue,
+            "done": None,
+            "total": None,
+        })
+
+    items.sort(key=lambda x: (x["due_date"] or datetime.max))
+    overdue = sum(1 for i in items if i["is_overdue"])
+    due_today = sum(1 for i in items if isinstance(i["due_date"], datetime) and i["due_date"].date() == today)
+    upcoming = len(items) - overdue - due_today
+    return {
+        "items": items,
+        "total": len(items),
+        "counts": {"overdue": overdue, "due_today": due_today, "upcoming": upcoming},
     }

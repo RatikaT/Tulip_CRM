@@ -12,6 +12,7 @@ import BulkUploadPage from './pages/BulkUploadPage';
 import KnowledgeBasePage from './pages/KnowledgeBasePage';
 import ConfigurationsPage from './pages/ConfigurationsPage';
 import DuplicatesPage from './pages/DuplicatesPage';
+import MyTasksPage from './pages/MyTasksPage';
 import OutreachWorklistPage from './pages/OutreachWorklistPage';
 import CRMHomePage from './pages/CRMHomePage';
 import ComingSoonPage from './pages/ComingSoonPage';
@@ -106,6 +107,10 @@ export const router = createBrowserRouter([
             <DashboardPage />
           </AdminRoute>
         ),
+      },
+      {
+        path: 'my-tasks',
+        element: <MyTasksPage />,
       },
       {
         path: 'leads',
