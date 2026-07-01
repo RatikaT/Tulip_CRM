@@ -36,6 +36,7 @@ async def connect_to_database():
         from app.models.enrollment_audit_log import EnrollmentAuditLog
         from app.models.dropdown_config import DropdownConfig
         from app.models.journey_template import JourneyTemplate
+        from app.models.field_config import FieldConfig
 
         # Initialize Beanie with document models
         await init_beanie(
@@ -52,7 +53,8 @@ async def connect_to_database():
                 Enrollment,
                 EnrollmentAuditLog,
                 DropdownConfig,
-                JourneyTemplate
+                JourneyTemplate,
+                FieldConfig
             ]
         )
 

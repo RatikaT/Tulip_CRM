@@ -45,6 +45,7 @@ import {
   AuditLogEntry,
 } from '../types/lead.types';
 import { useDropdownOptions, useConditionalDropdownOptions } from '../hooks/useDropdownOptions';
+import { useFieldConfig } from '../hooks/useFieldConfig';
 import { brandColors } from '../theme';
 import api from '../services/api';
 import EnrollmentConfirmModal, { EnrollmentPreviewData } from '../components/leads/EnrollmentConfirmModal';
@@ -120,7 +121,19 @@ export default function LeadDetailPage() {
   const { options: PACKAGE_OPTIONS } = useDropdownOptions('package_options');
   const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { user } = useAuthStore();
+  const fc = useFieldConfig('lead');
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  // Curated lead fields for super-admin field configuration.
+  const CURATED_LEAD_FIELDS = [
+    'lead_source',
+    'service_requested',
+    'package_requested',
+    'reason_for_no_sale',
+    'city',
+    'doctor_name',
+    'doctor_speciality',
+  ];
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
@@ -378,6 +391,15 @@ export default function LeadDetailPage() {
       }
     }
 
+    // Super-admin config-driven required enforcement for curated lead fields.
+    for (const field of CURATED_LEAD_FIELDS) {
+      if (fc.isRequired(field) && !formData[field as keyof typeof formData]) {
+        const label = fc.configs[field]?.label || field;
+        toast.error(`${label} is required`);
+        return;
+      }
+    }
+
     // If status is being changed to "Enrolled", show confirmation modal
     if (formData.status === 'Enrolled' && lead?.status !== 'Enrolled') {
       setShowEnrollmentModal(true);
@@ -559,7 +581,7 @@ export default function LeadDetailPage() {
             </Grid>
             <Grid item xs={12} md={3}>
               <Typography variant="caption" color="text.secondary">
-                Reason for No Sale{formData.status === 'Not Interested' ? ' *' : ''}
+                Reason for No Sale{formData.status === 'Not Interested' || fc.isRequired('reason_for_no_sale') ? ' *' : ''}
               </Typography>
               <Box sx={{ mt: 0.5 }}>
                 <TextField
@@ -806,14 +828,33 @@ export default function LeadDetailPage() {
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    label="City"
-                    size="small"
-                    value={formData.city || ''}
-                    onChange={(e) => handleInputChange('city', e.target.value)}
-                    disabled={!canEdit('city')}
-                  />
+                  {fc.isDropdown('city') ? (
+                    <TextField
+                      fullWidth
+                      select
+                      label={`City${fc.isRequired('city') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.city || ''}
+                      onChange={(e) => handleInputChange('city', e.target.value)}
+                      disabled={!canEdit('city')}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      {fc.optionsFor('city').map((opt) => (
+                        <MenuItem key={opt} value={opt}>
+                          {opt}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      label={`City${fc.isRequired('city') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.city || ''}
+                      onChange={(e) => handleInputChange('city', e.target.value)}
+                      disabled={!canEdit('city')}
+                    />
+                  )}
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <TextField
@@ -855,7 +896,7 @@ export default function LeadDetailPage() {
                   <TextField
                     fullWidth
                     select
-                    label="Lead Source"
+                    label={`Lead Source${fc.isRequired('lead_source') ? ' *' : ''}`}
                     size="small"
                     value={formData.lead_source || ''}
                     onChange={(e) => handleInputChange('lead_source', e.target.value)}
@@ -929,23 +970,42 @@ export default function LeadDetailPage() {
                   </Grid>
                 )}
                 <Grid item xs={12} md={4}>
-                  <Autocomplete
-                    freeSolo
-                    options={PACKAGE_OPTIONS}
-                    inputValue={formData.package_requested || ''}
-                    disabled={!canEdit('package_requested')}
-                    onInputChange={(_, newInputValue) =>
-                      handleInputChange('package_requested', newInputValue || '')
-                    }
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        fullWidth
-                        label="Package Requested"
-                        size="small"
-                      />
-                    )}
-                  />
+                  {fc.isDropdown('package_requested') ? (
+                    <TextField
+                      fullWidth
+                      select
+                      label={`Package Requested${fc.isRequired('package_requested') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.package_requested || ''}
+                      onChange={(e) => handleInputChange('package_requested', e.target.value)}
+                      disabled={!canEdit('package_requested')}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      {fc.optionsFor('package_requested').map((opt) => (
+                        <MenuItem key={opt} value={opt}>
+                          {opt}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <Autocomplete
+                      freeSolo
+                      options={PACKAGE_OPTIONS}
+                      inputValue={formData.package_requested || ''}
+                      disabled={!canEdit('package_requested')}
+                      onInputChange={(_, newInputValue) =>
+                        handleInputChange('package_requested', newInputValue || '')
+                      }
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          fullWidth
+                          label={`Package Requested${fc.isRequired('package_requested') ? ' *' : ''}`}
+                          size="small"
+                        />
+                      )}
+                    />
+                  )}
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <Autocomplete
@@ -960,7 +1020,7 @@ export default function LeadDetailPage() {
                       <TextField
                         {...params}
                         fullWidth
-                        label="Service Requested"
+                        label={`Service Requested${fc.isRequired('service_requested') ? ' *' : ''}`}
                         size="small"
                       />
                     )}
@@ -1064,24 +1124,62 @@ export default function LeadDetailPage() {
             <AccordionDetails>
               <Grid container spacing={2}>
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    label="Treating Doctor Name"
-                    size="small"
-                    value={formData.doctor_name || ''}
-                    onChange={(e) => handleInputChange('doctor_name', e.target.value)}
-                    disabled={!canEdit('doctor_name')}
-                  />
+                  {fc.isDropdown('doctor_name') ? (
+                    <TextField
+                      fullWidth
+                      select
+                      label={`Treating Doctor Name${fc.isRequired('doctor_name') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.doctor_name || ''}
+                      onChange={(e) => handleInputChange('doctor_name', e.target.value)}
+                      disabled={!canEdit('doctor_name')}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      {fc.optionsFor('doctor_name').map((opt) => (
+                        <MenuItem key={opt} value={opt}>
+                          {opt}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      label={`Treating Doctor Name${fc.isRequired('doctor_name') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.doctor_name || ''}
+                      onChange={(e) => handleInputChange('doctor_name', e.target.value)}
+                      disabled={!canEdit('doctor_name')}
+                    />
+                  )}
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    label="Doctor Speciality/Department"
-                    size="small"
-                    value={formData.doctor_speciality || ''}
-                    onChange={(e) => handleInputChange('doctor_speciality', e.target.value)}
-                    disabled={!canEdit('doctor_speciality')}
-                  />
+                  {fc.isDropdown('doctor_speciality') ? (
+                    <TextField
+                      fullWidth
+                      select
+                      label={`Doctor Speciality/Department${fc.isRequired('doctor_speciality') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.doctor_speciality || ''}
+                      onChange={(e) => handleInputChange('doctor_speciality', e.target.value)}
+                      disabled={!canEdit('doctor_speciality')}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      {fc.optionsFor('doctor_speciality').map((opt) => (
+                        <MenuItem key={opt} value={opt}>
+                          {opt}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      label={`Doctor Speciality/Department${fc.isRequired('doctor_speciality') ? ' *' : ''}`}
+                      size="small"
+                      value={formData.doctor_speciality || ''}
+                      onChange={(e) => handleInputChange('doctor_speciality', e.target.value)}
+                      disabled={!canEdit('doctor_speciality')}
+                    />
+                  )}
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <DatePicker

@@ -35,6 +35,7 @@ import {
   PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
+import { useFieldConfig } from '../../hooks/useFieldConfig';
 
 interface UserOption {
   id: string;
@@ -99,6 +100,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
+  const fc = useFieldConfig('enrollment');
 
   const {
     register,
@@ -152,6 +154,23 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
       return;
     }
     setBilledDateError(false);
+
+    // Super-admin config-driven required enforcement for the additional curated
+    // enrollment fields (the always-required ones are handled by zod above).
+    const CURATED_ENROLLMENT_FIELDS = [
+      'hcl_facility',
+      'doctor_name',
+      'partner_centre_selected',
+      'partner_gynaecologist',
+    ] as const;
+    for (const field of CURATED_ENROLLMENT_FIELDS) {
+      if (fc.isRequired(field) && !data[field]) {
+        const label = fc.configs[field]?.label || field;
+        toast.error(`${label} is required`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const cleanData = {
@@ -367,7 +386,34 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('hcl_facility')} fullWidth label="HCL Facility" />
+                {fc.isDropdown('hcl_facility') ? (
+                  <Controller
+                    name="hcl_facility"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        value={field.value || ''}
+                        fullWidth
+                        select
+                        label={`HCL Facility${fc.isRequired('hcl_facility') ? ' *' : ''}`}
+                      >
+                        <MenuItem value="">None</MenuItem>
+                        {fc.optionsFor('hcl_facility').map((opt) => (
+                          <MenuItem key={opt} value={opt}>
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    )}
+                  />
+                ) : (
+                  <TextField
+                    {...register('hcl_facility')}
+                    fullWidth
+                    label={`HCL Facility${fc.isRequired('hcl_facility') ? ' *' : ''}`}
+                  />
+                )}
               </Grid>
 
               {/* Service Details */}
@@ -446,7 +492,34 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('doctor_name')} fullWidth label="Doctor Name" />
+                {fc.isDropdown('doctor_name') ? (
+                  <Controller
+                    name="doctor_name"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        value={field.value || ''}
+                        fullWidth
+                        select
+                        label={`Doctor Name${fc.isRequired('doctor_name') ? ' *' : ''}`}
+                      >
+                        <MenuItem value="">None</MenuItem>
+                        {fc.optionsFor('doctor_name').map((opt) => (
+                          <MenuItem key={opt} value={opt}>
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    )}
+                  />
+                ) : (
+                  <TextField
+                    {...register('doctor_name')}
+                    fullWidth
+                    label={`Doctor Name${fc.isRequired('doctor_name') ? ' *' : ''}`}
+                  />
+                )}
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -489,7 +562,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                         <TextField
                           {...params}
                           fullWidth
-                          label="Partner Centre Selected"
+                          label={`Partner Centre Selected${fc.isRequired('partner_centre_selected') ? ' *' : ''}`}
                           placeholder={partnerCenterOptions.length > 0 ? "Select or type..." : "Enter Partner Centre"}
                         />
                       )}
@@ -499,7 +572,34 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('partner_gynaecologist')} fullWidth label="Partner Gynaecologist" />
+                {fc.isDropdown('partner_gynaecologist') ? (
+                  <Controller
+                    name="partner_gynaecologist"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        value={field.value || ''}
+                        fullWidth
+                        select
+                        label={`Partner Gynaecologist${fc.isRequired('partner_gynaecologist') ? ' *' : ''}`}
+                      >
+                        <MenuItem value="">None</MenuItem>
+                        {fc.optionsFor('partner_gynaecologist').map((opt) => (
+                          <MenuItem key={opt} value={opt}>
+                            {opt}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    )}
+                  />
+                ) : (
+                  <TextField
+                    {...register('partner_gynaecologist')}
+                    fullWidth
+                    label={`Partner Gynaecologist${fc.isRequired('partner_gynaecologist') ? ' *' : ''}`}
+                  />
+                )}
               </Grid>
 
               {/* Status */}

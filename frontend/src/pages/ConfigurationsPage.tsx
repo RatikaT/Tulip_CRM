@@ -55,6 +55,7 @@ import UserCreateModal from '../components/users/UserCreateModal';
 import UserEditModal from '../components/users/UserEditModal';
 import DropdownOptionsTab from '../components/configurations/DropdownOptionsTab';
 import CareJourneysTab from '../components/configurations/CareJourneysTab';
+import FieldSettingsTab from '../components/configurations/FieldSettingsTab';
 import { useAuthStore } from '../stores/authStore';
 import { brandColors } from '../theme';
 
@@ -502,6 +503,15 @@ export default function ConfigurationsPage() {
                 aria-controls="config-tabpanel-3"
               />
             )}
+            {isSuperAdmin && (
+              <Tab
+                icon={<SettingsIcon />}
+                iconPosition="start"
+                label="Field Settings"
+                id="config-tab-4"
+                aria-controls="config-tabpanel-4"
+              />
+            )}
           </Tabs>
         </Box>
 
@@ -764,6 +774,13 @@ export default function ConfigurationsPage() {
         {isSuperAdmin && (
           <TabPanel value={tabValue} index={3}>
             <CareJourneysTab />
+          </TabPanel>
+        )}
+
+        {/* Field Settings Tab (super admin) */}
+        {isSuperAdmin && (
+          <TabPanel value={tabValue} index={4}>
+            <FieldSettingsTab />
           </TabPanel>
         )}
       </Paper>
