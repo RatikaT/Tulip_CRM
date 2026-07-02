@@ -1305,6 +1305,66 @@ async def sla_attention(
     return {"items": items, "total": len(items), "threshold_days": days}
 
 
+@router.post("/outreach/backfill")
+async def backfill_outreach_journeys(
+    force: bool = False,
+    current_user: dict = Depends(get_current_super_admin),
+):
+    """
+    One-click bulk fix (Super Admin): build the outreach journey for existing
+    CLOSED leads (Not Interested / Lead Closed-No Response / Follow up-No Response)
+    that don't have one — e.g. leads closed before the outreach feature existed,
+    which the forward-only status-change trigger never covered. Anchored to now so
+    the re-engagement schedule starts today. Resolves legacy service values to the
+    right template (or GENERIC). Skips Do-Not-Contact; read-only on lead data.
+
+    By default only leads with an EMPTY (or non-active) journey are built;
+    `force=true` rebuilds active outreach journeys too.
+    """
+    now = datetime.utcnow()
+    leads = await Lead.find({
+        "is_deleted": False,
+        "duplicate_status": {"$in": [None, "not_duplicate"]},
+        "status": {"$in": OUTREACH_TRIGGER_STATUSES},
+        "do_not_contact": {"$ne": True},
+    }).to_list()
+
+    built = 0
+    skipped_has_journey = 0
+    skipped_no_template = 0
+    for lead in leads:
+        if lead.journey and lead.journey_status == "active" and not force:
+            skipped_has_journey += 1
+            continue
+        journey = await build_outreach_for_lead(lead, now)
+        if journey:
+            lead.journey = journey
+            lead.journey_status = "active"
+            lead.journey_stopped_reason = None
+            lead.journey_stopped_by = None
+            lead.journey_stopped_by_name = None
+            lead.journey_stopped_at = None
+            lead.updated_at = now
+            lead.last_modified_by = current_user["user_id"]
+            await lead.save()
+            built += 1
+        else:
+            # No template for this status/service combo (and no GENERIC) -> skip.
+            skipped_no_template += 1
+
+    logger.info(
+        f"outreach backfill by {current_user['email']}: checked={len(leads)} "
+        f"built={built} skipped_has_journey={skipped_has_journey} skipped_no_template={skipped_no_template}"
+    )
+    return {
+        "message": f"Built outreach journeys for {built} lead(s)",
+        "checked": len(leads),
+        "built": built,
+        "skipped_has_journey": skipped_has_journey,
+        "skipped_no_template": skipped_no_template,
+    }
+
+
 @router.get("/outreach/worklist")
 async def outreach_worklist(
     overdue: bool = False,

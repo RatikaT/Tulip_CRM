@@ -33,6 +33,7 @@ import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { journeyService } from '../services/journeyService';
+import { leadService } from '../services/leadService';
 import { OutreachWorklistItem } from '../types/journey.types';
 import { formatShortDateIST } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
@@ -199,6 +200,7 @@ export default function OutreachWorklistPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isSuperAdmin = user?.role === 'super_admin';
 
   const [tab, setTab] = useState(0);
   const [items, setItems] = useState<OutreachWorklistItem[]>([]);
@@ -206,6 +208,7 @@ export default function OutreachWorklistPage() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [backfilling, setBackfilling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,6 +222,29 @@ export default function OutreachWorklistPage() {
       setLoading(false);
     }
   }, []);
+
+  // Super-admin one-click: build outreach journeys for existing closed leads
+  // that don't have one (e.g. closed before the outreach feature existed).
+  const handleBackfillOutreach = async () => {
+    setBackfilling(true);
+    try {
+      const res = await leadService.backfillOutreach();
+      toast.success(
+        res.built > 0
+          ? `Built outreach journeys for ${res.built} lead(s)`
+          : 'All eligible closed leads already have an outreach journey'
+      );
+      await load();
+    } catch (error) {
+      console.error('Failed to backfill outreach:', error);
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to backfill outreach journeys';
+      toast.error(msg);
+    } finally {
+      setBackfilling(false);
+    }
+  };
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -618,6 +644,19 @@ export default function OutreachWorklistPage() {
           >
             Mark selected done ({selectedIds.length})
           </Button>
+          {isSuperAdmin && (
+            <Tooltip title="Build outreach journeys for existing closed leads that don't have one yet">
+              <span>
+                <Button
+                  variant="outlined"
+                  onClick={handleBackfillOutreach}
+                  disabled={backfilling || loading}
+                >
+                  {backfilling ? 'Building...' : 'Backfill Outreach'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
           <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => load()} disabled={loading}>
             Refresh
           </Button>

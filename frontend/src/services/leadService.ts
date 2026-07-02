@@ -124,6 +124,19 @@ export const leadService = {
     return response.data;
   },
 
+  // Super-admin one-click: build outreach journeys for existing closed leads that
+  // don't have one (e.g. leads closed before the outreach feature existed).
+  backfillOutreach: async (): Promise<{
+    message: string;
+    checked: number;
+    built: number;
+    skipped_has_journey: number;
+    skipped_no_template: number;
+  }> => {
+    const response = await api.post('/leads/outreach/backfill');
+    return response.data;
+  },
+
   addComment: async (leadId: string, data: CommentCreateRequest): Promise<{ message: string; comment: Comment }> => {
     const response = await api.post<{ message: string; comment: Comment }>(`/leads/${leadId}/comments`, data);
     return response.data;
