@@ -100,6 +100,18 @@ export const enrollmentService = {
     return response.data;
   },
 
+  // Super-admin one-click: fill source on enrollments converted from a lead that
+  // don't have a source yet (copies from the linked lead).
+  backfillSource: async (): Promise<{
+    message: string;
+    checked: number;
+    updated: number;
+    skipped_no_source: number;
+  }> => {
+    const response = await api.post('/enrollments/backfill-source');
+    return response.data;
+  },
+
   // Super-admin one-click: build care journeys for existing enrolled leads that
   // don't have one (resolves legacy service values to the right template).
   backfillJourneys: async (): Promise<{

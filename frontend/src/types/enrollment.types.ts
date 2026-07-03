@@ -124,6 +124,7 @@ export interface EnrollmentListResponse {
 export interface EnrollmentCreateRequest {
   // Optional
   subscriber_name?: string;
+  lead_source?: string;
 
   // At least one of these required: email, uhid, phone_number
   email?: string;

@@ -990,6 +990,57 @@ async def backfill_care_journeys(
     }
 
 
+@router.post("/backfill-source")
+async def backfill_source(current_user: dict = Depends(get_current_super_admin)):
+    """
+    One-click bulk fix (Super Admin): fill lead_source on existing enrollments
+    that were converted from a lead (have linked_lead_id) but have no source yet,
+    by copying the source from the linked lead. Enrollments created directly (no
+    linked lead) can't be backfilled — those capture Source at creation going
+    forward. Read-only on everything else.
+    """
+    enrollments = await Enrollment.find({
+        "is_deleted": False,
+        "linked_lead_id": {"$ne": None},
+        "$or": [
+            {"lead_source": None},
+            {"lead_source": ""},
+            {"lead_source": {"$exists": False}},
+        ],
+    }).to_list()
+
+    updated = 0
+    skipped_no_source = 0
+    lead_cache: dict = {}
+    for enr in enrollments:
+        lid = enr.linked_lead_id
+        if lid in lead_cache:
+            src = lead_cache[lid]
+        else:
+            lead = await Lead.find_one(Lead.lead_id == lid)
+            src = lead.lead_source if lead else None
+            lead_cache[lid] = src
+        if src and str(src).strip():
+            enr.lead_source = src
+            enr.updated_at = datetime.utcnow()
+            enr.last_modified_by = current_user["user_id"]
+            await enr.save()
+            updated += 1
+        else:
+            skipped_no_source += 1
+
+    logger.info(
+        f"source backfill by {current_user['email']}: checked={len(enrollments)} "
+        f"updated={updated} skipped_no_source={skipped_no_source}"
+    )
+    return {
+        "message": f"Backfilled source on {updated} enrollment(s)",
+        "checked": len(enrollments),
+        "updated": updated,
+        "skipped_no_source": skipped_no_source,
+    }
+
+
 @router.post("/backfill-spoc")
 async def backfill_hclhc_spoc(current_user: dict = Depends(get_current_super_admin)):
     """

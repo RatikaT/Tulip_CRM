@@ -36,6 +36,7 @@ import {
 } from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
 import { useFieldConfig } from '../../hooks/useFieldConfig';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 interface UserOption {
   id: string;
@@ -45,6 +46,7 @@ interface UserOption {
 
 const createEnrollmentSchema = z.object({
   subscriber_name: z.string().optional().or(z.literal('')),
+  lead_source: z.string().min(1, 'Source is required'),
   employee_id: z.string().optional().or(z.literal('')),
   phone_number: z
     .string()
@@ -101,6 +103,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
   const fc = useFieldConfig('enrollment');
+  const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
 
   const {
     register,
@@ -176,6 +179,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
       const cleanData = {
         ...data,
         subscriber_name: data.subscriber_name || undefined,
+        lead_source: data.lead_source || undefined,
         employee_id: data.employee_id || undefined,
         email: data.email || undefined,
         uhid: data.uhid || undefined,
@@ -304,6 +308,29 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, mt: 1, fontWeight: 600 }}>
                   User Details
                 </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="lead_source"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      select
+                      required
+                      label="Source"
+                      error={!!errors.lead_source}
+                      helperText={errors.lead_source?.message}
+                    >
+                      <MenuItem value="">Select Source</MenuItem>
+                      {LEAD_SOURCE_OPTIONS.map((s) => (
+                        <MenuItem key={s} value={s}>{s}</MenuItem>
+                      ))}
+                    </TextField>
+                  )}
+                />
               </Grid>
 
               <Grid item xs={12} sm={6}>

@@ -35,6 +35,9 @@ class EnrollmentCreateRequest(BaseModel):
     # Optional - subscriber name
     subscriber_name: Optional[str] = Field(None, max_length=200)
 
+    # Source (mandatory on the Create Enrollment modal; free text / dropdown value)
+    lead_source: Optional[str] = None
+
     # At least one of these must be provided: email, uhid, or phone_number
     email: Optional[EmailStr] = None
     uhid: Optional[str] = Field(None, max_length=50)

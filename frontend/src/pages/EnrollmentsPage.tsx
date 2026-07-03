@@ -576,6 +576,29 @@ export default function EnrollmentsPage() {
     }
   };
 
+  // Super-admin one-click: fill source on enrollments converted from a lead.
+  const [backfillingSource, setBackfillingSource] = useState(false);
+  const handleBackfillSource = async () => {
+    setBackfillingSource(true);
+    try {
+      const result = await enrollmentService.backfillSource();
+      toast.success(
+        result.updated > 0
+          ? `Backfilled source on ${result.updated} enrollment(s)`
+          : 'No enrollments needed a source backfill'
+      );
+      fetchEnrollments();
+    } catch (error) {
+      console.error('Backfill source failed:', error);
+      const msg =
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to backfill source';
+      toast.error(msg);
+    } finally {
+      setBackfillingSource(false);
+    }
+  };
+
   // Super-admin one-click: build care journeys for existing enrolled leads.
   const [backfillingJourneys, setBackfillingJourneys] = useState(false);
   const handleBackfillJourneys = async () => {
@@ -871,6 +894,20 @@ export default function EnrollmentsPage() {
                   size="small"
                 >
                   {backfillingSpoc ? 'Backfilling...' : 'Backfill SPOC'}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {isSuperAdmin && (
+            <Tooltip title="Fill Source on enrollments converted from a lead that don't have one (copies from the linked lead)">
+              <span>
+                <Button
+                  variant="outlined"
+                  onClick={handleBackfillSource}
+                  disabled={backfillingSource}
+                  size="small"
+                >
+                  {backfillingSource ? 'Backfilling...' : 'Backfill Source'}
                 </Button>
               </span>
             </Tooltip>
