@@ -22,11 +22,13 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RestoreIcon from '@mui/icons-material/Restore';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
 import { toast } from 'react-toastify';
 import { leadService, DuplicateItem, DuplicatesSummary } from '../services/leadService';
 import { Lead } from '../types/lead.types';
 import { formatShortDateIST, formatDateTimeIST } from '../utils/dateUtils';
 import { brandColors } from '../theme';
+import { useAuthStore } from '../stores/authStore';
 
 // Soft colored pill styles per lead status (matches LeadsPage design)
 const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
@@ -200,11 +202,14 @@ const SummaryTile = ({ emoji, count, label, bg, color }: SummaryTileProps) => (
 );
 
 export default function DuplicatesPage() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [tab, setTab] = useState(0); // 0 = needs review (pending), 1 = confirmed
   const [items, setItems] = useState<DuplicateItem[]>([]);
   const [summary, setSummary] = useState<DuplicatesSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
@@ -339,6 +344,30 @@ export default function DuplicatesPage() {
     loadDuplicates(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const blob = await leadService.exportDuplicates();
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute(
+        'download',
+        `duplicate_leads_${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Duplicate list downloaded');
+    } catch (error) {
+      console.error('Duplicate export failed:', error);
+      toast.error('Failed to download duplicates');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleScan = async () => {
     setScanning(true);
@@ -622,14 +651,26 @@ export default function DuplicatesPage() {
             Review and resolve possible duplicate leads
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={scanning ? <CircularProgress size={16} color="inherit" /> : <ContentCopyIcon />}
-          onClick={handleScan}
-          disabled={scanning}
-        >
-          {scanning ? 'Scanning...' : 'Scan for duplicates'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+          {isAdmin && (
+            <Button
+              variant="outlined"
+              startIcon={downloading ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              {downloading ? 'Preparing...' : 'Download duplicates'}
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={scanning ? <CircularProgress size={16} color="inherit" /> : <ContentCopyIcon />}
+            onClick={handleScan}
+            disabled={scanning}
+          >
+            {scanning ? 'Scanning...' : 'Scan for duplicates'}
+          </Button>
+        </Box>
       </Box>
 
       {/* Summary tiles */}

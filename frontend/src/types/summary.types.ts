@@ -294,6 +294,62 @@ export interface Summary {
   created_by_name?: string;
 }
 
+// =============================================
+// SCORECARD TYPES (structured MIS scorecard)
+// =============================================
+
+export interface ScorecardClosedLead {
+  lead_id: string;
+  name: string;
+  status?: string;
+  reason: string;
+  reason_other?: string | null;
+}
+
+export interface ScorecardLeadJourney {
+  assigned: number;
+  status_bifurcation: Record<string, number>;
+  follow_ups_done: number;
+  closed: {
+    total: number;
+    by_reason: Record<string, number>;
+    list: ScorecardClosedLead[];
+  };
+  enrolled: number;
+}
+
+export interface ScorecardCareJourney {
+  patients: number;
+  steps_due: number;
+  steps_done: number;
+  steps_overdue: number;
+  steps_skipped: number;
+  buckets: { early: number; mid: number; near_done: number };
+  conversions: number;
+  journeys_completed: number;
+}
+
+export interface ScorecardOutreach {
+  touchpoints_done: number;
+  touchpoints_pending: number;
+  touchpoints_overdue: number;
+  re_engaged: number;
+}
+
+export interface ScorecardResponse {
+  scope: {
+    mode: 'self' | 'user' | 'team';
+    user_id: string | null;
+    user_name: string | null;
+    start: string;
+    end: string;
+    include_outreach: boolean;
+  };
+  lead: ScorecardLeadJourney;
+  care: ScorecardCareJourney;
+  outreach: ScorecardOutreach | null;
+}
+
 // Create Summary Request
 export interface CreateSummaryRequest {
   summary_type: SummaryType;

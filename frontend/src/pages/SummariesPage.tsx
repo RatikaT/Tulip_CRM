@@ -22,6 +22,7 @@ import api from '../services/api';
 import { formatFullDateTimeIST } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
 import AgentDailySummary from '../components/summaries/AgentDailySummary';
+import Scorecard from '../components/summaries/Scorecard';
 
 interface User {
   id: string;
@@ -256,6 +257,9 @@ Generate an overall summary including:
       <Box sx={{ mb: 3 }}>
         <AgentDailySummary />
       </Box>
+
+      {/* Performance Scorecard (structured MIS across Lead / Care / Outreach) */}
+      <Scorecard />
 
       {/* Generate Summary Section */}
       <Paper

@@ -185,6 +185,11 @@ export const leadService = {
     return response.data;
   },
 
+  exportDuplicates: async (): Promise<Blob> => {
+    const response = await api.get('/leads/duplicates/export', { responseType: 'blob' });
+    return response.data as Blob;
+  },
+
   getStats: async (): Promise<LeadStatsResponse> => {
     console.log('leadService.getStats: Making request to /leads/stats');
     try {

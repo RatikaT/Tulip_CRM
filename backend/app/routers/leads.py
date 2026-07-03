@@ -34,6 +34,13 @@ from app.services.journey_ops import (
     remove_step,
 )
 from app.models.journey_template import service_match_pattern
+from app.utils.excel_export import (
+    write_headers, write_row, finalize, summary_sheet, summary_kv, summary_section,
+)
+from app.utils.mis_helpers import (
+    build_status_path, build_assigned_chain, lead_last_activity, lead_latest_remark, parse_dt,
+)
+from collections import Counter, defaultdict
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
@@ -799,283 +806,152 @@ async def export_leads_excel(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Export leads with audit trail to Excel.
-    Admins/super-admins export all leads; agents export only leads assigned or
-    reassigned to them. Optional created_at date range filter, interpreted in IST.
+    Leads MIS export: Summary, Leads, Lead History, Calls, Comments.
+    Excludes duplicates (they have a separate export). Agents export only leads
+    assigned/reassigned to them. Optional IST-aware created_at date range.
     """
-    # Create workbook
-    wb = Workbook()
-
-    # Styles
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-
-    # ===== Sheet 1: Leads =====
-    ws_leads = wb.active
-    ws_leads.title = "Leads"
-
-    # Lead headers
-    lead_headers = [
-        "Lead ID", "Name", "Email", "Phone Number", "Employee ID", "UHID",
-        "Status", "Lead Source", "Lead Creation Date", "Trimester", "Looking For",
-        "User Facility", "City", "Pin Code", "Address",
-        "Package Requested", "Service Enrolled", "Package Name Enrolled",
-        "Service (Partner)", "Provider Location", "HCLHC SPOC", "Reason for No Sale",
-        "Doctor Name", "Doctor Speciality", "Consult Date",
-        "Visit ID", "Age", "Gender", "ICD Code", "Diagnosis",
-        "Investigation Item Name", "Investigation Service Type", "CUG Name",
-        "Number of Calls", "Follow Up Date",
-        "Assigned To", "Reassign To",
-        "Created At", "Updated At", "Created By"
-    ]
-
-    # Write headers
-    for col, header in enumerate(lead_headers, 1):
-        cell = ws_leads.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    # Build query with optional IST-aware created_at date range.
-    # created_at is stored in UTC; the picker sends IST calendar dates, so we
-    # offset by IST (+5:30) to get the correct UTC boundaries.
     IST_OFFSET = timedelta(hours=5, minutes=30)
-    # Exclude duplicate leads from the MIS export
     query: dict = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
-    # Agents can only export leads assigned or reassigned to them
     if current_user["role"] == "agent":
         uid = current_user["user_id"]
         query["$or"] = [{"assigned_to": uid}, {"reassign_to": uid}]
     created_range: dict = {}
     if start_date:
         try:
-            start_utc = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
-            created_range["$gte"] = start_utc
+            created_range["$gte"] = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date (expected YYYY-MM-DD)")
     if end_date:
         try:
-            # Inclusive end of day in IST = start of next IST day, then to UTC
-            end_excl_utc = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
-            created_range["$lt"] = end_excl_utc
+            created_range["$lt"] = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
         except ValueError:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date (expected YYYY-MM-DD)")
     if created_range:
         query["created_at"] = created_range
 
-    # Fetch leads (optionally filtered by created_at range)
     leads = await Lead.find(query).sort("-created_at").to_list()
 
-    # Write lead data
-    for row_num, lead in enumerate(leads, 2):
-        row_data = [
-            lead.lead_id,
-            lead.name,
-            lead.email,
-            lead.phone_number,
-            lead.employee_id,
-            lead.uhid,
-            lead.status if lead.status else None,
-            lead.lead_source if lead.lead_source else None,
-            str(lead.lead_creation_date) if lead.lead_creation_date else None,
-            lead.trimester if lead.trimester else None,
-            lead.looking_for if lead.looking_for else None,
-            lead.user_facility,
-            lead.city,
-            lead.pin_code,
-            lead.address,
-            lead.package_requested,
-            lead.service_requested if lead.service_requested else None,
-            lead.package_name_enrolled,
-            lead.service_partner if lead.service_partner else None,
-            lead.provider_location,
-            lead.hclhc_spoc,
-            lead.reason_for_no_sale if lead.reason_for_no_sale else None,
-            lead.doctor_name,
-            lead.doctor_speciality,
-            str(lead.consult_date) if lead.consult_date else None,
-            lead.visit_id,
-            lead.age,
-            lead.gender,
-            lead.icd_code,
-            lead.diagnosis,
-            lead.investigation_item_name,
-            lead.investigation_service_type,
-            lead.cug_name,
-            lead.number_of_calls,
-            lead.follow_up_date.strftime("%Y-%m-%d %H:%M") if lead.follow_up_date else None,
-            lead.assigned_to_name,
-            getattr(lead, 'reassign_to_name', None),
-            lead.created_at.strftime("%Y-%m-%d %H:%M") if lead.created_at else None,
-            lead.updated_at.strftime("%Y-%m-%d %H:%M") if lead.updated_at else None,
-            lead.created_by
+    # Audit logs for these leads (ascending), grouped per lead.
+    lead_ids = [l.lead_id for l in leads]
+    audit_by_lead = defaultdict(list)
+    all_logs = []
+    if lead_ids:
+        logs = await AuditLog.find({"lead_id": {"$in": lead_ids}}).sort("+timestamp").to_list()
+        for lg in logs:
+            audit_by_lead[lg.lead_id].append(lg)
+            all_logs.append(lg)
+
+    def _v(x):
+        return x.value if hasattr(x, "value") else x
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # ===== Summary =====
+    sm = summary_sheet(wb, "Leads MIS - Summary")
+    summary_kv(sm, "Date range (IST)", f"{start_date or 'All'}  to  {end_date or 'All'}")
+    summary_kv(sm, "Total leads (excl. duplicates)", len(leads))
+    summary_kv(sm, "Generated by", current_user.get("full_name") or current_user.get("email"))
+    summary_kv(sm, "Generated at", datetime.utcnow() + IST_OFFSET, dt=True)
+    by_status = Counter(_v(l.status) or "-" for l in leads)
+    by_service = Counter(_v(l.service_requested) or "-" for l in leads)
+    by_agent = Counter(l.assigned_to_name or "Unassigned" for l in leads)
+    summary_section(sm, "By Status", sorted(by_status.items(), key=lambda x: -x[1]))
+    summary_section(sm, "By Service Requested", sorted(by_service.items(), key=lambda x: -x[1]))
+    summary_section(sm, "By Assigned Agent", sorted(by_agent.items(), key=lambda x: -x[1]))
+    finalize(sm, cap=44)
+
+    # ===== Leads =====
+    ws = wb.create_sheet("Leads")
+    headers = [
+        "Lead ID", "Name", "Email", "Phone Number", "Employee ID", "UHID",
+        "Status", "Status Path", "Source", "Lead Creation Date", "Trimester",
+        "Service Requested", "City", "Package Requested", "Package Name Enrolled",
+        "Service (Partner)", "Provider Location", "HCLHC SPOC",
+        "Assigned To", "Assigned Agents", "Reassign To",
+        "Reason for No Sale", "Reason (Other)",
+        "# Calls", "# Comments", "Last Activity", "Latest Remark",
+        "Follow Up Date", "Created At", "Updated At", "Created By",
+        "Looking For", "User Facility", "Pin Code", "Address",
+        "Doctor Name", "Doctor Speciality", "Consult Date",
+        "Visit ID", "Age", "Gender", "ICD Code", "Diagnosis",
+        "Investigation Item Name", "Investigation Service Type", "CUG Name",
+    ]
+    write_headers(ws, headers)
+    for r, lead in enumerate(leads, 2):
+        lg = audit_by_lead.get(lead.lead_id, [])
+        row = [
+            lead.lead_id, lead.name, lead.email, lead.phone_number, lead.employee_id, lead.uhid,
+            _v(lead.status), build_status_path(lead, lg), _v(lead.lead_source),
+            lead.lead_creation_date, _v(lead.trimester),
+            _v(lead.service_requested), lead.city, lead.package_requested, lead.package_name_enrolled,
+            _v(lead.service_partner), lead.provider_location, lead.hclhc_spoc,
+            lead.assigned_to_name, build_assigned_chain(lead, lg), getattr(lead, "reassign_to_name", None),
+            _v(lead.reason_for_no_sale), getattr(lead, "reason_for_no_sale_other", None),
+            len(lead.calls or []), len(lead.comments or []), lead_last_activity(lead), lead_latest_remark(lead),
+            lead.follow_up_date, lead.created_at, lead.updated_at, lead.created_by,
+            _v(lead.looking_for), lead.user_facility, lead.pin_code, lead.address,
+            lead.doctor_name, lead.doctor_speciality, lead.consult_date,
+            lead.visit_id, lead.age, lead.gender, lead.icd_code, lead.diagnosis,
+            lead.investigation_item_name, lead.investigation_service_type, lead.cug_name,
         ]
+        write_row(ws, r, row, dt_cols={26, 28, 29, 30}, date_cols={10, 38})
+    finalize(ws)
 
-        for col, value in enumerate(row_data, 1):
-            cell = ws_leads.cell(row=row_num, column=col, value=value)
-            cell.border = thin_border
-            cell.alignment = Alignment(vertical="center")
+    # ===== Lead History (meaningful transitions only) =====
+    ws_h = wb.create_sheet("Lead History")
+    write_headers(ws_h, ["Lead ID", "Name", "Date/Time", "Change", "From", "To", "By"])
+    name_by_id = {l.lead_id: l.name for l in leads}
+    hr = 2
+    for lg in all_logs:
+        for ch in (lg.changes or []):
+            f = ch.get("field")
+            if f == "status":
+                ctype = "Status"
+            elif f == "assigned_to_name":
+                ctype = "Assignment"
+            elif f in ("reassign_to_name", "reassigned_to_name"):
+                ctype = "Reassignment"
+            else:
+                continue
+            write_row(ws_h, hr, [
+                lg.lead_id, name_by_id.get(lg.lead_id), lg.timestamp, ctype,
+                ch.get("old_value"), ch.get("new_value"), lg.user_name,
+            ], dt_cols={3})
+            hr += 1
+    finalize(ws_h)
 
-    # Auto-adjust column widths for leads sheet
-    for col in ws_leads.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = min(max_length + 2, 50)
-        ws_leads.column_dimensions[column].width = adjusted_width
-
-    # ===== Sheet 2: Calls =====
-    ws_calls = wb.create_sheet("Calls")
-
-    call_headers = ["Lead ID", "Name", "Call Number", "Date & Time", "Summary"]
-    for col, header in enumerate(call_headers, 1):
-        cell = ws_calls.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    call_row = 2
+    # ===== Calls =====
+    ws_c = wb.create_sheet("Calls")
+    write_headers(ws_c, ["Lead ID", "Name", "Call #", "Date & Time", "Summary"])
+    cr = 2
     for lead in leads:
-        if lead.calls:
-            for call in lead.calls:
-                ws_calls.cell(row=call_row, column=1, value=lead.lead_id).border = thin_border
-                ws_calls.cell(row=call_row, column=2, value=lead.name).border = thin_border
-                ws_calls.cell(row=call_row, column=3, value=call.get('call_number', '')).border = thin_border
-                ws_calls.cell(row=call_row, column=4, value=call.get('date_time', '')).border = thin_border
-                ws_calls.cell(row=call_row, column=5, value=call.get('summary', '')).border = thin_border
-                call_row += 1
+        for call in (lead.calls or []):
+            write_row(ws_c, cr, [
+                lead.lead_id, lead.name, call.get("call_number"),
+                parse_dt(call.get("date_time")), call.get("summary"),
+            ], dt_cols={4})
+            cr += 1
+    finalize(ws_c, cap=60)
 
-    # Auto-adjust column widths for calls sheet
-    for col in ws_calls.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = min(max_length + 2, 60)
-        ws_calls.column_dimensions[column].width = adjusted_width
-
-    # ===== Sheet 3: Comments =====
-    ws_comments = wb.create_sheet("Comments")
-
-    comment_headers = ["Lead ID", "Name", "Comment", "Created By", "Created At"]
-    for col, header in enumerate(comment_headers, 1):
-        cell = ws_comments.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    comment_row = 2
+    # ===== Comments =====
+    ws_cm = wb.create_sheet("Comments")
+    write_headers(ws_cm, ["Lead ID", "Name", "Comment", "Created By", "Created At"])
+    mr = 2
     for lead in leads:
-        if lead.comments:
-            for comment in lead.comments:
-                ws_comments.cell(row=comment_row, column=1, value=lead.lead_id).border = thin_border
-                ws_comments.cell(row=comment_row, column=2, value=lead.name).border = thin_border
-                ws_comments.cell(row=comment_row, column=3, value=comment.get('text', '')).border = thin_border
-                ws_comments.cell(row=comment_row, column=4, value=comment.get('created_by_name', '')).border = thin_border
-                created_at = comment.get('created_at')
-                if created_at:
-                    if isinstance(created_at, datetime):
-                        created_at = created_at.strftime("%Y-%m-%d %H:%M")
-                ws_comments.cell(row=comment_row, column=5, value=created_at).border = thin_border
-                comment_row += 1
+        for cm in (lead.comments or []):
+            write_row(ws_cm, mr, [
+                lead.lead_id, lead.name, cm.get("text"),
+                cm.get("created_by_name"), parse_dt(cm.get("created_at")),
+            ], dt_cols={5})
+            mr += 1
+    finalize(ws_cm, cap=60)
 
-    # Auto-adjust column widths for comments sheet
-    for col in ws_comments.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = min(max_length + 2, 60)
-        ws_comments.column_dimensions[column].width = adjusted_width
-
-    # ===== Sheet 4: Audit Trail =====
-    ws_audit = wb.create_sheet("Audit Trail")
-
-    audit_headers = ["Lead ID", "User", "Email", "Action", "Field", "Old Value", "New Value", "Timestamp"]
-    for col, header in enumerate(audit_headers, 1):
-        cell = ws_audit.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    # Fetch audit logs scoped to the exported leads (so the audit sheet matches
-    # the same date range as the Leads sheet)
-    exported_lead_ids = [lead.lead_id for lead in leads]
-    if exported_lead_ids:
-        audit_logs = await AuditLog.find(
-            {"lead_id": {"$in": exported_lead_ids}}
-        ).sort("-timestamp").to_list()
-    else:
-        audit_logs = []
-
-    audit_row = 2
-    for log in audit_logs:
-        if log.changes:
-            for change in log.changes:
-                ws_audit.cell(row=audit_row, column=1, value=log.lead_id).border = thin_border
-                ws_audit.cell(row=audit_row, column=2, value=log.user_name).border = thin_border
-                ws_audit.cell(row=audit_row, column=3, value=log.user_email).border = thin_border
-                ws_audit.cell(row=audit_row, column=4, value=log.action.value if hasattr(log.action, 'value') else str(log.action)).border = thin_border
-                ws_audit.cell(row=audit_row, column=5, value=change.get('field', '')).border = thin_border
-                ws_audit.cell(row=audit_row, column=6, value=str(change.get('old_value', ''))).border = thin_border
-                ws_audit.cell(row=audit_row, column=7, value=str(change.get('new_value', ''))).border = thin_border
-                ws_audit.cell(row=audit_row, column=8, value=log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else None).border = thin_border
-                audit_row += 1
-        else:
-            ws_audit.cell(row=audit_row, column=1, value=log.lead_id).border = thin_border
-            ws_audit.cell(row=audit_row, column=2, value=log.user_name).border = thin_border
-            ws_audit.cell(row=audit_row, column=3, value=log.user_email).border = thin_border
-            ws_audit.cell(row=audit_row, column=4, value=log.action.value if hasattr(log.action, 'value') else str(log.action)).border = thin_border
-            ws_audit.cell(row=audit_row, column=8, value=log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else None).border = thin_border
-            audit_row += 1
-
-    # Auto-adjust column widths for audit sheet
-    for col in ws_audit.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = min(max_length + 2, 50)
-        ws_audit.column_dimensions[column].width = adjusted_width
-
-    # Save to bytes
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-
-    # Generate filename with timestamp
-    filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
-    logger.info(f"Excel export generated by {current_user['email']}: {len(leads)} leads, {len(audit_logs)} audit entries")
-
+    filename = f"leads_mis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    logger.info(f"Leads MIS export by {current_user['email']}: {len(leads)} leads")
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1095,6 +971,53 @@ async def scan_duplicates(current_user: dict = Depends(get_current_super_admin))
 class ResolveDuplicateRequest(BaseModel):
     keep_lead_id: str
     remove_lead_id: str
+
+
+@router.get("/duplicates/export")
+async def export_duplicates_excel(current_user: dict = Depends(get_current_admin)):
+    """Export duplicate leads to Excel (Admin/Super Admin). Separate from the main
+    Leads MIS, which stays duplicate-free."""
+    def _v(x):
+        return x.value if hasattr(x, "value") else x
+
+    dups = await Lead.find({
+        "is_deleted": False,
+        "duplicate_status": {"$in": ["pending", "confirmed"]},
+    }).sort("-updated_at").to_list()
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    sm = summary_sheet(wb, "Duplicate Leads - Summary")
+    summary_kv(sm, "Total duplicate leads", len(dups))
+    summary_kv(sm, "Pending review", sum(1 for l in dups if l.duplicate_status == "pending"))
+    summary_kv(sm, "Confirmed", sum(1 for l in dups if l.duplicate_status == "confirmed"))
+    summary_kv(sm, "Generated by", current_user.get("full_name") or current_user.get("email"))
+    summary_kv(sm, "Generated at", datetime.utcnow() + timedelta(hours=5, minutes=30), dt=True)
+    finalize(sm, cap=44)
+
+    ws = wb.create_sheet("Duplicate Leads")
+    write_headers(ws, ["Lead ID", "Name", "Phone", "Status", "Duplicate State",
+                       "Duplicate Of", "Flagged On", "Assigned To"])
+    for r, lead in enumerate(dups, 2):
+        write_row(ws, r, [
+            lead.lead_id, lead.name, lead.phone_number, _v(lead.status),
+            (lead.duplicate_status or "").title(), lead.duplicate_of,
+            getattr(lead, "duplicate_resolved_at", None) or lead.updated_at,
+            lead.assigned_to_name,
+        ], dt_cols={7})
+    finalize(ws)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"duplicate_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    logger.info(f"Duplicates export by {current_user['email']}: {len(dups)} leads")
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @router.get("/duplicates/summary")

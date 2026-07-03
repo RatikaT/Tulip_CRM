@@ -4,6 +4,7 @@ import {
   Summary,
   CreateSummaryRequest,
   SummaryType,
+  ScorecardResponse,
 } from '../types/summary.types';
 
 interface SummariesResponse {
@@ -51,6 +52,20 @@ export const dashboardService = {
    */
   async deleteSummary(summaryId: string): Promise<void> {
     await api.delete(`/dashboard/summaries/${summaryId}`);
+  },
+
+  /**
+   * Get the structured scorecard (Lead / Care / Outreach journeys).
+   * Non-admins are forced to their own scope and get no Outreach section.
+   */
+  async getScorecard(params?: {
+    user_id?: string;
+    start?: string;
+    end?: string;
+    team?: boolean;
+  }): Promise<ScorecardResponse> {
+    const response = await api.get<ScorecardResponse>('/dashboard/scorecard', { params });
+    return response.data;
   },
 
   /**

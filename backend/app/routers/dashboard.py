@@ -1157,3 +1157,212 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
         "total": len(items),
         "counts": {"overdue": overdue, "due_today": due_today, "upcoming": upcoming},
     }
+
+
+@router.get("/scorecard")
+async def get_scorecard(
+    user_id: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    team: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Structured, server-computed scorecard across three journeys (Lead, Care,
+    Outreach). Access control: non-admins are forced to their own scope and get
+    no Outreach section. Admin/super-admin may pass any user_id or team=true.
+    No row caps.
+    """
+    from app.utils.mis_helpers import parse_dt as _pd
+
+    role = current_user.get("role")
+    is_admin = role in ("admin", "super_admin")
+    include_outreach = is_admin
+
+    # ---- scope ----
+    if not is_admin:
+        team = False
+        target_uid = current_user["user_id"]
+        target_name = current_user.get("full_name", "")
+        mode = "self"
+    elif team:
+        target_uid = None
+        target_name = None
+        mode = "team"
+    elif user_id:
+        u = await User.get(user_id)
+        target_uid = user_id
+        target_name = u.full_name if u else ""
+        mode = "user"
+    else:
+        target_uid = current_user["user_id"]
+        target_name = current_user.get("full_name", "")
+        mode = "self"
+
+    # ---- date range (IST calendar -> UTC boundaries) ----
+    ist_today = (datetime.utcnow() + IST_OFFSET).date()
+    try:
+        sd = datetime.strptime(start, "%Y-%m-%d").date() if start else ist_today
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid start (YYYY-MM-DD)")
+    try:
+        ed = datetime.strptime(end, "%Y-%m-%d").date() if end else sd
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid end (YYYY-MM-DD)")
+    start_utc = datetime(sd.year, sd.month, sd.day) - IST_OFFSET
+    end_utc = datetime(ed.year, ed.month, ed.day) + timedelta(days=1) - IST_OFFSET
+
+    def in_range(dt):
+        d = _pd(dt)
+        return d is not None and start_utc <= d < end_utc
+
+    def _v(x):
+        return x.value if hasattr(x, "value") else x
+
+    # ================= ① LEAD JOURNEY =================
+    assign_and = [{"is_deleted": False}]
+    if not team:
+        assign_and.append({"$or": [{"assigned_to": target_uid}, {"reassign_to": target_uid}]})
+    assign_and.append({"$or": [
+        {"assigned_date": {"$gte": start_utc, "$lt": end_utc}},
+        {"reassigned_date": {"$gte": start_utc, "$lt": end_utc}},
+    ]})
+    assigned_leads = await Lead.find({"$and": assign_and}).to_list()
+    status_bifurcation = {}
+    for l in assigned_leads:
+        s = _v(l.status) or "-"
+        status_bifurcation[s] = status_bifurcation.get(s, 0) + 1
+
+    # follow-ups done = calls in range on the user's leads
+    calls_q = {"is_deleted": False}
+    if not team:
+        calls_q["$or"] = [{"assigned_to": target_uid}, {"reassign_to": target_uid}]
+    user_leads = await Lead.find(calls_q).to_list()
+    follow_ups_done = 0
+    for l in user_leads:
+        for c in (l.calls or []):
+            if in_range(c.get("date_time")):
+                follow_ups_done += 1
+
+    # closed / enrolled via audit log (status change by this user, in range)
+    def audit_query(new_values):
+        q = {
+            "timestamp": {"$gte": start_utc, "$lt": end_utc},
+            "changes": {"$elemMatch": {"field": "status", "new_value": {"$in": new_values}}},
+        }
+        if not team:
+            q["$or"] = [{"user_id": target_uid}, {"user_name": target_name}]
+        return q
+
+    closed_logs = await AuditLog.find(audit_query(["Not Interested", "Lead Closed-No Response"])).to_list()
+    closed_lead_ids = list({lg.lead_id for lg in closed_logs})
+    closed_list, by_reason = [], {}
+    if closed_lead_ids:
+        cl_leads = await Lead.find({"lead_id": {"$in": closed_lead_ids}}).to_list()
+        for l in cl_leads:
+            reason = _v(l.reason_for_no_sale) or "Not specified"
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+            closed_list.append({
+                "lead_id": l.lead_id, "name": l.name, "status": _v(l.status),
+                "reason": reason, "reason_other": getattr(l, "reason_for_no_sale_other", None),
+            })
+    enrolled_logs = await AuditLog.find(audit_query(["Enrolled"])).to_list()
+    enrolled_count = len({lg.lead_id for lg in enrolled_logs})
+
+    lead_journey = {
+        "assigned": len(assigned_leads),
+        "status_bifurcation": status_bifurcation,
+        "follow_ups_done": follow_ups_done,
+        "closed": {"total": len(closed_list), "by_reason": by_reason, "list": closed_list},
+        "enrolled": enrolled_count,
+    }
+
+    # ================= ② CARE JOURNEY =================
+    enr_q = {"is_deleted": False, "journey_status": "active"}
+    if not team:
+        enr_q["hclhc_spoc"] = {"$regex": f"^{re.escape(target_name)}$", "$options": "i"}
+    care_enrollments = await Enrollment.find(enr_q).to_list()
+    steps_due = steps_done = steps_overdue = steps_skipped = 0
+    buckets = {"early": 0, "mid": 0, "near_done": 0}
+    journeys_completed = 0
+    for e in care_enrollments:
+        journey = e.journey or []
+        total = len(journey)
+        done = 0
+        for s in journey:
+            st = s.get("status")
+            if st == "done":
+                done += 1
+                if in_range(s.get("completed_date")):
+                    steps_done += 1
+            elif st == "skipped":
+                steps_skipped += 1
+            elif st == "pending":
+                pd = _pd(s.get("planned_date"))
+                if in_range(s.get("planned_date")):
+                    steps_due += 1
+                if pd and pd.date() < ist_today:
+                    steps_overdue += 1
+        if total:
+            pct = done / total
+            if pct <= 0.33:
+                buckets["early"] += 1
+            elif pct <= 0.66:
+                buckets["mid"] += 1
+            else:
+                buckets["near_done"] += 1
+            if done == total and any(in_range(s.get("completed_date")) for s in journey):
+                journeys_completed += 1
+
+    conv_q = {"is_deleted": False, "converted_to_lead_id": {"$ne": None},
+              "journey_stopped_at": {"$gte": start_utc, "$lt": end_utc}}
+    if not team:
+        conv_q["hclhc_spoc"] = {"$regex": f"^{re.escape(target_name)}$", "$options": "i"}
+    conversions = await Enrollment.find(conv_q).count()
+
+    care_journey = {
+        "patients": len(care_enrollments),
+        "steps_due": steps_due, "steps_done": steps_done,
+        "steps_overdue": steps_overdue, "steps_skipped": steps_skipped,
+        "buckets": buckets,
+        "conversions": conversions,
+        "journeys_completed": journeys_completed,
+    }
+
+    # ================= ③ OUTREACH JOURNEY (admin only) =================
+    outreach = None
+    if include_outreach:
+        oleads = await Lead.find({
+            "is_deleted": False, "journey_status": "active",
+            "journey": {"$exists": True, "$ne": []},
+        }).to_list()
+        t_done = t_pending = t_overdue = 0
+        for l in oleads:
+            for s in (l.journey or []):
+                st = s.get("status")
+                if st == "done" and in_range(s.get("completed_date")):
+                    t_done += 1
+                elif st == "pending":
+                    t_pending += 1
+                    pd = _pd(s.get("planned_date"))
+                    if pd and pd.date() < ist_today:
+                        t_overdue += 1
+        re_engaged = await Lead.find({
+            "is_deleted": False, "journey_stopped_reason": "Re-engaged",
+            "journey_stopped_at": {"$gte": start_utc, "$lt": end_utc},
+        }).count()
+        outreach = {
+            "touchpoints_done": t_done, "touchpoints_pending": t_pending,
+            "touchpoints_overdue": t_overdue, "re_engaged": re_engaged,
+        }
+
+    return {
+        "scope": {
+            "mode": mode, "user_id": target_uid, "user_name": target_name,
+            "start": sd.isoformat(), "end": ed.isoformat(),
+            "include_outreach": include_outreach,
+        },
+        "lead": lead_journey,
+        "care": care_journey,
+        "outreach": outreach,
+    }

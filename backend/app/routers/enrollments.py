@@ -30,6 +30,12 @@ from app.database import get_database
 from app.services.journey_service import build_journey_for_service
 from app.services.enrollment_helpers import reinstantiate_care_journey
 from app.models.journey_template import service_match_pattern
+from app.models.journey_template import normalize_service, CARE_SERVICES
+from app.utils.excel_export import (
+    write_headers, write_row, finalize, summary_sheet, summary_kv, summary_section,
+)
+from app.utils.mis_helpers import care_rollups, parse_dt
+from collections import Counter, defaultdict
 from app.services.journey_ops import compute_care_triggers, stop_journey_steps
 from pydantic import BaseModel
 import logging
@@ -548,50 +554,14 @@ async def export_enrollments_excel(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Export enrollments to Excel.
-    Admins/super-admins export all enrollments; agents export only enrollments
-    where they are the HCLHC SPOC. Optional created_at date range filter (IST).
+    Enrollments MIS export: Summary (+ Agent x Service matrix), Enrollments (with
+    care roll-ups), Care Journey (per step), Follow-ups. Agents export only where
+    they are the HCLHC SPOC. Optional IST-aware created_at range.
     """
-    wb = Workbook()
-
-    # Styles
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-
-    # Sheet 1: Enrollments
-    ws = wb.active
-    ws.title = "Enrollments"
-
-    headers = [
-        "Enrollment ID", "Linked Lead", "Billed Date", "Package Billed",
-        "HCLH SPOC", "HCL Facility", "UHID", "Subscriber Name", "DOB",
-        "EmployeeID", "Name", "Contact No.", "Email", "Address",
-        "Current Trimester", "Service Enrolled", "Package Name Enrolled", "Doctor Name",
-        "Service (Partner)", "Partner Centre Selected", "Partner Gynaecologist",
-        "Connect Status", "Action Taken", "Follow Up Date", "Next Follow Up Date",
-        "Customer Feedback", "Remarks", "Assigned To", "Created At"
-    ]
-
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    # Build query with optional IST-aware created_at date range.
-    # created_at is stored in UTC; the picker sends IST calendar dates, so we
-    # offset by IST (+5:30) to get the correct UTC boundaries.
     IST_OFFSET = timedelta(hours=5, minutes=30)
+    today = (datetime.utcnow() + IST_OFFSET).date()
+
     query: dict = {"is_deleted": False}
-    # Agents can only export enrollments where they are the HCLHC SPOC
     if current_user.get("role") == "agent":
         user_name = current_user.get("full_name", "")
         query["hclhc_spoc"] = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
@@ -611,99 +581,136 @@ async def export_enrollments_excel(
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
 
-    for row_num, enrollment in enumerate(enrollments, 2):
-        row_data = [
-            enrollment.enrollment_id,
-            enrollment.linked_lead_id,
-            str(enrollment.billed_date) if enrollment.billed_date else None,
-            enrollment.package_billed,
-            enrollment.hclhc_spoc,
-            enrollment.hcl_facility,
-            enrollment.uhid,
-            enrollment.subscriber_name,
-            str(enrollment.dob) if enrollment.dob else None,
-            enrollment.employee_id,
-            enrollment.name,
-            enrollment.phone_number,
-            enrollment.email,
-            enrollment.address,
-            enrollment.trimester.value if enrollment.trimester else None,
-            enrollment.service_enrolled if enrollment.service_enrolled else None,
-            enrollment.package_name_enrolled,
-            enrollment.doctor_name,
-            enrollment.service_partner if enrollment.service_partner else None,
-            enrollment.partner_centre_selected,
-            enrollment.partner_gynaecologist,
-            enrollment.connect_status.value if enrollment.connect_status else None,
-            enrollment.action_taken.value if enrollment.action_taken else None,
-            enrollment.follow_up_date.strftime("%Y-%m-%d %H:%M") if enrollment.follow_up_date else None,
-            enrollment.next_follow_up_date.strftime("%Y-%m-%d %H:%M") if enrollment.next_follow_up_date else None,
-            enrollment.customer_feedback,
-            enrollment.remarks,
-            enrollment.assigned_to_name,
-            enrollment.created_at.strftime("%Y-%m-%d %H:%M") if enrollment.created_at else None,
+    def _v(x):
+        return x.value if hasattr(x, "value") else x
+
+    # Pre-compute care roll-ups + aggregates.
+    rollups = {e.enrollment_id: care_rollups(e, today) for e in enrollments}
+    due_today = 0
+    overdue_total = 0
+    for e in enrollments:
+        if getattr(e, "journey_status", "active") != "active":
+            continue
+        for s in (e.journey or []):
+            if s.get("status") == "pending":
+                d = parse_dt(s.get("planned_date"))
+                if d:
+                    if d.date() == today:
+                        due_today += 1
+                    elif d.date() < today:
+                        overdue_total += 1
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # ===== Summary =====
+    sm = summary_sheet(wb, "Enrollments MIS - Summary")
+    summary_kv(sm, "Date range (IST)", f"{start_date or 'All'}  to  {end_date or 'All'}")
+    summary_kv(sm, "Total enrollments", len(enrollments))
+    summary_kv(sm, "Care steps due today", due_today)
+    summary_kv(sm, "Care steps overdue", overdue_total)
+    summary_kv(sm, "Generated by", current_user.get("full_name") or current_user.get("email"))
+    summary_kv(sm, "Generated at", datetime.utcnow() + IST_OFFSET, dt=True)
+    by_service = Counter(_v(e.service_enrolled) or "-" for e in enrollments)
+    by_spoc = Counter(e.hclhc_spoc or "Unassigned" for e in enrollments)
+    by_connect = Counter(_v(e.connect_status) or "-" for e in enrollments)
+    summary_section(sm, "By Service Enrolled", sorted(by_service.items(), key=lambda x: -x[1]))
+    summary_section(sm, "By SPOC", sorted(by_spoc.items(), key=lambda x: -x[1]))
+    summary_section(sm, "By Connect Status", sorted(by_connect.items(), key=lambda x: -x[1]))
+
+    # Agent x Service matrix (rows = SPOC, cols = the 3 standard services).
+    matrix = defaultdict(lambda: {s: 0 for s in CARE_SERVICES})
+    for e in enrollments:
+        svc = normalize_service(e.service_enrolled)
+        if svc in CARE_SERVICES:
+            matrix[e.hclhc_spoc or "Unassigned"][svc] += 1
+    mr = getattr(sm, "_next", 3) + 1
+    hc = sm.cell(row=mr, column=1, value="Agent x Service matrix")
+    from app.utils.excel_export import HEADER_FONT as _HF, HEADER_FILL as _HFill, LABEL_FONT as _LF
+    hc.font = _HF; hc.fill = _HFill
+    mr += 1
+    sm.cell(row=mr, column=1, value="SPOC").font = _LF
+    for ci, svc in enumerate(CARE_SERVICES, 2):
+        sm.cell(row=mr, column=ci, value=svc).font = _LF
+    mr += 1
+    for spoc in sorted(matrix.keys()):
+        sm.cell(row=mr, column=1, value=spoc)
+        for ci, svc in enumerate(CARE_SERVICES, 2):
+            sm.cell(row=mr, column=ci, value=matrix[spoc][svc])
+        mr += 1
+    finalize(sm, cap=44)
+
+    # ===== Enrollments =====
+    ws = wb.create_sheet("Enrollments")
+    headers = [
+        "Enrollment ID", "Linked Lead", "Source", "Subscriber Name", "Name",
+        "EmployeeID", "Contact No.", "Email", "UHID",
+        "Service Enrolled", "Package Name Enrolled", "Package Billed", "Current Trimester",
+        "HCLH SPOC", "Service (Partner)", "Partner Centre Selected", "Partner Gynaecologist",
+        "Doctor Name", "HCL Facility", "Connect Status", "Action Taken",
+        "Care Progress", "Next Care Step", "Next Due", "Last Completed Step",
+        "Last Completed On", "Care Overdue",
+        "Billed Date", "Follow Up Date", "Next Follow Up Date",
+        "Customer Feedback", "Remarks", "Assigned To", "DOB", "Address", "Created At",
+    ]
+    write_headers(ws, headers)
+    for r, e in enumerate(enrollments, 2):
+        ru = rollups[e.enrollment_id]
+        row = [
+            e.enrollment_id, e.linked_lead_id, getattr(e, "lead_source", None),
+            e.subscriber_name, e.name, e.employee_id, e.phone_number, e.email, e.uhid,
+            _v(e.service_enrolled), e.package_name_enrolled, e.package_billed, _v(e.trimester),
+            e.hclhc_spoc, _v(e.service_partner), e.partner_centre_selected, e.partner_gynaecologist,
+            e.doctor_name, e.hcl_facility, _v(e.connect_status), _v(e.action_taken),
+            ru["progress"], ru["next_step"], ru["next_due"], ru["last_step"],
+            ru["last_on"], ru["overdue"],
+            e.billed_date, e.follow_up_date, e.next_follow_up_date,
+            e.customer_feedback, e.remarks, e.assigned_to_name, e.dob, e.address, e.created_at,
         ]
+        write_row(ws, r, row, dt_cols={29, 30, 36}, date_cols={24, 26, 28, 34})
+    finalize(ws)
 
-        for col, value in enumerate(row_data, 1):
-            cell = ws.cell(row=row_num, column=col, value=value)
-            cell.border = thin_border
+    # ===== Care Journey (one row per step) =====
+    ws_j = wb.create_sheet("Care Journey")
+    write_headers(ws_j, ["Enrollment ID", "Name", "Step", "Type", "Planned Date",
+                         "Status", "Completed Date", "Completed By", "Remarks"])
+    jr = 2
+    for e in sorted(enrollments, key=lambda x: x.enrollment_id or ""):
+        steps = sorted((e.journey or []), key=lambda s: s.get("order", 0))
+        for s in steps:
+            st = s.get("status")
+            pd = parse_dt(s.get("planned_date"))
+            display = st.title() if st else ""
+            if st == "pending" and pd and pd.date() < today:
+                display = "Overdue"
+            write_row(ws_j, jr, [
+                e.enrollment_id, e.subscriber_name or e.name, s.get("name"), s.get("step_type"),
+                pd, display, parse_dt(s.get("completed_date")), s.get("completed_by_name"), s.get("notes"),
+            ], date_cols={5, 7})
+            jr += 1
+    finalize(ws_j)
 
-    # Auto-adjust column widths
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        ws.column_dimensions[column].width = min(max_length + 2, 50)
+    # ===== Follow-ups =====
+    ws_f = wb.create_sheet("Follow-ups")
+    write_headers(ws_f, ["Enrollment ID", "Subscriber Name", "Follow-up #", "Date",
+                         "Connect Status", "Action Taken", "Feedback", "Remarks", "Created By"])
+    fr = 2
+    for e in enrollments:
+        for fu in (e.follow_ups or []):
+            write_row(ws_f, fr, [
+                e.enrollment_id, e.subscriber_name or e.name, fu.get("follow_up_number"),
+                parse_dt(fu.get("date") or fu.get("created_at")),
+                fu.get("connect_status"), fu.get("action_taken"), fu.get("feedback"),
+                fu.get("remarks"), fu.get("created_by_name"),
+            ], dt_cols={4})
+            fr += 1
+    finalize(ws_f, cap=60)
 
-    # Sheet 2: Follow-ups
-    ws_followups = wb.create_sheet("Follow-ups")
-    followup_headers = ["Enrollment ID", "Subscriber Name", "Follow-up #", "Date", "Connect Status", "Action Taken", "Feedback", "Remarks", "Created By"]
-
-    for col, header in enumerate(followup_headers, 1):
-        cell = ws_followups.cell(row=1, column=col, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_alignment
-        cell.border = thin_border
-
-    followup_row = 2
-    for enrollment in enrollments:
-        for followup in enrollment.follow_ups:
-            ws_followups.cell(row=followup_row, column=1, value=enrollment.enrollment_id).border = thin_border
-            ws_followups.cell(row=followup_row, column=2, value=enrollment.subscriber_name).border = thin_border
-            ws_followups.cell(row=followup_row, column=3, value=followup.get('follow_up_number', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=4, value=followup.get('date', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=5, value=followup.get('connect_status', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=6, value=followup.get('action_taken', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=7, value=followup.get('feedback', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=8, value=followup.get('remarks', '')).border = thin_border
-            ws_followups.cell(row=followup_row, column=9, value=followup.get('created_by_name', '')).border = thin_border
-            followup_row += 1
-
-    # Auto-adjust follow-ups sheet
-    for col in ws_followups.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        ws_followups.column_dimensions[column].width = min(max_length + 2, 50)
-
-    # Save to bytes
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-
-    filename = f"enrollments_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
+    filename = f"enrollments_mis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    logger.info(f"Enrollments MIS export by {current_user['email']}: {len(enrollments)} enrollments")
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
