@@ -29,6 +29,7 @@ from app.middleware.auth_middleware import get_current_user, get_current_admin, 
 from app.database import get_database
 from app.services.journey_service import build_journey_for_service
 from app.services.enrollment_helpers import reinstantiate_care_journey
+from app.models.journey_template import service_match_pattern
 from app.services.journey_ops import compute_care_triggers, stop_journey_steps
 from pydantic import BaseModel
 import logging
@@ -71,6 +72,7 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
         "id": str(enrollment.id),
         "enrollment_id": enrollment.enrollment_id,
         "linked_lead_id": enrollment.linked_lead_id,
+        "lead_source": getattr(enrollment, "lead_source", None),
 
         # Timestamps
         "created_at": enrollment.created_at,
@@ -761,11 +763,12 @@ async def get_enrollments(
             query["action_taken"] = {"$in": action_taken}
         if service_partner and len(service_partner) > 0:
             query["service_partner"] = {"$in": service_partner}
-        # Service enrolled (standardized field) - multi-select
+        # Service enrolled - multi-select; matches legacy variants too
+        # (e.g. "Antenatal" also matches "Tulip Antenatal").
         if service_enrolled and len(service_enrolled) > 0:
-            svc_alt = "|".join(re.escape(s.strip()) for s in service_enrolled if s and s.strip())
-            if svc_alt:
-                query["service_enrolled"] = {"$regex": f"^\\s*({svc_alt})\\s*$", "$options": "i"}
+            svc_pats = [service_match_pattern(s) for s in service_enrolled if s and s.strip()]
+            if svc_pats:
+                query["service_enrolled"] = {"$regex": "(" + "|".join(svc_pats) + ")", "$options": "i"}
         # Package (free text) - partial, case-insensitive match on package_name_enrolled
         if package and package.strip():
             query["package_name_enrolled"] = {"$regex": re.escape(package.strip()), "$options": "i"}

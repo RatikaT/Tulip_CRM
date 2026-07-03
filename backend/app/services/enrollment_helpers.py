@@ -61,6 +61,7 @@ async def create_enrollment_from_lead(
     enrollment = Enrollment(
         enrollment_id=enrollment_id,
         linked_lead_id=lead.lead_id,
+        lead_source=lead.lead_source,          # carry the source over from the lead
         subscriber_name=lead.name,
         employee_id=lead.employee_id or "",
         phone_number=lead.phone_number,

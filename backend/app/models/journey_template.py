@@ -79,6 +79,24 @@ def normalize_service(service) -> str:
     return raw
 
 
+def service_match_pattern(value) -> str:
+    """
+    Regex fragment for a Service filter value that also matches its legacy
+    variants (e.g. filtering "Antenatal" should match "Tulip Antenatal").
+    Standard services -> a distinctive keyword; unknown values -> exact match.
+    """
+    import re as _re
+    raw = _enum_value(value)
+    v = " ".join(raw.strip().lower().replace("-", " ").replace("_", " ").split())
+    if "antenatal" in v:
+        return "antenatal"
+    if "conception" in v:                 # pre-conception / preconception
+        return "conception"
+    if "wellness" in v or "maternity" in v:
+        return "wellness|maternity"
+    return f"^\\s*{_re.escape(raw.strip())}\\s*$"
+
+
 def make_outreach_key(status, service) -> str:
     """Build an outreach trigger_key: '<status>::<service>' or '<status>::GENERIC'."""
     st = _enum_value(status).strip()

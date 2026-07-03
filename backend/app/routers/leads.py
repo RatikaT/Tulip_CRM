@@ -33,6 +33,7 @@ from app.services.journey_ops import (
     add_adhoc_step,
     remove_step,
 )
+from app.models.journey_template import service_match_pattern
 from app.utils.lead_id import generate_lead_id
 from app.database import get_database
 import logging
@@ -606,9 +607,10 @@ async def get_leads(
     """
     # Build query
     query = {"is_deleted": False}
-    # Hide duplicate leads (pending/confirmed) from the Leads page; they live in
-    # the Duplicates page until the super admin clears them.
-    query["duplicate_status"] = {"$in": [None, "not_duplicate"]}
+    # NOTE: pending/confirmed duplicates are hidden from the Leads page — EXCEPT
+    # Enrolled leads, which stay visible (they've converted and also appear on
+    # Enrollments). Applied as an $and wrapper at the end so it composes with any
+    # query shape built below.
 
     # Agent restriction: only see leads assigned or reassigned to them
     if current_user["role"] == "agent":
@@ -634,9 +636,11 @@ async def get_leads(
         if pkg_alternation:
             query["package_requested"] = {"$regex": f"^\\s*({pkg_alternation})\\s*$", "$options": "i"}
     if service_requested and len(service_requested) > 0:
-        svc_alternation = "|".join(re.escape(s.strip()) for s in service_requested if s and s.strip())
-        if svc_alternation:
-            query["service_requested"] = {"$regex": f"^\\s*({svc_alternation})\\s*$", "$options": "i"}
+        # Match the selected service AND its legacy variants (e.g. "Antenatal"
+        # also matches "Tulip Antenatal") so filtering works on old data.
+        svc_pats = [service_match_pattern(s) for s in service_requested if s and s.strip()]
+        if svc_pats:
+            query["service_requested"] = {"$regex": "(" + "|".join(svc_pats) + ")", "$options": "i"}
 
     # Single value filters
     if city:
@@ -763,6 +767,13 @@ async def get_leads(
             {"assigned_date": {"$gte": a_start, "$lte": a_end}},
             {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
         ]}]}
+
+    # Duplicate visibility: hide pending/confirmed duplicates from Leads, but keep
+    # Enrolled leads visible regardless (they also live on Enrollments).
+    query = {"$and": [query, {"$or": [
+        {"duplicate_status": {"$in": [None, "not_duplicate"]}},
+        {"status": LeadStatus.ENROLLED.value},
+    ]}]}
 
     # Count total
     total = await Lead.find(query).count()

@@ -40,6 +40,7 @@ export interface Enrollment {
   id: string;
   enrollment_id: string;
   linked_lead_id: string | null;
+  lead_source?: string | null;
 
   // Timestamps
   created_at: string;

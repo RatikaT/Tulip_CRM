@@ -582,6 +582,17 @@ export default function EnrollmentDetailPage() {
           <AccordionDetails>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={4}>
+                <TextField
+                  fullWidth
+                  label="Source"
+                  value={enrollment?.lead_source || '—'}
+                  disabled
+                  size="small"
+                  InputProps={{ readOnly: true }}
+                  helperText="Carried over from the lead"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
                 {canEdit('hclhc_spoc') ? (
                   <Autocomplete
                     freeSolo

@@ -47,6 +47,9 @@ class Enrollment(Document):
     # Linked Lead (if auto-created from lead)
     linked_lead_id: Optional[str] = None
 
+    # Source carried over from the originating lead (lead.lead_source)
+    lead_source: Optional[str] = None
+
     # System timestamps (auto-managed)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

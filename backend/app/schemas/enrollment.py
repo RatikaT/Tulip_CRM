@@ -122,6 +122,7 @@ class EnrollmentResponse(BaseModel):
     id: str
     enrollment_id: str
     linked_lead_id: Optional[str] = None
+    lead_source: Optional[str] = None
 
     # Timestamps
     created_at: datetime
