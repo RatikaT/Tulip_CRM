@@ -47,6 +47,11 @@ class Enrollment(Document):
     # Linked Lead (if auto-created from lead)
     linked_lead_id: Optional[str] = None
 
+    # Groups all enrollments belonging to the same customer (one record per
+    # service). Set to the first enrollment's own enrollment_id when the first
+    # extra service is added; shared by every linked service thereafter.
+    customer_group_id: Optional[str] = None
+
     # Source carried over from the originating lead (lead.lead_source)
     lead_source: Optional[str] = None
 

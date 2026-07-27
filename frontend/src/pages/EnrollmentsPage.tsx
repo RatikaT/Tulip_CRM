@@ -60,11 +60,8 @@ import { enrollmentService } from '../services/enrollmentService';
 import {
   Enrollment,
   EnrollmentStatsResponse,
-  CONNECT_STATUS_OPTIONS,
-  ACTION_TAKEN_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
 } from '../types/enrollment.types';
+import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import EnrollmentViewModal from '../components/enrollments/EnrollmentViewModal';
 import EnrollmentCreateModal from '../components/enrollments/EnrollmentCreateModal';
 import BulkUploadModal from '../components/enrollments/BulkUploadModal';
@@ -156,6 +153,12 @@ const ExpandableCell = ({ value }: { value: string | null }) => {
 export default function EnrollmentsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+
+  // Dropdown filter options — live from admin-managed config (fallback to constants).
+  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
+  const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const isSuperAdmin = user?.role === 'super_admin';
   const canCreate = isAdmin || user?.role === 'agent'; // Agents can also create enrollments
@@ -1254,7 +1257,7 @@ export default function EnrollmentsPage() {
                 <Autocomplete
                   multiple
                   size="small"
-                  options={CONNECT_STATUS_OPTIONS}
+                  options={connectStatusOptions}
                   value={connectStatusFilter}
                   onChange={(_, newValue) => setConnectStatusFilter(newValue)}
                   renderInput={(params) => (
@@ -1268,7 +1271,7 @@ export default function EnrollmentsPage() {
                 <Autocomplete
                   multiple
                   size="small"
-                  options={ACTION_TAKEN_OPTIONS}
+                  options={actionTakenOptions}
                   value={actionTakenFilter}
                   onChange={(_, newValue) => setActionTakenFilter(newValue)}
                   renderInput={(params) => (
@@ -1282,7 +1285,7 @@ export default function EnrollmentsPage() {
                 <Autocomplete
                   multiple
                   size="small"
-                  options={SERVICE_PARTNER_OPTIONS}
+                  options={servicePartnerOptions}
                   value={servicePartnerFilter}
                   onChange={(_, newValue) => setServicePartnerFilter(newValue)}
                   renderInput={(params) => (
@@ -1297,7 +1300,7 @@ export default function EnrollmentsPage() {
                   multiple
                   freeSolo
                   size="small"
-                  options={SERVICE_ENROLLED_OPTIONS}
+                  options={serviceEnrolledOptions}
                   value={serviceEnrolledFilter}
                   onChange={(_, newValue) => setServiceEnrolledFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
                   renderInput={(params) => (

@@ -40,6 +40,7 @@ export interface Enrollment {
   id: string;
   enrollment_id: string;
   linked_lead_id: string | null;
+  customer_group_id?: string | null;
   lead_source?: string | null;
 
   // Timestamps
@@ -111,6 +112,42 @@ export interface Enrollment {
   // System
   created_by: string | null;
   created_by_name: string | null;
+}
+
+// Request to add an additional service to an already-enrolled customer.
+export interface AddServiceRequest {
+  billed_date: string;          // yyyy-MM-dd
+  package_billed: string;
+  service_enrolled: string;
+  hclhc_spoc: string;
+  trimester?: string;
+  package_name_enrolled?: string;
+  service_partner?: string;
+  partner_centre_selected?: string;
+  partner_gynaecologist?: string;
+  assigned_to?: string;
+  assigned_to_name?: string;
+}
+
+export interface CustomerServicesResponse {
+  customer_group_id: string;
+  count: number;
+  services: Enrollment[];
+}
+
+// One entry in the "Birthdays Today" reminder.
+export interface BirthdayItem {
+  enrollment_id: string;
+  name: string | null;
+  phone_number: string | null;
+  service_enrolled: string | null;
+  hclhc_spoc: string | null;
+}
+
+export interface BirthdaysTodayResponse {
+  date: string;
+  count: number;
+  birthdays: BirthdayItem[];
 }
 
 export interface EnrollmentListResponse {

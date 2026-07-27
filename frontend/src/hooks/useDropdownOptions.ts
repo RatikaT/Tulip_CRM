@@ -18,6 +18,7 @@ import {
 import {
   CONNECT_STATUS_OPTIONS,
   ACTION_TAKEN_OPTIONS,
+  SERVICE_ENROLLED_OPTIONS,
 } from '../types/enrollment.types';
 
 // Cache for dropdown configs to avoid repeated API calls
@@ -31,6 +32,7 @@ const FALLBACK_OPTIONS: Record<string, string[]> = {
   trimester: LEAD_TRIMESTER_OPTIONS,
   looking_for: LOOKING_FOR_OPTIONS,
   service_requested: LEAD_SERVICE_REQUESTED_OPTIONS,
+  service_enrolled: SERVICE_ENROLLED_OPTIONS,
   service_partner: LEAD_SERVICE_PARTNER_OPTIONS,
   reason_for_no_sale: REASON_FOR_NO_SALE_OPTIONS,
   package_options: LEAD_PACKAGE_OPTIONS,

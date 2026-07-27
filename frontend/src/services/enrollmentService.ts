@@ -8,6 +8,9 @@ import {
   FollowUpCreateRequest,
   BulkUploadResponse,
   EnrollmentAuditTrailResponse,
+  AddServiceRequest,
+  CustomerServicesResponse,
+  BirthdaysTodayResponse,
 } from '../types/enrollment.types';
 
 export interface EnrollmentQueryParams {
@@ -85,6 +88,25 @@ export const enrollmentService = {
 
   getAuditTrail: async (enrollmentId: string): Promise<EnrollmentAuditTrailResponse> => {
     const response = await api.get<EnrollmentAuditTrailResponse>(`/enrollments/${enrollmentId}/audit`);
+    return response.data;
+  },
+
+  // Add an additional service to an already-enrolled customer (creates a new
+  // linked enrollment sharing the customer_group_id).
+  addService: async (enrollmentId: string, data: AddServiceRequest): Promise<Enrollment> => {
+    const response = await api.post<Enrollment>(`/enrollments/${enrollmentId}/add-service`, data);
+    return response.data;
+  },
+
+  // All services (enrollments) belonging to the same customer.
+  getCustomerServices: async (enrollmentId: string): Promise<CustomerServicesResponse> => {
+    const response = await api.get<CustomerServicesResponse>(`/enrollments/${enrollmentId}/services`);
+    return response.data;
+  },
+
+  // Enrolled customers whose birthday is today (IST) — scoped per role on the server.
+  getBirthdaysToday: async (): Promise<BirthdaysTodayResponse> => {
+    const response = await api.get<BirthdaysTodayResponse>('/enrollments/birthdays-today');
     return response.data;
   },
 

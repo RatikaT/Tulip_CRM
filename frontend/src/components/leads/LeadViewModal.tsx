@@ -30,7 +30,8 @@ import { toast } from 'react-toastify';
 import { useAuthStore } from '../../stores/authStore';
 import { formatDateTimeIST, toISTForPicker, fromISTPickerToUTC } from '../../utils/dateUtils';
 import { leadService } from '../../services/leadService';
-import { Lead, LeadSource, Trimester, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TRIMESTER_OPTIONS, PACKAGE_OPTIONS } from '../../types/lead.types';
+import { Lead, LeadSource, Trimester } from '../../types/lead.types';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 interface LocalCallEntry {
   call_number: number;
@@ -63,6 +64,11 @@ function TabPanel(props: TabPanelProps) {
 export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadViewModalProps) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const { options: leadStatusOptions } = useDropdownOptions('lead_status');
+  const { options: leadSourceOptions } = useDropdownOptions('lead_source');
+  const { options: trimesterOptions } = useDropdownOptions('trimester');
+  const { options: packageOptions } = useDropdownOptions('package_options');
 
   const [tabValue, setTabValue] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -261,7 +267,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   value={formData.status}
                   onChange={(e) => handleFieldChange('status', e.target.value)}
                 >
-                  {LEAD_STATUS_OPTIONS.map((status) => (
+                  {leadStatusOptions.map((status) => (
                     <MenuItem key={status} value={status}>
                       {status}
                     </MenuItem>
@@ -408,7 +414,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   onChange={(e) => handleFieldChange('lead_source', e.target.value)}
                   disabled={false}
                 >
-                  {LEAD_SOURCE_OPTIONS.map((source) => (
+                  {leadSourceOptions.map((source) => (
                     <MenuItem key={source} value={source}>
                       {source}
                     </MenuItem>
@@ -426,7 +432,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   disabled={false}
                 >
                   <MenuItem value="">None</MenuItem>
-                  {TRIMESTER_OPTIONS.map((t: string) => (
+                  {trimesterOptions.map((t: string) => (
                     <MenuItem key={t} value={t}>
                       {t}
                     </MenuItem>
@@ -444,7 +450,7 @@ export default function LeadViewModal({ open, lead, onClose, onUpdate }: LeadVie
                   disabled={false}
                 >
                   <MenuItem value="">None</MenuItem>
-                  {PACKAGE_OPTIONS.map((pkg) => (
+                  {packageOptions.map((pkg) => (
                     <MenuItem key={pkg} value={pkg}>
                       {pkg}
                     </MenuItem>

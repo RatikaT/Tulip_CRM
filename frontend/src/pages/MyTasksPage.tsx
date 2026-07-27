@@ -40,6 +40,7 @@ import { MyTask } from '../types/task.types';
 import { formatShortDateIST } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
 import { brandColors } from '../theme';
+import BirthdaysTodayWidget from '../components/dashboard/BirthdaysTodayWidget';
 
 const CARD_SHADOW = '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)';
 
@@ -565,6 +566,11 @@ export default function MyTasksPage() {
         <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => load()} disabled={loading}>
           Refresh
         </Button>
+      </Box>
+
+      {/* Birthdays Today — internal reminder to wish enrolled customers */}
+      <Box sx={{ mb: 2.5 }}>
+        <BirthdaysTodayWidget />
       </Box>
 
       {/* KPI strip */}

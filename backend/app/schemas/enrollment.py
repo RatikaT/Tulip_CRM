@@ -88,6 +88,29 @@ class EnrollmentCreateRequest(BaseModel):
         return self
 
 
+class AddServiceRequest(BaseModel):
+    """
+    Request to add an additional service to an already-enrolled customer.
+    Creates a NEW linked enrollment. billed_date, package_billed,
+    service_enrolled and hclhc_spoc are mandatory (mirrors Create Enrollment /
+    convert-to-Enrolled); the rest are optional service details.
+    """
+    # Mandatory
+    billed_date: Optional[date] = None
+    package_billed: Optional[str] = None
+    service_enrolled: Optional[str] = None
+    hclhc_spoc: Optional[str] = None
+
+    # Optional service details
+    trimester: Optional[Trimester] = None
+    package_name_enrolled: Optional[str] = None
+    service_partner: Optional[str] = None
+    partner_centre_selected: Optional[str] = None
+    partner_gynaecologist: Optional[str] = None
+    assigned_to: Optional[str] = None
+    assigned_to_name: Optional[str] = None
+
+
 class EnrollmentUpdateRequest(BaseModel):
     """Enrollment update request schema"""
     # All fields optional for partial updates
@@ -125,6 +148,7 @@ class EnrollmentResponse(BaseModel):
     id: str
     enrollment_id: str
     linked_lead_id: Optional[str] = None
+    customer_group_id: Optional[str] = None
     lead_source: Optional[str] = None
 
     # Timestamps

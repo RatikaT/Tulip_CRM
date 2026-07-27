@@ -17,7 +17,8 @@ from app.schemas.enrollment import (
     EnrollmentListResponse,
     EnrollmentStatsResponse,
     FollowUpCreateRequest,
-    BulkUploadResponse
+    BulkUploadResponse,
+    AddServiceRequest,
 )
 from app.models.enrollment import Enrollment, ConnectStatus, ActionTaken
 from app.models.lead import Trimester, ServicePartner, ServiceEnrolled, Lead, LeadStatus
@@ -78,6 +79,7 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
         "id": str(enrollment.id),
         "enrollment_id": enrollment.enrollment_id,
         "linked_lead_id": enrollment.linked_lead_id,
+        "customer_group_id": getattr(enrollment, "customer_group_id", None),
         "lead_source": getattr(enrollment, "lead_source", None),
 
         # Timestamps
@@ -1132,6 +1134,72 @@ async def backfill_hclhc_spoc(current_user: dict = Depends(get_current_super_adm
     }
 
 
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _birthday_matches(dob, today: date) -> bool:
+    """True if `dob` (a date/datetime) has its birthday on `today`. Feb 29
+    birthdays match Feb 28 in non-leap years."""
+    if not dob:
+        return False
+    if dob.month == today.month and dob.day == today.day:
+        return True
+    if (dob.month == 2 and dob.day == 29
+            and today.month == 2 and today.day == 28
+            and not _is_leap_year(today.year)):
+        return True
+    return False
+
+
+@router.get("/birthdays-today")
+async def get_birthdays_today(current_user: dict = Depends(get_current_user)):
+    """
+    Enrolled customers whose birthday is today (IST) — an internal reminder for
+    staff to wish them. Does NOT message customers.
+
+    - Feb 29 birthdays are matched on Feb 28 in non-leap years.
+    - Agents see only customers where they are the hclhc_spoc; admin/super-admin
+      see all.
+    - Deduped to one entry per customer via customer_group_id (fallback:
+      name+phone+uhid identity) so a customer with multiple services appears once.
+    """
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+    today_ist = (datetime.utcnow() + IST_OFFSET).date()
+
+    query: dict = {"is_deleted": False, "dob": {"$ne": None}}
+    if current_user.get("role") == "agent":
+        spoc_name = current_user.get("full_name", "") or ""
+        query["hclhc_spoc"] = {"$regex": f"^{re.escape(spoc_name)}$", "$options": "i"}
+
+    candidates = await Enrollment.find(query).to_list()
+
+    seen = set()
+    birthdays = []
+    for e in candidates:
+        if not _birthday_matches(e.dob, today_ist):
+            continue
+
+        if e.customer_group_id:
+            key = f"grp:{e.customer_group_id}"
+        else:
+            ident_name = (e.name or e.subscriber_name or "").strip().lower()
+            key = f"id:{ident_name}|{e.phone_number or ''}|{e.uhid or ''}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        birthdays.append({
+            "enrollment_id": e.enrollment_id,
+            "name": e.name or e.subscriber_name,
+            "phone_number": e.phone_number,
+            "service_enrolled": e.service_enrolled,
+            "hclhc_spoc": e.hclhc_spoc,
+        })
+
+    return {"date": today_ist.isoformat(), "count": len(birthdays), "birthdays": birthdays}
+
+
 @router.get("/{enrollment_id}", response_model=EnrollmentResponse)
 async def get_enrollment(
     enrollment_id: str,
@@ -1491,6 +1559,150 @@ async def _get_enrollment_or_404(enrollment_id: str) -> Enrollment:
             detail="Enrollment not found"
         )
     return enrollment
+
+
+@router.post("/{enrollment_id}/add-service", response_model=EnrollmentResponse)
+async def add_service_to_enrollment(
+    enrollment_id: str,
+    body: AddServiceRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Add an additional service to an already-enrolled customer. Creates a NEW
+    linked Enrollment (not a nested array), copying identity fields from the
+    source and grouping both under a shared customer_group_id. Repeats of the
+    same service are allowed (no uniqueness restriction). Available to all roles.
+    """
+    source = await _get_enrollment_or_404(enrollment_id)
+
+    # Mandatory-field validation (mirrors Create Enrollment / convert-to-Enrolled)
+    missing = []
+    if not body.billed_date:
+        missing.append("Billed Date")
+    if not (body.package_billed or "").strip():
+        missing.append("Package Billed")
+    if not (body.service_enrolled or "").strip():
+        missing.append("Service Enrolled")
+    if not (body.hclhc_spoc or "").strip():
+        missing.append("HCLHC SPOC")
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} required",
+        )
+
+    # Ensure the source anchors a customer group (backfill legacy records lazily).
+    if not source.customer_group_id:
+        source.customer_group_id = source.enrollment_id
+        source.updated_at = datetime.utcnow()
+        await source.save()
+    group_id = source.customer_group_id
+
+    # Resolve SPOC -> assignment, matching create_enrollment's behaviour.
+    hclhc_spoc = body.hclhc_spoc.strip()
+    assigned_to = body.assigned_to or current_user["user_id"]
+    assigned_to_name = body.assigned_to_name or hclhc_spoc
+    spoc_user = await User.find_one(
+        {"full_name": {"$regex": f"^{re.escape(hclhc_spoc)}$", "$options": "i"}}
+    )
+    if spoc_user:
+        assigned_to = str(spoc_user.id)
+        assigned_to_name = spoc_user.full_name
+
+    trimester_value = body.trimester
+
+    new_enrollment = Enrollment(
+        enrollment_id=await generate_enrollment_id(),
+        customer_group_id=group_id,
+        # Identity copied from the source enrollment.
+        name=source.name,
+        subscriber_name=source.subscriber_name,
+        phone_number=source.phone_number,
+        email=source.email,
+        uhid=source.uhid,
+        employee_id=source.employee_id,
+        dob=source.dob,
+        address=source.address,
+        linked_lead_id=source.linked_lead_id,
+        lead_source=source.lead_source,
+        # Service-specific fields from the request.
+        billed_date=body.billed_date,
+        package_billed=body.package_billed.strip(),
+        service_enrolled=body.service_enrolled.strip(),
+        hclhc_spoc=hclhc_spoc,
+        trimester=trimester_value,
+        package_name_enrolled=body.package_name_enrolled,
+        service_partner=body.service_partner or None,
+        partner_centre_selected=body.partner_centre_selected,
+        partner_gynaecologist=body.partner_gynaecologist,
+        connect_status=ConnectStatus.CONNECTED,
+        created_by=current_user["user_id"],
+        created_by_name=current_user.get("full_name", current_user["email"]),
+        assigned_to=assigned_to,
+        assigned_to_name=assigned_to_name,
+        assigned_date=datetime.utcnow(),
+    )
+
+    # Instantiate the care journey for the chosen service (same engine used at
+    # enrollment time). Pass trimester so an Antenatal loop materializes at once.
+    trimester_ctx = trimester_value.value if hasattr(trimester_value, "value") else trimester_value
+    new_enrollment.journey = await build_journey_for_service(
+        new_enrollment.service_enrolled,
+        new_enrollment.created_at,
+        ctx={"trimester": trimester_ctx} if trimester_ctx else None,
+        do_not_contact=False,
+    )
+
+    await new_enrollment.insert()
+
+    audit = EnrollmentAuditLog(
+        enrollment_id=new_enrollment.enrollment_id,
+        user_id=current_user["user_id"],
+        user_email=current_user["email"],
+        user_name=current_user.get("full_name", current_user["email"]),
+        action=EnrollmentAuditAction.CREATED,
+        changes=[{
+            "field": "service_added",
+            "old_value": None,
+            "new_value": new_enrollment.service_enrolled,
+        }],
+    )
+    await audit.insert()
+
+    logger.info(
+        "add-service: %s -> new %s (service=%r, group=%s) by %s",
+        enrollment_id, new_enrollment.enrollment_id,
+        new_enrollment.service_enrolled, group_id, current_user["email"],
+    )
+    return enrollment_to_response(new_enrollment)
+
+
+@router.get("/{enrollment_id}/services")
+async def get_customer_services(
+    enrollment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List all non-deleted enrollments (services) belonging to the same customer as
+    the given enrollment, sorted by created_at. Falls back to just the source
+    enrollment for legacy records that were never grouped.
+    """
+    source = await _get_enrollment_or_404(enrollment_id)
+    group_id = source.customer_group_id or source.enrollment_id
+
+    services = await Enrollment.find(
+        Enrollment.customer_group_id == group_id,
+        Enrollment.is_deleted == False,
+    ).sort("+created_at").to_list()
+
+    if not services:
+        services = [source]
+
+    return {
+        "customer_group_id": group_id,
+        "count": len(services),
+        "services": [enrollment_to_response(e) for e in services],
+    }
 
 
 @router.post("/{enrollment_id}/journey/instantiate")

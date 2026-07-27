@@ -42,14 +42,9 @@ import api from '../../services/api';
 import {
   Enrollment,
   FollowUpEntry,
-  CONNECT_STATUS_OPTIONS,
-  ACTION_TAKEN_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  TRIMESTER_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
-  PACKAGE_OPTIONS,
 } from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 
 interface UserOption {
   id: string;
@@ -90,6 +85,13 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
     !!enrollment.hclhc_spoc &&
     enrollment.hclhc_spoc.trim().toLowerCase() === (user?.full_name || '').trim().toLowerCase();
   const canEdit = isAdmin || isFollowUpSpoc;
+
+  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
+  const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { options: trimesterOptions } = useDropdownOptions('trimester');
+  const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
+  const { options: packageOptions } = useDropdownOptions('package_options');
 
   const [tabValue, setTabValue] = useState(0);
   const [editMode, setEditMode] = useState(false);
@@ -379,7 +381,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <TextField {...field} fullWidth select label="Trimester" size="small">
                           <MenuItem value="">None</MenuItem>
-                          {TRIMESTER_OPTIONS.map((t) => (
+                          {trimesterOptions.map((t) => (
                             <MenuItem key={t} value={t}>{t}</MenuItem>
                           ))}
                         </TextField>
@@ -393,7 +395,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <Autocomplete
                           freeSolo
-                          options={SERVICE_ENROLLED_OPTIONS}
+                          options={serviceEnrolledOptions}
                           value={field.value || ''}
                           onChange={(_, newValue) => field.onChange(newValue || '')}
                           onInputChange={(_, newInputValue) => field.onChange(newInputValue || '')}
@@ -411,7 +413,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <TextField {...field} fullWidth select label="Package Name Enrolled" size="small">
                           <MenuItem value="">None</MenuItem>
-                          {PACKAGE_OPTIONS.map((pkg) => (
+                          {packageOptions.map((pkg) => (
                             <MenuItem key={pkg} value={pkg}>{pkg}</MenuItem>
                           ))}
                         </TextField>
@@ -425,7 +427,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <TextField {...field} fullWidth select label="Service Partner" size="small">
                           <MenuItem value="">None</MenuItem>
-                          {SERVICE_PARTNER_OPTIONS.map((p) => (
+                          {servicePartnerOptions.map((p) => (
                             <MenuItem key={p} value={p}>{p}</MenuItem>
                           ))}
                         </TextField>
@@ -474,7 +476,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <TextField {...field} fullWidth select label="Connect Status" size="small">
                           <MenuItem value="">None</MenuItem>
-                          {CONNECT_STATUS_OPTIONS.map((s) => (
+                          {connectStatusOptions.map((s) => (
                             <MenuItem key={s} value={s}>{s}</MenuItem>
                           ))}
                         </TextField>
@@ -488,7 +490,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       render={({ field }) => (
                         <TextField {...field} fullWidth select label="Action Taken" size="small">
                           <MenuItem value="">None</MenuItem>
-                          {ACTION_TAKEN_OPTIONS.map((a) => (
+                          {actionTakenOptions.map((a) => (
                             <MenuItem key={a} value={a}>{a}</MenuItem>
                           ))}
                         </TextField>
@@ -634,7 +636,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                         onChange={(e) => setNewFollowUp({ ...newFollowUp, connect_status: e.target.value })}
                       >
                         <MenuItem value="">None</MenuItem>
-                        {CONNECT_STATUS_OPTIONS.map((s) => (
+                        {connectStatusOptions.map((s) => (
                           <MenuItem key={s} value={s}>{s}</MenuItem>
                         ))}
                       </TextField>
@@ -649,7 +651,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                         onChange={(e) => setNewFollowUp({ ...newFollowUp, action_taken: e.target.value })}
                       >
                         <MenuItem value="">None</MenuItem>
-                        {ACTION_TAKEN_OPTIONS.map((a) => (
+                        {actionTakenOptions.map((a) => (
                           <MenuItem key={a} value={a}>{a}</MenuItem>
                         ))}
                       </TextField>

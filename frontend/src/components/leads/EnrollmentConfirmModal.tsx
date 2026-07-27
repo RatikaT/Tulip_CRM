@@ -24,15 +24,8 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { Lead } from '../../types/lead.types';
-import {
-  CONNECT_STATUS_OPTIONS,
-  ACTION_TAKEN_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  TRIMESTER_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
-  PACKAGE_OPTIONS,
-} from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS, LeadUpdateRequest } from '../../types/lead.types';
+import { useDropdownOptions } from '../../hooks/useDropdownOptions';
 import api from '../../services/api';
 
 interface UserOption {
@@ -91,6 +84,13 @@ export default function EnrollmentConfirmModal({
   onConfirm,
   saving = false,
 }: EnrollmentConfirmModalProps) {
+  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
+  const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { options: trimesterOptions } = useDropdownOptions('trimester');
+  const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
+  const { options: packageOptions } = useDropdownOptions('package_options');
+
   const [formData, setFormData] = useState<EnrollmentPreviewData>({
     subscriber_name: '',
     employee_id: '',
@@ -457,7 +457,7 @@ export default function EnrollmentConfirmModal({
                 helperText={errors.trimester ? 'Required' : undefined}
               >
                 <MenuItem value="">None</MenuItem>
-                {TRIMESTER_OPTIONS.map((t) => (
+                {trimesterOptions.map((t) => (
                   <MenuItem key={t} value={t}>
                     {t}
                   </MenuItem>
@@ -478,7 +478,7 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <Autocomplete
                 freeSolo
-                options={SERVICE_ENROLLED_OPTIONS}
+                options={serviceEnrolledOptions}
                 value={formData.service_enrolled || ''}
                 onChange={(_, newValue) => handleChange('service_enrolled', newValue || '')}
                 onInputChange={(_, newInputValue) =>
@@ -508,7 +508,7 @@ export default function EnrollmentConfirmModal({
                 size="small"
               >
                 <MenuItem value="">None</MenuItem>
-                {PACKAGE_OPTIONS.map((pkg) => (
+                {packageOptions.map((pkg) => (
                   <MenuItem key={pkg} value={pkg}>
                     {pkg}
                   </MenuItem>
@@ -532,7 +532,7 @@ export default function EnrollmentConfirmModal({
                 helperText={errors.service_partner ? 'Required' : undefined}
               >
                 <MenuItem value="">None</MenuItem>
-                {SERVICE_PARTNER_OPTIONS.map((p) => (
+                {servicePartnerOptions.map((p) => (
                   <MenuItem key={p} value={p}>
                     {p}
                   </MenuItem>
@@ -586,7 +586,7 @@ export default function EnrollmentConfirmModal({
                 size="small"
               >
                 <MenuItem value="">None</MenuItem>
-                {CONNECT_STATUS_OPTIONS.map((s) => (
+                {connectStatusOptions.map((s) => (
                   <MenuItem key={s} value={s}>
                     {s}
                   </MenuItem>
@@ -604,7 +604,7 @@ export default function EnrollmentConfirmModal({
                 size="small"
               >
                 <MenuItem value="">None</MenuItem>
-                {ACTION_TAKEN_OPTIONS.map((a) => (
+                {actionTakenOptions.map((a) => (
                   <MenuItem key={a} value={a}>
                     {a}
                   </MenuItem>

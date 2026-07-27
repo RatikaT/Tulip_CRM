@@ -46,6 +46,7 @@ import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
+import BirthdaysTodayWidget from '../components/dashboard/BirthdaysTodayWidget';
 
 interface DashboardMetrics {
   total_leads: number;
@@ -354,6 +355,11 @@ Keep it concise - this is for a dashboard quick view.`;
             {refreshing ? <CircularProgress size={24} /> : <RefreshIcon />}
           </IconButton>
         </Tooltip>
+      </Box>
+
+      {/* Birthdays Today — internal reminder to wish enrolled customers */}
+      <Box sx={{ mb: 3 }}>
+        <BirthdaysTodayWidget />
       </Box>
 
       {/* Agent View: 4 Enrollment Stats Cards */}

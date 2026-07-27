@@ -33,6 +33,7 @@ import { startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import CareJourneyPanel from '../components/enrollments/CareJourneyPanel';
+import CustomerServicesSection from '../components/enrollments/CustomerServicesSection';
 import { toISTForPicker, fromISTPickerToUTC, formatDateIST, formatFullDateTimeIST } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
 import {
@@ -40,16 +41,11 @@ import {
   EnrollmentUpdateRequest,
   FollowUpEntry,
   EnrollmentAuditLogEntry,
-  CONNECT_STATUS_OPTIONS,
-  ACTION_TAKEN_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  TRIMESTER_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
-  PACKAGE_OPTIONS,
   ConnectStatus,
   ActionTaken,
 } from '../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../types/lead.types';
+import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import { brandColors } from '../theme';
 import api from '../services/api';
 
@@ -106,6 +102,13 @@ export default function EnrollmentDetailPage() {
   const backTarget = (location.state as { from?: string } | null)?.from || '/tulip/enrollments';
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
+  const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { options: trimesterOptions } = useDropdownOptions('trimester');
+  const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
+  const { options: packageOptions } = useDropdownOptions('package_options');
 
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   // SPOC-based edit flag for the Care Journey tab (mirrors EnrollmentViewModal).
@@ -403,7 +406,7 @@ export default function EnrollmentDetailPage() {
                     sx={{ minWidth: 180 }}
                   >
                     <MenuItem value="">Select Status</MenuItem>
-                    {CONNECT_STATUS_OPTIONS.map((option) => (
+                    {connectStatusOptions.map((option) => (
                       <MenuItem key={option} value={option}>
                         {option}
                       </MenuItem>
@@ -567,6 +570,16 @@ export default function EnrollmentDetailPage() {
                 />
               </Grid>
             </Grid>
+
+            <Divider sx={{ my: 2 }} />
+
+            {/* Additional services for this customer (each is a linked enrollment) */}
+            {enrollmentId && (
+              <CustomerServicesSection
+                enrollmentId={enrollmentId}
+                currentSpoc={enrollment.hclhc_spoc}
+              />
+            )}
           </AccordionDetails>
         </Accordion>
 
@@ -662,7 +675,7 @@ export default function EnrollmentDetailPage() {
                   size="small"
                 >
                   <MenuItem value="">Select Trimester</MenuItem>
-                  {TRIMESTER_OPTIONS.map((option) => (
+                  {trimesterOptions.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
                     </MenuItem>
@@ -672,7 +685,7 @@ export default function EnrollmentDetailPage() {
               <Grid item xs={12} sm={6} md={4}>
                 <Autocomplete
                   freeSolo
-                  options={SERVICE_ENROLLED_OPTIONS}
+                  options={serviceEnrolledOptions}
                   inputValue={formData.service_enrolled || ''}
                   disabled={!canEdit('service_enrolled')}
                   onInputChange={(_, newInputValue) =>
@@ -694,7 +707,7 @@ export default function EnrollmentDetailPage() {
                   size="small"
                 >
                   <MenuItem value="">Select Package</MenuItem>
-                  {PACKAGE_OPTIONS.map((option) => (
+                  {packageOptions.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
                     </MenuItem>
@@ -712,7 +725,7 @@ export default function EnrollmentDetailPage() {
                   size="small"
                 >
                   <MenuItem value="">Select Partner</MenuItem>
-                  {SERVICE_PARTNER_OPTIONS.map((option) => (
+                  {servicePartnerOptions.map((option) => (
                     <MenuItem key={option} value={option}>
                       {option}
                     </MenuItem>
@@ -810,7 +823,7 @@ export default function EnrollmentDetailPage() {
                       size="small"
                     >
                       <MenuItem value="">Select Status</MenuItem>
-                      {CONNECT_STATUS_OPTIONS.map((option) => (
+                      {connectStatusOptions.map((option) => (
                         <MenuItem key={option} value={option}>
                           {option}
                         </MenuItem>
@@ -829,7 +842,7 @@ export default function EnrollmentDetailPage() {
                       size="small"
                     >
                       <MenuItem value="">Select Action</MenuItem>
-                      {ACTION_TAKEN_OPTIONS.map((option) => (
+                      {actionTakenOptions.map((option) => (
                         <MenuItem key={option} value={option}>
                           {option}
                         </MenuItem>

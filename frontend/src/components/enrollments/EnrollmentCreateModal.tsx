@@ -26,14 +26,6 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { enrollmentService } from '../../services/enrollmentService';
 import api from '../../services/api';
-import {
-  CONNECT_STATUS_OPTIONS,
-  ACTION_TAKEN_OPTIONS,
-  SERVICE_PARTNER_OPTIONS,
-  TRIMESTER_OPTIONS,
-  SERVICE_ENROLLED_OPTIONS,
-  PACKAGE_OPTIONS,
-} from '../../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
 import { useFieldConfig } from '../../hooks/useFieldConfig';
 import { useDropdownOptions } from '../../hooks/useDropdownOptions';
@@ -104,6 +96,12 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
   const fc = useFieldConfig('enrollment');
   const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
+  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
+  const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { options: trimesterOptions } = useDropdownOptions('trimester');
+  const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
+  const { options: packageOptions } = useDropdownOptions('package_options');
 
   const {
     register,
@@ -465,7 +463,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                       helperText={errors.trimester?.message}
                     >
                       <MenuItem value="">None</MenuItem>
-                      {TRIMESTER_OPTIONS.map((t) => (
+                      {trimesterOptions.map((t) => (
                         <MenuItem key={t} value={t}>
                           {t}
                         </MenuItem>
@@ -482,7 +480,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   render={({ field }) => (
                     <Autocomplete
                       freeSolo
-                      options={SERVICE_ENROLLED_OPTIONS}
+                      options={serviceEnrolledOptions}
                       value={field.value || ''}
                       onChange={(_, newValue) => field.onChange(newValue || '')}
                       onInputChange={(_, newInputValue) => field.onChange(newInputValue || '')}
@@ -508,7 +506,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   render={({ field }) => (
                     <TextField {...field} fullWidth select label="Package Name Enrolled">
                       <MenuItem value="">None</MenuItem>
-                      {PACKAGE_OPTIONS.map((pkg) => (
+                      {packageOptions.map((pkg) => (
                         <MenuItem key={pkg} value={pkg}>
                           {pkg}
                         </MenuItem>
@@ -564,7 +562,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                       helperText={errors.service_partner?.message}
                     >
                       <MenuItem value="">None</MenuItem>
-                      {SERVICE_PARTNER_OPTIONS.map((p) => (
+                      {servicePartnerOptions.map((p) => (
                         <MenuItem key={p} value={p}>
                           {p}
                         </MenuItem>
@@ -643,7 +641,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   render={({ field }) => (
                     <TextField {...field} fullWidth select label="Connect Status">
                       <MenuItem value="">None</MenuItem>
-                      {CONNECT_STATUS_OPTIONS.map((s) => (
+                      {connectStatusOptions.map((s) => (
                         <MenuItem key={s} value={s}>
                           {s}
                         </MenuItem>
@@ -660,7 +658,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                   render={({ field }) => (
                     <TextField {...field} fullWidth select label="Action Taken">
                       <MenuItem value="">None</MenuItem>
-                      {ACTION_TAKEN_OPTIONS.map((a) => (
+                      {actionTakenOptions.map((a) => (
                         <MenuItem key={a} value={a}>
                           {a}
                         </MenuItem>

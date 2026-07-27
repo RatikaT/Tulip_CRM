@@ -53,7 +53,8 @@ import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { formatShortDateIST } from '../utils/dateUtils';
 import { leadService } from '../services/leadService';
-import { Lead, LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SERVICE_REQUESTED_OPTIONS } from '../types/lead.types';
+import { Lead } from '../types/lead.types';
+import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
 import api from '../services/api';
 import { brandColors } from '../theme';
@@ -151,6 +152,11 @@ const ExpandableCell = ({ value }: { value: string | null }) => {
 export default function LeadsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+
+  // Dropdown filter options — live from admin-managed config (fallback to constants).
+  const { options: leadSourceOptions } = useDropdownOptions('lead_source');
+  const { options: leadStatusOptions } = useDropdownOptions('lead_status');
+  const { options: serviceRequestedOptions } = useDropdownOptions('service_requested');
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -1134,7 +1140,7 @@ export default function LeadsPage() {
                 <Autocomplete
                   multiple
                   size="small"
-                  options={LEAD_SOURCE_OPTIONS}
+                  options={leadSourceOptions}
                   value={sourceFilter}
                   onChange={(_, newValue) => setSourceFilter(newValue)}
                   renderInput={(params) => (
@@ -1158,7 +1164,7 @@ export default function LeadsPage() {
                 <Autocomplete
                   multiple
                   size="small"
-                  options={LEAD_STATUS_OPTIONS}
+                  options={leadStatusOptions}
                   value={statusFilter}
                   onChange={(_, newValue) => setStatusFilter(newValue)}
                   renderInput={(params) => (
@@ -1233,7 +1239,7 @@ export default function LeadsPage() {
                   multiple
                   freeSolo
                   size="small"
-                  options={SERVICE_REQUESTED_OPTIONS}
+                  options={serviceRequestedOptions}
                   value={serviceRequestedFilter}
                   onChange={(_, newValue) => setServiceRequestedFilter(newValue.map(v => String(v).trim()).filter(Boolean))}
                   renderInput={(params) => (
