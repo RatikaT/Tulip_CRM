@@ -34,7 +34,7 @@ import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import CareJourneyPanel from '../components/enrollments/CareJourneyPanel';
 import CustomerServicesSection from '../components/enrollments/CustomerServicesSection';
-import { toISTForPicker, fromISTPickerToUTC, formatDateIST, formatFullDateTimeIST } from '../utils/dateUtils';
+import { toISTForPicker, fromISTPickerToUTC, formatDateIST, formatFullDateTimeIST, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
 import {
   Enrollment,
@@ -260,9 +260,8 @@ export default function EnrollmentDetailPage() {
 
     // Validate next follow-up date is not in the past
     if (newFollowUp.follow_up_date) {
-      const selectedDate = startOfDay(new Date(newFollowUp.follow_up_date));
-      const today = startOfDay(new Date());
-      if (selectedDate < today) {
+      const selectedDate = istDateKey(newFollowUp.follow_up_date);
+      if (selectedDate && selectedDate < todayISTKey()) {
         toast.error('Cannot select a past date for follow-up');
         return;
       }
@@ -295,9 +294,8 @@ export default function EnrollmentDetailPage() {
   // Check if a follow-up date is in the past
   const isFollowUpPast = (dateStr: string | null | undefined): boolean => {
     if (!dateStr) return false;
-    const followUpDate = startOfDay(new Date(dateStr));
-    const today = startOfDay(new Date());
-    return followUpDate < today;
+    const followUpDate = istDateKey(dateStr);
+    return !!followUpDate && followUpDate < todayISTKey();
   };
 
   // Permission-based field editing

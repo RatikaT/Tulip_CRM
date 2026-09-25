@@ -3,6 +3,7 @@ LeadID Generator
 Format: Tulip_DDMMYYYY_XXX (sequential per day)
 """
 from datetime import datetime
+from app.utils.ist import now_ist
 from app.config import settings
 
 
@@ -16,7 +17,7 @@ async def generate_lead_id(db) -> str:
     - Tulip_25122025_001 (First lead on Dec 25, 2025)
     """
     # Get current date in DDMMYYYY format
-    date_str = datetime.now().strftime('%d%m%Y')
+    date_str = now_ist().strftime('%d%m%Y')
     prefix = f"{settings.LEAD_ID_PREFIX}_{date_str}"
 
     # Count existing leads for today

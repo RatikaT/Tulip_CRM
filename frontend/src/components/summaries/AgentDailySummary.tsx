@@ -36,7 +36,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import FiberNewIcon from '@mui/icons-material/FiberNew';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
+import { formatToIST } from '../../utils/dateUtils';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
@@ -285,7 +286,7 @@ Generate a brief (3-5 bullet points) professional summary including:
   const formatTimestamp = (timestamp?: string) => {
     if (!timestamp) return '-';
     try {
-      return format(parseISO(timestamp), 'HH:mm');
+      return formatToIST(timestamp, 'HH:mm');
     } catch {
       return timestamp;
     }

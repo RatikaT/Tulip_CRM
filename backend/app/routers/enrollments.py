@@ -27,6 +27,7 @@ from app.models.audit_log import AuditLog, AuditAction
 from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditAction
 from app.models.user import User
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
+from app.utils.ist import now_ist, today_ist, ist_date, ist_day_start_utc, ist_range_utc
 from app.database import get_database
 from app.services.journey_service import build_journey_for_service
 from app.services.enrollment_helpers import reinstantiate_care_journey
@@ -50,8 +51,8 @@ router = APIRouter()
 
 
 async def generate_enrollment_id() -> str:
-    """Generate unique enrollment ID: ENR_DDMMYYYY_XXX"""
-    today = datetime.now()
+    """Generate unique enrollment ID: ENR_DDMMYYYY_XXX (IST date)"""
+    today = now_ist()
     date_str = today.strftime("%d%m%Y")
     prefix = f"ENR_{date_str}_"
 
@@ -162,12 +163,12 @@ async def get_enrollment_stats(
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollment statistics by partner and status"""
-    # MongoDB stores all dates in UTC
-    # Server runs in IST (UTC+5:30), so we need to convert IST date boundaries to UTC
+    # MongoDB stores all dates in UTC and the server (Render) runs in UTC,
+    # so "today" must come from the shared IST helper, not date.today().
     # IST midnight = UTC previous day 18:30
     IST_OFFSET = timedelta(hours=5, minutes=30)
 
-    today = date.today()  # Local date (IST)
+    today = today_ist()
     # IST midnight today (00:00:00 IST) = UTC yesterday 18:30:00
     today_start_ist = datetime.combine(today, datetime.min.time())
     today_start_utc = today_start_ist - IST_OFFSET
@@ -597,9 +598,9 @@ async def export_enrollments_excel(
             if s.get("status") == "pending":
                 d = parse_dt(s.get("planned_date"))
                 if d:
-                    if d.date() == today:
+                    if ist_date(d) == today:
                         due_today += 1
-                    elif d.date() < today:
+                    elif ist_date(d) < today:
                         overdue_total += 1
 
     wb = Workbook()
@@ -683,7 +684,7 @@ async def export_enrollments_excel(
             st = s.get("status")
             pd = parse_dt(s.get("planned_date"))
             display = st.title() if st else ""
-            if st == "pending" and pd and pd.date() < today:
+            if st == "pending" and pd and ist_date(pd) < today:
                 display = "Overdue"
             write_row(ws_j, jr, [
                 e.enrollment_id, e.subscriber_name or e.name, s.get("name"), s.get("step_type"),
@@ -711,7 +712,7 @@ async def export_enrollments_excel(
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    filename = f"enrollments_mis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"enrollments_mis_{now_ist().strftime('%Y%m%d_%H%M%S')}.xlsx"
     logger.info(f"Enrollments MIS export by {current_user['email']}: {len(enrollments)} enrollments")
     return StreamingResponse(
         output,
@@ -795,13 +796,13 @@ async def get_enrollments(
             if created_date_from:
                 try:
                     from_date = datetime.strptime(created_date_from, "%Y-%m-%d").date()
-                    created_at_filter["$gte"] = datetime.combine(from_date, datetime.min.time())
+                    created_at_filter["$gte"] = ist_day_start_utc(from_date)
                 except ValueError:
                     pass
             if created_date_to:
                 try:
                     to_date = datetime.strptime(created_date_to, "%Y-%m-%d").date()
-                    created_at_filter["$lte"] = datetime.combine(to_date, datetime.max.time())
+                    created_at_filter["$lt"] = ist_day_start_utc(to_date) + timedelta(days=1)
                 except ValueError:
                     pass
             if created_at_filter:
@@ -810,9 +811,8 @@ async def get_enrollments(
         if next_follow_up_date:
             try:
                 filter_date = datetime.strptime(next_follow_up_date, "%Y-%m-%d").date()
-                day_start = datetime.combine(filter_date, datetime.min.time())
-                day_end = datetime.combine(filter_date, datetime.max.time())
-                query["next_follow_up_date"] = {"$gte": day_start, "$lte": day_end}
+                day_start, day_end = ist_range_utc(filter_date)
+                query["next_follow_up_date"] = {"$gte": day_start, "$lt": day_end}
             except ValueError:
                 pass
 
@@ -851,7 +851,7 @@ async def get_enrollments(
         # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper.
         if assigned_today:
             IST_OFFSET = timedelta(hours=5, minutes=30)
-            t = date.today()
+            t = today_ist()
             a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
             a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
             query = {"$and": [query, {"$or": [
@@ -1977,7 +1977,7 @@ async def convert_to_antenatal(
     new_lead_id = await generate_lead_id(db)
     new_lead = Lead(
         lead_id=new_lead_id,
-        lead_creation_date=date.today(),
+        lead_creation_date=today_ist(),
         status=LeadStatus.ENQUIRY_LEAD.value,
         name=enrollment.name or enrollment.subscriber_name or "Unknown",
         email=enrollment.email,

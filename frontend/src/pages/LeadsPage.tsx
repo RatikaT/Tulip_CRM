@@ -48,10 +48,10 @@ import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import SearchIcon from '@mui/icons-material/Search';
 import InputAdornment from '@mui/material/InputAdornment';
-import { format, isToday, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
-import { formatShortDateIST } from '../utils/dateUtils';
+import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { leadService } from '../services/leadService';
 import { Lead } from '../types/lead.types';
 import { useDropdownOptions } from '../hooks/useDropdownOptions';
@@ -100,13 +100,8 @@ const getStatusChipSx = (status: string) => {
 
 // Helper function to check if a date string is today
 const isDateToday = (dateString: string | null | undefined): boolean => {
-  if (!dateString) return false;
-  try {
-    const date = parseISO(dateString);
-    return isToday(date);
-  } catch {
-    return false;
-  }
+  // Compare IST calendar days; naive server timestamps are UTC.
+  return !!dateString && istDateKey(dateString) === todayISTKey();
 };
 
 // Check if lead should be highlighted for agents
@@ -309,18 +304,13 @@ export default function LeadsPage() {
 
   // Compute user-level stats
   const userLevelStats = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const uniqueUhids = new Set<string>();
     const usersCreatedToday = new Set<string>();
 
     filteredLeads.forEach(lead => {
       if (lead.uhid) {
         uniqueUhids.add(lead.uhid);
-        const createdDate = new Date(lead.created_at);
-        createdDate.setHours(0, 0, 0, 0);
-        if (createdDate.getTime() === today.getTime()) {
+        if (istDateKey(lead.created_at) === todayISTKey()) {
           usersCreatedToday.add(lead.uhid);
         }
       }

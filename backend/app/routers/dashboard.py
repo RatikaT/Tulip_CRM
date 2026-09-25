@@ -14,6 +14,7 @@ from app.models.enrollment import Enrollment
 from app.models.enrollment_audit_log import EnrollmentAuditLog, EnrollmentAuditAction
 from app.middleware.auth_middleware import get_current_user, get_current_admin
 from app.database import get_database
+from app.utils.ist import now_ist, today_ist, ist_date, ist_day_start_utc, ist_range_utc, parse_ymd
 from bson import ObjectId
 import logging
 import re
@@ -397,17 +398,18 @@ async def get_summary_data(
     if agent_id:
         conditions.append({"assigned_to": agent_id})
 
-    # Filter by date range
-    if date_from:
-        conditions.append({"created_at": {"$gte": datetime.fromisoformat(date_from)}})
-    if date_to:
-        conditions.append({"created_at": {"$lte": datetime.fromisoformat(date_to)}})
+    # Filter by date range: IST calendar days, "To" day inclusive
+    d_from, d_to = parse_ymd(date_from), parse_ymd(date_to)
+    if d_from:
+        conditions.append({"created_at": {"$gte": ist_day_start_utc(d_from)}})
+    if d_to:
+        conditions.append({"created_at": {"$lt": ist_day_start_utc(d_to) + timedelta(days=1)}})
 
     # Combine all conditions
     base_query = {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
     # Get leads
-    leads = await Lead.find(base_query).to_list(1000)
+    leads = await Lead.find(base_query).to_list()
 
     # Calculate summary stats
     total = len(leads)
@@ -615,7 +617,7 @@ async def get_agent_activity(
 
     # Default to today if date not provided
     if not date:
-        date = datetime.utcnow().strftime("%Y-%m-%d")
+        date = today_ist().strftime("%Y-%m-%d")
 
     # Access control: agents can only see their own data
     is_admin = current_user.get("role") in ["admin", "super_admin"]
@@ -625,11 +627,10 @@ async def get_agent_activity(
             detail="You can only view your own activity"
         )
 
-    # Parse date - use UTC boundaries (timestamps in DB are UTC)
+    # The picked date is an IST calendar day -> UTC bounds (timestamps in DB are UTC)
     try:
         target_date = datetime.strptime(date, "%Y-%m-%d")
-        date_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        date_end = date_start + timedelta(days=1)
+        date_start, date_end = ist_range_utc(target_date.date())
         logger.info(f"Agent activity query: {date} -> UTC range {date_start} to {date_end}")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
@@ -1062,14 +1063,14 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
     """
     uid = current_user["user_id"]
     user_name = (current_user.get("full_name") or "").strip()
-    today = date.today()
+    today = today_ist()
     cutoff = today + timedelta(days=7)
 
     def _due_info(dt):
         """Return (date, is_overdue, in_window) for a due datetime."""
         if not isinstance(dt, datetime):
             return None, False, False
-        d = dt.date()
+        d = ist_date(dt)
         return d, (d < today), (d <= cutoff)
 
     items = []
@@ -1150,7 +1151,7 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
 
     items.sort(key=lambda x: (x["due_date"] or datetime.max))
     overdue = sum(1 for i in items if i["is_overdue"])
-    due_today = sum(1 for i in items if isinstance(i["due_date"], datetime) and i["due_date"].date() == today)
+    due_today = sum(1 for i in items if isinstance(i["due_date"], datetime) and ist_date(i["due_date"]) == today)
     upcoming = len(items) - overdue - due_today
     return {
         "items": items,
@@ -1301,7 +1302,7 @@ async def get_scorecard(
                 pd = _pd(s.get("planned_date"))
                 if in_range(s.get("planned_date")):
                     steps_due += 1
-                if pd and pd.date() < ist_today:
+                if pd and ist_date(pd) < ist_today:
                     steps_overdue += 1
         if total:
             pct = done / total
@@ -1345,7 +1346,7 @@ async def get_scorecard(
                 elif st == "pending":
                     t_pending += 1
                     pd = _pd(s.get("planned_date"))
-                    if pd and pd.date() < ist_today:
+                    if pd and ist_date(pd) < ist_today:
                         t_overdue += 1
         re_engaged = await Lead.find({
             "is_deleted": False, "journey_stopped_reason": "Re-engaged",

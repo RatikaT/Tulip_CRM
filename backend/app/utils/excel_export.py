@@ -3,6 +3,7 @@ Shared Excel export conventions (openpyxl): bold+frozen header, autofilter,
 real datetime cells, sensible column widths, and a Summary cover sheet.
 """
 from datetime import datetime, date
+from app.utils.ist import to_ist
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -51,6 +52,10 @@ def write_row(ws, row_idx, values, dt_cols=(), date_cols=()):
         c.alignment = CELL_ALIGN
         if v is None or v == "":
             continue
+        # Stored datetimes are UTC; MIS readers expect IST. Plain dates are
+        # calendar dates already and are left as-is.
+        if isinstance(v, datetime):
+            v = to_ist(v)
         if i in dt_cols:
             dt = _as_dt(v)
             if dt is not None:

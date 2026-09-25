@@ -3,6 +3,7 @@ EnrollmentID Generator
 Format: ENR_DDMMYYYY_XXX (sequential per day)
 """
 from datetime import datetime
+from app.utils.ist import now_ist
 
 
 async def generate_enrollment_id(db) -> str:
@@ -15,7 +16,7 @@ async def generate_enrollment_id(db) -> str:
     - ENR_25122025_001 (First enrollment on Dec 25, 2025)
     """
     # Get current date in DDMMYYYY format
-    date_str = datetime.now().strftime('%d%m%Y')
+    date_str = now_ist().strftime('%d%m%Y')
     prefix = f"ENR_{date_str}"
 
     # Count existing enrollments for today

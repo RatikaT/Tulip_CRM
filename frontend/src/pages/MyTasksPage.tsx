@@ -37,7 +37,7 @@ import { taskService } from '../services/taskService';
 import { journeyService } from '../services/journeyService';
 import { leadService } from '../services/leadService';
 import { MyTask } from '../types/task.types';
-import { formatShortDateIST } from '../utils/dateUtils';
+import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
 import { brandColors } from '../theme';
 import BirthdaysTodayWidget from '../components/dashboard/BirthdaysTodayWidget';
@@ -90,17 +90,15 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'all', label: 'All' },
 ];
 
-// Start of a given date (local) as epoch ms.
-const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 const bucketForTask = (task: MyTask): Bucket | 'other' => {
   if (task.is_overdue) return 'overdue';
   if (!task.due_date) return 'other';
-  const today = dayStart(new Date());
-  const due = dayStart(new Date(task.due_date));
+  const today = todayISTKey();
+  const due = istDateKey(task.due_date);
+  if (!due) return 'other';
   if (due === today) return 'today';
-  const in7 = today + 7 * 24 * 60 * 60 * 1000;
-  if (due > today && due <= in7) return 'upcoming';
+  if (due > today && due <= todayISTKey(7)) return 'upcoming';
   return 'other';
 };
 

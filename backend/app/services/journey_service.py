@@ -23,6 +23,7 @@ Scheduling rules (deterministic):
 import logging
 import re
 from datetime import datetime, timedelta
+from app.utils.ist import ist_date
 from typing import Optional, List, Dict, Any
 
 from app.models.journey_template import (
@@ -52,7 +53,7 @@ _RUNAWAY_CAP = 60         # safety bound when a recurring step has neither count
 # --------------------------------------------------------------------------- #
 def skip_weekend(d: datetime) -> datetime:
     """Move a Sat/Sun date forward to the following Monday."""
-    wd = d.weekday()          # Mon=0 .. Sun=6
+    wd = ist_date(d).weekday()  # Mon=0 .. Sun=6, judged on the IST calendar day
     if wd == 5:               # Saturday
         return d + timedelta(days=2)
     if wd == 6:               # Sunday

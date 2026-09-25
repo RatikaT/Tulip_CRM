@@ -23,6 +23,7 @@ from app.models.user import User
 from app.models.enrollment import Enrollment, ConnectStatus as EnrollmentConnectStatus
 from app.utils.enrollment_id import generate_enrollment_id
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
+from app.utils.ist import now_ist, today_ist, ist_date, ist_day_start_utc, ist_range_utc
 from app.services import dedup_service
 from app.services.enrollment_helpers import create_enrollment_from_lead
 from app.services.journey_ops import (
@@ -157,11 +158,11 @@ async def get_lead_stats(
     try:
         logger.info(f"Stats endpoint called by: {current_user.get('full_name')}")
 
-        # MongoDB stores all dates in UTC
-        # Server runs in IST (UTC+5:30), so we need to convert IST date boundaries to UTC
+        # MongoDB stores all dates in UTC and the server (Render) runs in UTC,
+        # so "today" must come from the shared IST helper, not date.today().
         IST_OFFSET = timedelta(hours=5, minutes=30)
 
-        today_local = date.today()  # Local date (IST)
+        today_local = today_ist()
         # IST midnight today = UTC yesterday 18:30
         today_start_utc = datetime.combine(today_local, datetime.min.time()) - IST_OFFSET
         # IST end of today = UTC today 18:29:59
@@ -681,13 +682,13 @@ async def get_leads(
         if created_date_from:
             try:
                 from_date = datetime.strptime(created_date_from, "%Y-%m-%d").date()
-                created_at_filter["$gte"] = datetime.combine(from_date, datetime.min.time())
+                created_at_filter["$gte"] = ist_day_start_utc(from_date)
             except ValueError:
                 pass
         if created_date_to:
             try:
                 to_date = datetime.strptime(created_date_to, "%Y-%m-%d").date()
-                created_at_filter["$lte"] = datetime.combine(to_date, datetime.max.time())
+                created_at_filter["$lt"] = ist_day_start_utc(to_date) + timedelta(days=1)
             except ValueError:
                 pass
         if created_at_filter:
@@ -697,9 +698,8 @@ async def get_leads(
     if next_follow_up_date:
         try:
             filter_date = datetime.strptime(next_follow_up_date, "%Y-%m-%d").date()
-            day_start = datetime.combine(filter_date, datetime.min.time())
-            day_end = datetime.combine(filter_date, datetime.max.time())
-            query["follow_up_date"] = {"$gte": day_start, "$lte": day_end}
+            day_start, day_end = ist_range_utc(filter_date)
+            query["follow_up_date"] = {"$gte": day_start, "$lt": day_end}
         except ValueError:
             pass
 
@@ -767,7 +767,7 @@ async def get_leads(
     # composes correctly with any query shape built above.
     if assigned_today:
         IST_OFFSET = timedelta(hours=5, minutes=30)
-        t = date.today()
+        t = today_ist()
         a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
         a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
         query = {"$and": [query, {"$or": [
@@ -950,7 +950,7 @@ async def export_leads_excel(
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    filename = f"leads_mis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"leads_mis_{now_ist().strftime('%Y%m%d_%H%M%S')}.xlsx"
     logger.info(f"Leads MIS export by {current_user['email']}: {len(leads)} leads")
     return StreamingResponse(
         output,
@@ -1011,7 +1011,7 @@ async def export_duplicates_excel(current_user: dict = Depends(get_current_admin
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    filename = f"duplicate_leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = f"duplicate_leads_{now_ist().strftime('%Y%m%d_%H%M%S')}.xlsx"
     logger.info(f"Duplicates export by {current_user['email']}: {len(dups)} leads")
     return StreamingResponse(
         output,
@@ -1739,7 +1739,7 @@ async def update_lead(
                 dt = date_value
             else:
                 return False
-            return dt.date() < datetime.utcnow().date()
+            return ist_date(dt) < today_ist()
         except:
             return False
 

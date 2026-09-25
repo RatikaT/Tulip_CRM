@@ -52,10 +52,10 @@ import SearchIcon from '@mui/icons-material/Search';
 import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import RouteIcon from '@mui/icons-material/Route';
 import InputAdornment from '@mui/material/InputAdornment';
-import { format, isToday, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
-import { formatShortDateIST } from '../utils/dateUtils';
+import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
 import {
   Enrollment,
@@ -103,13 +103,8 @@ const softChipSx = (hex: string) => ({
 
 // Helper function to check if a date string is today
 const isDateToday = (dateString: string | null): boolean => {
-  if (!dateString) return false;
-  try {
-    const date = parseISO(dateString);
-    return isToday(date);
-  } catch {
-    return false;
-  }
+  // Compare IST calendar days; naive server timestamps are UTC.
+  return !!dateString && istDateKey(dateString) === todayISTKey();
 };
 
 // Check if enrollment should be highlighted for agents
@@ -305,18 +300,13 @@ export default function EnrollmentsPage() {
 
   // Compute user-level stats
   const userLevelStats = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const uniqueUhids = new Set<string>();
     const usersEnrolledToday = new Set<string>();
 
     filteredEnrollments.forEach(enrollment => {
       if (enrollment.uhid) {
         uniqueUhids.add(enrollment.uhid);
-        const createdDate = new Date(enrollment.created_at);
-        createdDate.setHours(0, 0, 0, 0);
-        if (createdDate.getTime() === today.getTime()) {
+        if (istDateKey(enrollment.created_at) === todayISTKey()) {
           usersEnrolledToday.add(enrollment.uhid);
         }
       }

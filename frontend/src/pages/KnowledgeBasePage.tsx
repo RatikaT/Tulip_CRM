@@ -66,7 +66,7 @@ import DocumentUploadDialog from '../components/knowledge-base/DocumentUploadDia
 import DocumentEditDialog from '../components/knowledge-base/DocumentEditDialog';
 import { brandColors } from '../theme';
 import { useAuthStore } from '../stores/authStore';
-import { toIST } from '../utils/dateUtils';
+import { toIST, parseServerDate } from '../utils/dateUtils';
 
 interface Message {
   id: string;
@@ -324,7 +324,7 @@ export default function KnowledgeBasePage() {
         role: msg.role,
         content: msg.content,
         sources: msg.sources,
-        timestamp: new Date(msg.timestamp),
+        timestamp: parseServerDate(msg.timestamp) ?? new Date(),
       }));
       setMessages(loadedMessages);
       setSessionId(session.id);

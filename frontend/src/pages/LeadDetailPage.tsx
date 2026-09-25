@@ -35,7 +35,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
-import { formatFullDateTimeIST, formatShortDateIST, toISTForPicker, fromISTPickerToUTC } from '../utils/dateUtils';
+import { formatFullDateTimeIST, formatShortDateIST, toISTForPicker, fromISTPickerToUTC, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { leadService, RelatedLead } from '../services/leadService';
 import {
   Lead,
@@ -478,9 +478,8 @@ export default function LeadDetailPage() {
   // Helper to check if a call date is in the past
   const isCallDatePast = (dateTime: string | null | undefined): boolean => {
     if (!dateTime) return false;
-    const callDate = startOfDay(new Date(dateTime));
-    const today = startOfDay(new Date());
-    return callDate < today;
+    const callDate = istDateKey(dateTime);
+    return !!callDate && callDate < todayISTKey();
   };
 
   // Check if lead is enrolled (non-editable)

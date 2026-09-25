@@ -24,7 +24,7 @@ import { toast } from 'react-toastify';
 import { journeyService } from '../../services/journeyService';
 import { JourneyStepInstance, JourneyStepStatus, STEP_TYPE_OPTIONS } from '../../types/journey.types';
 import { Lead } from '../../types/lead.types';
-import { formatShortDateIST } from '../../utils/dateUtils';
+import { formatShortDateIST, istDateKey, todayISTKey, toISTForPicker } from '../../utils/dateUtils';
 
 interface LeadOutreachPanelProps {
   lead: Lead;
@@ -50,10 +50,8 @@ const softChipSx = (hex: string) => ({
 
 function isOverdue(step: JourneyStepInstance): boolean {
   if (step.status !== 'pending' || !step.planned_date) return false;
-  const planned = new Date(step.planned_date);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return planned < today;
+  const planned = istDateKey(step.planned_date);
+  return !!planned && planned < todayISTKey();
 }
 
 const errDetail = (e: unknown, fallback: string) =>
@@ -435,7 +433,7 @@ export default function LeadOutreachPanel({ lead, canEdit, onChanged }: LeadOutr
                     {canEdit ? (
                       <DatePicker
                         label="Planned"
-                        value={step.planned_date ? new Date(step.planned_date) : null}
+                        value={toISTForPicker(step.planned_date)}
                         onChange={(d) => handleReschedule(step, d)}
                         slotProps={{ textField: { size: 'small', sx: { width: 160 } } }}
                       />

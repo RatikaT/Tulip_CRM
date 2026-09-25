@@ -3,6 +3,7 @@ Roll-up helpers for the MIS exports: status/assignment progression from audit
 logs, last-activity/latest-remark for leads, and care-journey roll-ups.
 """
 from datetime import datetime, date
+from app.utils.ist import ist_date
 
 
 def parse_dt(v):
@@ -117,7 +118,7 @@ def care_rollups(enrollment, today):
     pending.sort(key=lambda x: x[0])
     next_step = pending[0][1].get("name") if pending else None
     next_due = pending[0][0] if pending else None
-    overdue = sum(1 for d, _ in pending if d.date() < today)
+    overdue = sum(1 for d, _ in pending if ist_date(d) < today)
 
     completed = []
     for s in journey:
