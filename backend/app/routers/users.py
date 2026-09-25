@@ -54,7 +54,7 @@ async def list_users_for_dropdown(
 @router.get("", response_model=UserListResponse)
 async def list_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: Optional[int] = Query(None, ge=1, le=500),
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
     search: Optional[str] = None,
@@ -98,9 +98,12 @@ async def list_users(
         })
         total = await users_query.count()
 
-    # Apply pagination
-    skip = (page - 1) * page_size
-    users = await users_query.skip(skip).limit(page_size).to_list()
+    # Paginate only when asked. Callers that omit page_size (Users page, SPOC
+    # pickers on Summaries/Scorecard) need every user, not the first page.
+    if page_size:
+        users = await users_query.skip((page - 1) * page_size).limit(page_size).to_list()
+    else:
+        users = await users_query.to_list()
 
     return {
         "users": [
@@ -120,8 +123,8 @@ async def list_users(
             for u in users
         ],
         "total": total,
-        "page": page,
-        "page_size": page_size
+        "page": page if page_size else 1,
+        "page_size": page_size or len(users)
     }
 
 

@@ -62,7 +62,7 @@ async def _daily_lead_counts(base_query: dict, today_start_utc: datetime, days: 
         }},
         {"$sort": {"_id": 1}},
     ]
-    rows = await get_database().leads.aggregate(pipeline).to_list(1000)
+    rows = await get_database().leads.aggregate(pipeline).to_list(None)
     by_date = {row["_id"]: row["count"] for row in rows}
     # Labels are IST calendar dates; derive them by adding IST offset to UTC.
     window_start_ist = window_start_utc + IST_OFFSET
@@ -146,7 +146,7 @@ async def get_dashboard_metrics(
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    status_result = await get_database().leads.aggregate(status_pipeline).to_list(100)
+    status_result = await get_database().leads.aggregate(status_pipeline).to_list(None)
     leads_by_status = {item["_id"]: item["count"] for item in status_result if item["_id"]}
 
     # Leads by source
@@ -155,7 +155,7 @@ async def get_dashboard_metrics(
         {"$group": {"_id": "$lead_source", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
+    source_result = await get_database().leads.aggregate(source_pipeline).to_list(None)
     leads_by_source = {item["_id"]: item["count"] for item in source_result if item["_id"]}
 
     # Leads by service requested (Lead.service_enrolled was renamed to service_requested)
@@ -164,7 +164,7 @@ async def get_dashboard_metrics(
         {"$group": {"_id": "$service_requested", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
+    service_result = await get_database().leads.aggregate(service_pipeline).to_list(None)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
     # Daily leads trend — 7-day series for the chart, 30-day series for the
@@ -192,7 +192,7 @@ async def get_dashboard_metrics(
         {"$group": {"_id": "$service_partner", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    partner_result = await get_database().enrollments.aggregate(partner_pipeline).to_list(100)
+    partner_result = await get_database().enrollments.aggregate(partner_pipeline).to_list(None)
     enrollments_by_partner = {item["_id"]: item["count"] for item in partner_result if item["_id"]}
 
     # Enrollments by action taken
@@ -201,7 +201,7 @@ async def get_dashboard_metrics(
         {"$group": {"_id": "$action_taken", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    action_result = await get_database().enrollments.aggregate(action_pipeline).to_list(100)
+    action_result = await get_database().enrollments.aggregate(action_pipeline).to_list(None)
     enrollments_by_action = {item["_id"]: item["count"] for item in action_result if item["_id"]}
 
     # NEW METRICS:
@@ -296,7 +296,7 @@ async def get_agent_dashboard(
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    status_result = await get_database().leads.aggregate(status_pipeline).to_list(100)
+    status_result = await get_database().leads.aggregate(status_pipeline).to_list(None)
     leads_by_status = {item["_id"]: item["count"] for item in status_result if item["_id"]}
 
     # Leads by source
@@ -305,7 +305,7 @@ async def get_agent_dashboard(
         {"$group": {"_id": "$lead_source", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
+    source_result = await get_database().leads.aggregate(source_pipeline).to_list(None)
     leads_by_source = {item["_id"]: item["count"] for item in source_result if item["_id"]}
 
     # Leads by service requested
@@ -314,7 +314,7 @@ async def get_agent_dashboard(
         {"$group": {"_id": "$service_requested", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    service_result = await get_database().leads.aggregate(service_pipeline).to_list(100)
+    service_result = await get_database().leads.aggregate(service_pipeline).to_list(None)
     leads_by_service = {item["_id"]: item["count"] for item in service_result if item["_id"]}
 
     # Daily leads trend — 7-day series for the chart, 30-day series for the band.
@@ -561,7 +561,7 @@ async def get_leads_by_status(
         {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    status_result = await get_database().leads.aggregate(status_pipeline).to_list(100)
+    status_result = await get_database().leads.aggregate(status_pipeline).to_list(None)
 
     return {
         "data": [
@@ -583,7 +583,7 @@ async def get_leads_by_source(
         {"$group": {"_id": "$lead_source", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}}
     ]
-    source_result = await get_database().leads.aggregate(source_pipeline).to_list(100)
+    source_result = await get_database().leads.aggregate(source_pipeline).to_list(None)
 
     return {
         "data": [
