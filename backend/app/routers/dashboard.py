@@ -1367,3 +1367,96 @@ async def get_scorecard(
         "care": care_journey,
         "outreach": outreach,
     }
+
+
+# =============================================================================
+# Activity Log: who did what, when - across Leads and Enrollments
+# =============================================================================
+def _activity_window(start: Optional[str], end: Optional[str]):
+    """IST calendar days start..end (default: today) -> (start_date, end_date, utc_from, utc_to)."""
+    sd = parse_ymd(start) or today_ist()
+    ed = parse_ymd(end) or sd
+    if ed < sd:
+        raise HTTPException(status_code=400, detail="End date is before start date")
+    f, t = ist_range_utc(sd, ed)
+    return sd, ed, f, t
+
+
+@router.get("/activity-summary")
+async def get_activity_summary(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Per-person activity counts for IST days start..end (default today)."""
+    from app.services.activity_log import collect_activity, summarize_by_person, SUMMARY_COLUMNS
+    sd, ed, f, t = _activity_window(start, end)
+    rows = await collect_activity(f, t)
+    people = summarize_by_person(rows)
+    return {
+        "start": sd.isoformat(), "end": ed.isoformat(),
+        "columns": SUMMARY_COLUMNS,
+        "people": people,
+        "total_actions": len(rows),
+    }
+
+
+@router.get("/activity-log/export")
+async def export_activity_log(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: dict = Depends(get_current_admin),
+):
+    """Activity Log MIS: Summary (per person) + Activity Log (one row per action), IST."""
+    import io
+    from openpyxl import Workbook
+    from fastapi.responses import StreamingResponse
+    from app.utils.excel_export import (
+        write_headers, write_row, finalize, summary_sheet, summary_kv,
+    )
+    from app.services.activity_log import collect_activity, summarize_by_person, SUMMARY_COLUMNS
+
+    sd, ed, f, t = _activity_window(start, end)
+    rows = await collect_activity(f, t)
+    people = summarize_by_person(rows)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    sm = summary_sheet(wb, "Activity Log MIS")
+    summary_kv(sm, "Period (IST)", f"{sd.strftime('%d %b %Y')} to {ed.strftime('%d %b %Y')}")
+    summary_kv(sm, "Generated at", now_ist(), dt=True)
+    summary_kv(sm, "Total actions", len(rows))
+    summary_kv(sm, "People active", len(people))
+
+    ws_p = wb.create_sheet("By Person")
+    write_headers(ws_p, ["Person", "Leads Worked", "Enrollments Worked", *SUMMARY_COLUMNS,
+                         "Total Actions", "Last Activity"])
+    for r, p in enumerate(people, 2):
+        write_row(ws_p, r, [p["name"], p["leads_worked"], p["enrollments_worked"],
+                            *[p["counts"][c] for c in SUMMARY_COLUMNS],
+                            p["total_actions"], p["last_activity"]],
+                  dt_cols={len(SUMMARY_COLUMNS) + 5})
+    finalize(ws_p)
+
+    ws = wb.create_sheet("Activity Log")
+    write_headers(ws, ["Date & Time (IST)", "Type", "Record ID", "Customer", "Service",
+                       "Current Owner", "Action", "Field / Item", "From", "To", "Done By"])
+    for r, a in enumerate(rows, 2):
+        frm, to = a["from"], a["to"]
+        write_row(ws, r, [a["at"], a["type"], a["record_id"], a["customer"], a["service"],
+                          a["owner"], a["action"], a["field"],
+                          frm if isinstance(frm, (datetime, int, float)) or frm is None else str(frm),
+                          to if isinstance(to, (datetime, int, float)) or to is None else str(to),
+                          a["by"]], dt_cols={1, 9, 10})
+    finalize(ws, cap=50)
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    filename = f"activity_log_mis_{sd.strftime('%Y%m%d')}_{ed.strftime('%Y%m%d')}.xlsx"
+    logger.info(f"Activity Log MIS export by {current_user['email']}: {len(rows)} rows")
+    return StreamingResponse(
+        out,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

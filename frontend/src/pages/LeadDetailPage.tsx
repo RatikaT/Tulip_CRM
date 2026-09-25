@@ -258,8 +258,9 @@ export default function LeadDetailPage() {
         investigation_service_type: data.investigation_service_type || undefined,
         assigned_to: data.assigned_to || undefined,
         assigned_to_name: data.assigned_to_name || undefined,
-        reassign_to: data.reassign_to || data.assigned_to || undefined,
-        reassign_to_name: data.reassign_to_name || data.assigned_to_name || undefined,
+        // Blank unless genuinely reassigned (older records may hold the owner's own id)
+        reassign_to: data.reassign_to && data.reassign_to !== data.assigned_to ? data.reassign_to : undefined,
+        reassign_to_name: data.reassign_to && data.reassign_to !== data.assigned_to ? data.reassign_to_name || undefined : undefined,
       });
       setError(null);
     } catch (err) {

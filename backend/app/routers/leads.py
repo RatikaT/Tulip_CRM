@@ -23,6 +23,7 @@ from app.models.user import User
 from app.models.enrollment import Enrollment, ConnectStatus as EnrollmentConnectStatus
 from app.utils.enrollment_id import generate_enrollment_id
 from app.middleware.auth_middleware import get_current_user, get_current_admin, get_current_super_admin
+from app.services.activity_log import _phantom_reassign_filter
 from app.utils.ist import now_ist, today_ist, ist_date, ist_day_start_utc, ist_range_utc
 from app.services import dedup_service
 from app.services.enrollment_helpers import create_enrollment_from_lead
@@ -903,8 +904,11 @@ async def export_leads_excel(
     write_headers(ws_h, ["Lead ID", "Name", "Date/Time", "Change", "From", "To", "By"])
     name_by_id = {l.lead_id: l.name for l in leads}
     hr = 2
+    phantom = _phantom_reassign_filter(all_logs)
     for lg in all_logs:
-        for ch in (lg.changes or []):
+        for ci, ch in enumerate(lg.changes or []):
+            if (str(lg.id), ci) in phantom:
+                continue
             f = ch.get("field")
             if f == "status":
                 ctype = "Status"
@@ -1684,23 +1688,32 @@ async def update_lead(
         restricted_fields = ["assigned_to", "assigned_to_name"]
         update_data = {k: v for k, v in update_data.items() if k not in restricted_fields}
 
-    # Look up reassign_to_name when reassign_to is provided
-    if "reassign_to" in update_data and update_data["reassign_to"]:
-        reassign_user = await User.get(update_data["reassign_to"])
-        if reassign_user:
-            update_data["reassign_to_name"] = reassign_user.full_name
+    # Assignment fields: only a REAL change of owner counts. The edit form
+    # re-sends the unchanged values on every save; stamping the dates then
+    # overwrote the true allotment date and logged phantom "reassignments".
+    if "reassign_to" in update_data:
+        new_re = update_data["reassign_to"] or None
+        current_owner = lead.reassign_to or lead.assigned_to
+        if new_re == (lead.reassign_to or None) or (new_re and new_re == current_owner):
+            update_data.pop("reassign_to")
+            update_data.pop("reassign_to_name", None)
+        elif new_re:
+            reassign_user = await User.get(new_re)
+            update_data["reassign_to_name"] = reassign_user.full_name if reassign_user else None
+            update_data["reassigned_date"] = datetime.utcnow()
         else:
-            update_data["reassign_to_name"] = None
-        # Set reassigned_date when reassign_to changes
-        update_data["reassigned_date"] = datetime.utcnow()
+            update_data["reassign_to_name"] = None  # reassignment cleared
 
-    # Look up assigned_to_name when assigned_to is provided (for admins)
-    if "assigned_to" in update_data and update_data["assigned_to"]:
-        assigned_user = await User.get(update_data["assigned_to"])
-        if assigned_user:
-            update_data["assigned_to_name"] = assigned_user.full_name
-        # Set assigned_date when assigned_to changes
-        update_data["assigned_date"] = datetime.utcnow()
+    if "assigned_to" in update_data:
+        new_as = update_data["assigned_to"] or None
+        if new_as == (lead.assigned_to or None) or not new_as:
+            update_data.pop("assigned_to")
+            update_data.pop("assigned_to_name", None)
+        else:
+            assigned_user = await User.get(new_as)
+            if assigned_user:
+                update_data["assigned_to_name"] = assigned_user.full_name
+            update_data["assigned_date"] = datetime.utcnow()
 
     # Helper function to format calls for audit
     def format_calls_for_audit(calls_list):

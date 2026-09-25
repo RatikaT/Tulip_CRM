@@ -44,6 +44,7 @@ import {
 } from 'recharts';
 import { useAuthStore } from '../stores/authStore';
 import api from '../services/api';
+import ActivitySummary from '../components/dashboard/ActivitySummary';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import BirthdaysTodayWidget from '../components/dashboard/BirthdaysTodayWidget';
@@ -543,6 +544,9 @@ Keep it concise - this is for a dashboard quick view.`;
           </Typography>
         )}
       </Paper>
+
+      {/* Activity Summary + Activity Log MIS (super admin) */}
+      {isSuperAdmin && <ActivitySummary />}
 
       {/* Charts Row 1 */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
