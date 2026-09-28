@@ -1389,13 +1389,13 @@ async def get_activity_summary(
     current_user: dict = Depends(get_current_admin),
 ):
     """Per-person activity counts for IST days start..end (default today)."""
-    from app.services.activity_log import collect_activity, summarize_by_person, SUMMARY_COLUMNS
+    from app.services.activity_log import collect_activity, summarize_by_person, summary_columns
     sd, ed, f, t = _activity_window(start, end)
     rows = await collect_activity(f, t)
     people = summarize_by_person(rows)
     return {
         "start": sd.isoformat(), "end": ed.isoformat(),
-        "columns": SUMMARY_COLUMNS,
+        "columns": summary_columns(people),
         "people": people,
         "total_actions": len(rows),
     }
@@ -1414,11 +1414,12 @@ async def export_activity_log(
     from app.utils.excel_export import (
         write_headers, write_row, finalize, summary_sheet, summary_kv,
     )
-    from app.services.activity_log import collect_activity, summarize_by_person, SUMMARY_COLUMNS
+    from app.services.activity_log import collect_activity, summarize_by_person, summary_columns
 
     sd, ed, f, t = _activity_window(start, end)
     rows = await collect_activity(f, t)
     people = summarize_by_person(rows)
+    cols = summary_columns(people)
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -1429,25 +1430,25 @@ async def export_activity_log(
     summary_kv(sm, "People active", len(people))
 
     ws_p = wb.create_sheet("By Person")
-    write_headers(ws_p, ["Person", "Leads Worked", "Enrollments Worked", *SUMMARY_COLUMNS,
+    write_headers(ws_p, ["Person", "Leads Worked", "Enrollments Worked", *cols,
                          "Total Actions", "Last Activity"])
     for r, p in enumerate(people, 2):
         write_row(ws_p, r, [p["name"], p["leads_worked"], p["enrollments_worked"],
-                            *[p["counts"][c] for c in SUMMARY_COLUMNS],
+                            *[p["counts"][c] for c in cols],
                             p["total_actions"], p["last_activity"]],
-                  dt_cols={len(SUMMARY_COLUMNS) + 5})
+                  dt_cols={len(cols) + 5})
     finalize(ws_p)
 
     ws = wb.create_sheet("Activity Log")
     write_headers(ws, ["Date & Time (IST)", "Type", "Record ID", "Customer", "Service",
-                       "Current Owner", "Action", "Field / Item", "From", "To", "Done By"])
+                       "Owner (today)", "Action", "Field / Item", "From", "To", "Details", "Done By"])
     for r, a in enumerate(rows, 2):
         frm, to = a["from"], a["to"]
         write_row(ws, r, [a["at"], a["type"], a["record_id"], a["customer"], a["service"],
                           a["owner"], a["action"], a["field"],
-                          frm if isinstance(frm, (datetime, int, float)) or frm is None else str(frm),
-                          to if isinstance(to, (datetime, int, float)) or to is None else str(to),
-                          a["by"]], dt_cols={1, 9, 10})
+                          frm if isinstance(frm, (int, float)) or frm is None else str(frm),
+                          to if isinstance(to, (int, float)) or to is None else str(to),
+                          a.get("details") or None, a["by"] or "Unknown"], dt_cols={1})
     finalize(ws, cap=50)
 
     out = io.BytesIO()
