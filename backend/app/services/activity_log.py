@@ -233,6 +233,7 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
         # Converting a lead creates the enrollment (no audit entry), then the
         # billing form fills it a second later. Show that as one "Created" row.
         if (e and e.linked_lead_id and e.created_at and lg.timestamp
+                and _v(lg.action) == "updated"
                 and abs((lg.timestamp - e.created_at).total_seconds()) < 120
                 and all(ch.get("old_value") in (None, "") for ch in (lg.changes or []))):
             rows.append(enr_row(e, lg.timestamp, CREATED, f"From lead {e.linked_lead_id}", None, "created",
