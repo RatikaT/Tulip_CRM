@@ -1767,6 +1767,13 @@ async def update_journey_step(
     if not step:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journey step not found")
 
+    who = {"at": datetime.utcnow(), "by": current_user["user_id"],
+           "by_name": current_user.get("full_name", current_user["email"])}
+    if body.status == "skipped" and step.get("status") != "skipped":
+        step.setdefault("log", []).append({**who, "action": "skipped"})
+    if body.planned_date is not None and body.planned_date != step.get("planned_date"):
+        step.setdefault("log", []).append({**who, "action": "rescheduled",
+                                           "from": step.get("planned_date"), "to": body.planned_date})
     if body.status is not None:
         if body.status not in ("pending", "done", "skipped"):
             raise HTTPException(status_code=400, detail="status must be pending, done or skipped")

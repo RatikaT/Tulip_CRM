@@ -543,6 +543,7 @@ async def bulk_upload_leads(
                     created_by=current_user["user_id"],
                     assigned_to=assigned_to_id,
                     assigned_to_name=assigned_to_name,
+                    assigned_date=datetime.utcnow() if assigned_to_id else None,
                     number_of_calls=1,
                     calls=[],
                     comments=[],

@@ -12,6 +12,7 @@ class SummaryType(str, Enum):
     OVERALL = "overall"
     AGENT = "agent"
     DAILY = "daily"
+    SPOC_REPORT = "spoc_report"
 
 
 class Summary(Document):

@@ -1461,3 +1461,192 @@ async def export_activity_log(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# =============================================================================
+# Daily SPOC Report (Summaries page): actionable vs acted on, per SPOC
+# =============================================================================
+class SpocReportRequest(BaseModel):
+    start: Optional[str] = None
+    end: Optional[str] = None
+    user_id: Optional[str] = None
+    note: Optional[str] = None
+
+
+def _report_scope(current_user: dict, user_id: Optional[str]) -> Optional[str]:
+    """SPOCs only ever see their own row; admins see everyone or one SPOC."""
+    if current_user.get("role") not in ("admin", "super_admin"):
+        return current_user["user_id"]
+    return user_id or None
+
+
+@router.get("/spoc-report")
+async def get_spoc_report(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from app.services.spoc_report import build_report
+    sd, ed, _, _ = _activity_window(start, end)
+    return await build_report(sd, ed, only_user_id=_report_scope(current_user, user_id))
+
+
+@router.get("/spoc-report/export")
+async def export_spoc_report(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Daily SPOC Report MIS: Summary per SPOC, the actionable list, other work, results."""
+    import io
+    from openpyxl import Workbook
+    from fastapi.responses import StreamingResponse
+    from app.utils.excel_export import write_headers, write_row, finalize, summary_sheet, summary_kv
+    from app.services.spoc_report import build_report
+
+    sd, ed, _, _ = _activity_window(start, end)
+    rep = await build_report(sd, ed, only_user_id=_report_scope(current_user, user_id), with_trend=False)
+    BUCKET = {"newL": "New lead", "due": "Lead due", "over": "Lead overdue",
+              "enrDue": "Enrollment due", "enrOver": "Enrollment overdue"}
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    sm = summary_sheet(wb, "Daily SPOC Report")
+    summary_kv(sm, "Period (IST)", f"{sd.strftime('%d %b %Y')} to {ed.strftime('%d %b %Y')}")
+    summary_kv(sm, "Generated at", now_ist(), dt=True)
+    summary_kv(sm, "New leads created", rep["headline"]["new_leads_created"])
+    summary_kv(sm, "Not yet assigned", rep["headline"]["unassigned"])
+    summary_kv(sm, "Total actionable", rep["totals"]["total"])
+    summary_kv(sm, "Acted on", rep["totals"]["acted"])
+
+    ws = wb.create_sheet("By SPOC")
+    write_headers(ws, ["SPOC", "New leads assigned", "Leads due", "Leads overdue",
+                       "Enrollments due", "Enrollments overdue", "Total actionable", "Acted on",
+                       "Not acted on", "% acted on", "Enrolled", "Closed (no sale)",
+                       "Care steps planned", "Care steps done", "Leads owned now", "Enrollments owned now"])
+    for i, r in enumerate(rep["rows"], 2):
+        c = r["counts"]
+        write_row(ws, i, [r["name"], c["newL"], c["due"], c["over"], c["enrDue"], c["enrOver"],
+                          c["total"], c["acted"], c["not"],
+                          f"{round(c['acted'] / c['total'] * 100)}%" if c["total"] else "-",
+                          r["results"]["enrolled"], r["results"]["closed"],
+                          r["care"]["planned"], r["care"]["done"],
+                          r["portfolio"]["leads"], r["portfolio"]["enrollments"]])
+    finalize(ws)
+
+    ws = wb.create_sheet("Actionable List")
+    write_headers(ws, ["SPOC", "Type", "Record ID", "Customer", "Why on the list", "Bucket",
+                       "Acted on?", "What was done", "Done by"])
+    i = 2
+    for r in rep["rows"]:
+        for it in r["items"]:
+            write_row(ws, i, [r["name"], it["type"].title(), it["id"], it["name"], it["why"],
+                              BUCKET.get(it["bucket"], it["bucket"]), "Yes" if it["acted"] else "No",
+                              "; ".join(a["what"] for a in it["actions"]),
+                              ", ".join(dict.fromkeys(a["by"] for a in it["actions"]))])
+            i += 1
+    finalize(ws, cap=60)
+
+    ws = wb.create_sheet("Other Work")
+    write_headers(ws, ["SPOC", "Type", "Record ID", "Customer", "What was done", "Done by"])
+    i = 2
+    for r in rep["rows"]:
+        for it in r["extra"]:
+            write_row(ws, i, [r["name"], it["type"].title(), it["id"], it["name"],
+                              "; ".join(a["what"] for a in it["actions"]),
+                              ", ".join(dict.fromkeys(a["by"] for a in it["actions"]))])
+            i += 1
+    finalize(ws, cap=60)
+
+    ws = wb.create_sheet("Results")
+    write_headers(ws, ["Done by", "Lead ID", "Customer", "Result", "Reason", "When (IST)"])
+    i = 2
+    for r in rep["rows"]:
+        for x in r["results"]["enrolled_list"]:
+            write_row(ws, i, [x["by"], x["id"], x["name"], "Enrolled", None, datetime.fromisoformat(x["at"])], dt_cols={6})
+            i += 1
+        for x in r["results"]["closed_list"]:
+            write_row(ws, i, [x["by"], x["id"], x["name"], x["status"], x["reason"], datetime.fromisoformat(x["at"])], dt_cols={6})
+            i += 1
+    finalize(ws)
+
+    import io as _io
+    out = _io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    filename = f"spoc_report_{sd.strftime('%Y%m%d')}_{ed.strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _report_digest(rep: dict) -> str:
+    lines = [f"Period: {rep['start']} to {rep['end']} (IST)",
+             f"New leads created: {rep['headline']['new_leads_created']} "
+             f"({rep['headline']['unassigned']} not yet assigned)",
+             f"All SPOCs: {rep['totals']['total']} actionable, {rep['totals']['acted']} acted on"]
+    for r in rep["rows"]:
+        c = r["counts"]
+        if not c["total"] and not r["results"]["enrolled"] and not r["results"]["closed"]:
+            continue
+        lines.append(
+            f"- {r['name']}: new {c['newL']}, leads due {c['due']}, leads overdue {c['over']}, "
+            f"enrollments due {c['enrDue']}, enrollments overdue {c['enrOver']}; "
+            f"actionable {c['total']}, acted on {c['acted']}, not acted on {c['not']}; "
+            f"not acted by bucket: " + ", ".join(f"{k} {v[0]-v[1]}" for k, v in r["split"].items() if v[0] - v[1]) +
+            f"; enrolled {r['results']['enrolled']}, closed {r['results']['closed']}")
+    return "\n".join(lines)
+
+
+@router.post("/spoc-report/ai-note")
+async def spoc_report_ai_note(body: SpocReportRequest, current_user: dict = Depends(get_current_user)):
+    """A short written note on the report. Numbers come from the server; the AI only describes them."""
+    import asyncio
+    from app.config import settings
+    from app.services.spoc_report import build_report
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(status_code=503, detail="The AI note isn't set up on the server yet (GEMINI_API_KEY).")
+    import google.generativeai as genai
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    sd, ed, _, _ = _activity_window(body.start, body.end)
+    rep = await build_report(sd, ed, only_user_id=_report_scope(current_user, body.user_id), with_trend=False)
+    prompt = (
+        "You write a short note for a maternity-care CRM manager about their SPOCs' follow-up work.\n"
+        "Use ONLY the numbers below. Do not invent, estimate or recompute anything; do not add "
+        "advice about medicine. Write 3 to 5 short bullet points in plain English: overall "
+        "acted-on share, who has the most left and in which bucket, anyone who cleared everything, "
+        "and unassigned new leads if any. No headings.\n\n" + _report_digest(rep)
+    )
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        res = await asyncio.get_running_loop().run_in_executor(None, lambda: model.generate_content(prompt))
+        note = (res.text or "").strip()
+    except Exception as e:
+        logger.error(f"AI note failed: {e}")
+        raise HTTPException(status_code=502, detail="The AI service didn't respond. Please try again.")
+    return {"note": note}
+
+
+@router.post("/spoc-report/save")
+async def save_spoc_report(body: SpocReportRequest, current_user: dict = Depends(get_current_admin)):
+    """Save the report's numbers (and the AI note, if any) so it can be re-opened later."""
+    from app.services.spoc_report import build_report
+    sd, ed, _, _ = _activity_window(body.start, body.end)
+    rep = await build_report(sd, ed, only_user_id=body.user_id or None, with_trend=False)
+    snapshot = {
+        "start": rep["start"], "end": rep["end"], "headline": rep["headline"], "totals": rep["totals"],
+        "rows": [{"name": r["name"], "user_id": r["user_id"], "counts": r["counts"],
+                  "results": {k: r["results"][k] for k in ("enrolled", "closed", "closed_reasons")},
+                  "care": r["care"], "portfolio": r["portfolio"]} for r in rep["rows"]],
+    }
+    period = sd.strftime("%d %b %Y") if sd == ed else f"{sd.strftime('%d %b %Y')} to {ed.strftime('%d %b %Y')}"
+    s = Summary(
+        summary_type=SummaryType.SPOC_REPORT, content=body.note or "",
+        summary_date=period, total_leads=rep["totals"]["total"], activity_metrics=snapshot,
+        created_by=current_user["user_id"], created_by_name=current_user["full_name"],
+    )
+    await s.insert()
+    return {"id": str(s.id), "message": "Report saved"}

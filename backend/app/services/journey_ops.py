@@ -66,9 +66,15 @@ def apply_step_update(
     step = next((s for s in (journey or []) if s.get("step_id") == step_id), None)
     if not step:
         return journey, False, "Journey step not found"
+    if status is not None and status not in ("pending", "done", "skipped"):
+        return journey, False, "status must be pending, done or skipped"
+    who = {"at": datetime.utcnow(), "by": user_id, "by_name": user_name}
+    if status == "skipped" and step.get("status") != "skipped":
+        step.setdefault("log", []).append({**who, "action": "skipped"})
+    if planned_date is not None and planned_date != step.get("planned_date"):
+        step.setdefault("log", []).append({**who, "action": "rescheduled",
+                                           "from": step.get("planned_date"), "to": planned_date})
     if status is not None:
-        if status not in ("pending", "done", "skipped"):
-            return journey, False, "status must be pending, done or skipped"
         step["status"] = status
         if status == "done":
             step["completed_date"] = datetime.utcnow()
