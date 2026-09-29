@@ -589,6 +589,7 @@ async def bulk_upload_leads(
     duplicates_flagged = 0
     try:
         if created_count > 0:
+            from app.services.dedup_service import scan_for_duplicates
             duplicates_flagged = await scan_for_duplicates()
     except Exception as e:
         logger.error(f"Duplicate scan after bulk upload failed: {e}")
@@ -890,6 +891,7 @@ async def export_leads_excel(
     quick filters, agent visibility and duplicate rule as the Leads page.
     start_date / end_date (created, IST) are kept for older links.
     """
+    IST_OFFSET = timedelta(hours=5, minutes=30)
     for d in (start_date, end_date, created_date_from, created_date_to):
         if d:
             try:
