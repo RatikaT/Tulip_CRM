@@ -1115,16 +1115,15 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
     # Only ACTIVE follow-up statuses belong to the agent. Closed/outreach statuses
     # (Not Interested, Lead Closed-No Response) are Admin outreach and must NOT
     # appear here; Enrolled -> care step; Duplicate -> hidden.
-    AGENT_FOLLOWUP_STATUSES = [
-        LeadStatus.FOLLOWUP_IN_PROCESS.value,
-        LeadStatus.FOLLOWUP_NO_RESPONSE.value,
-    ]
+    # Same rule as the Leads page "Follow-ups Today" card: any open lead
+    # (Enquiry Lead included) that this person owns now.
+    from app.routers.leads import CLOSED_LEAD_STATUSES, owned_by
     lead_query = {
         "is_deleted": False,
         "duplicate_status": {"$in": [None, "not_duplicate"]},
-        "status": {"$in": AGENT_FOLLOWUP_STATUSES},
+        "status": {"$nin": CLOSED_LEAD_STATUSES},
         "follow_up_date": {"$ne": None},
-        "$or": [{"assigned_to": uid}, {"reassign_to": uid}],
+        **owned_by(uid),
     }
     lead_tasks = await Lead.find(lead_query).to_list()
     for lead in lead_tasks:
@@ -1153,10 +1152,13 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
     overdue = sum(1 for i in items if i["is_overdue"])
     due_today = sum(1 for i in items if isinstance(i["due_date"], datetime) and ist_date(i["due_date"]) == today)
     upcoming = len(items) - overdue - due_today
+    lead_due_today = sum(1 for i in items if i["task_type"] == "lead_follow_up"
+                         and isinstance(i["due_date"], datetime) and ist_date(i["due_date"]) == today)
     return {
         "items": items,
         "total": len(items),
-        "counts": {"overdue": overdue, "due_today": due_today, "upcoming": upcoming},
+        "counts": {"overdue": overdue, "due_today": due_today, "upcoming": upcoming,
+                   "lead_due_today": lead_due_today, "care_due_today": due_today - lead_due_today},
     }
 
 

@@ -362,6 +362,8 @@ export default function LeadsPage() {
         created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
         next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
         assigned_today: assignedTodayFilter || undefined,
+        // Same rule as the Follow-ups Today card: open leads the user owns now
+        open_follow_ups: activeKpi === 'follow_up_today' || undefined,
       });
       setLeads(response.leads);
       setTotalCount(response.total);
@@ -384,7 +386,7 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [paginationModel, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {

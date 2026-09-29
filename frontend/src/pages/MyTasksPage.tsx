@@ -119,7 +119,7 @@ export default function MyTasksPage() {
 
   const [tab, setTab] = useState(0);
   const [items, setItems] = useState<MyTask[]>([]);
-  const [counts, setCounts] = useState({ overdue: 0, due_today: 0, upcoming: 0 });
+  const [counts, setCounts] = useState({ overdue: 0, due_today: 0, upcoming: 0, lead_due_today: 0, care_due_today: 0 });
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -130,7 +130,7 @@ export default function MyTasksPage() {
     try {
       const data = await taskService.myTasks();
       setItems(data.items || []);
-      setCounts(data.counts || { overdue: 0, due_today: 0, upcoming: 0 });
+      setCounts({ lead_due_today: 0, care_due_today: 0, ...(data.counts || { overdue: 0, due_today: 0, upcoming: 0 }) });
       setTotal(data.total ?? (data.items?.length || 0));
     } catch (error) {
       console.error('Failed to load my tasks:', error);
@@ -557,7 +557,7 @@ export default function MyTasksPage() {
             <Typography variant="body2" color="text.secondary">
               {loading
                 ? 'Loading your tasks…'
-                : `${total} task${total === 1 ? '' : 's'} on your worklist`}
+                : `${total} task${total === 1 ? '' : 's'} on your worklist · due today: ${counts.lead_due_today} lead follow-up${counts.lead_due_today === 1 ? '' : 's'} + ${counts.care_due_today} care step${counts.care_due_today === 1 ? '' : 's'}`}
             </Typography>
           </Box>
         </Box>

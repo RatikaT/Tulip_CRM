@@ -25,6 +25,7 @@ interface LeadFilters {
   created_date_to?: string;
   next_follow_up_date?: string;
   assigned_today?: boolean;
+  open_follow_ups?: boolean;
 }
 
 interface LeadStatsResponse {
@@ -95,6 +96,7 @@ export const leadService = {
     if (filters.created_date_to) params.append('created_date_to', filters.created_date_to);
     if (filters.next_follow_up_date) params.append('next_follow_up_date', filters.next_follow_up_date);
     if (filters.assigned_today) params.append('assigned_today', 'true');
+    if (filters.open_follow_ups) params.append('open_follow_ups', 'true');
 
     const response = await api.get<LeadListResponse>(`/leads?${params.toString()}`);
     return response.data;

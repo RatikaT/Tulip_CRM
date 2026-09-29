@@ -151,6 +151,18 @@ def lead_to_response(lead: Lead) -> dict:
     }
 
 
+# One rule for "a lead follow-up this person must do" - used by the Leads page
+# counter, its click-through list, My Tasks and the Daily SPOC Report:
+# the lead is still open, and the person is its current owner (reassigned-to
+# if set, else assigned-to), so a reassigned lead no longer counts for both.
+CLOSED_LEAD_STATUSES = ["Enrolled", "Not Interested", "Lead Closed-No Response", "Duplicate"]
+
+
+def owned_by(user_id: str) -> dict:
+    return {"$or": [{"reassign_to": user_id},
+                    {"reassign_to": {"$in": [None, ""]}, "assigned_to": user_id}]}
+
+
 @router.get("/stats")
 async def get_lead_stats(
     current_user: dict = Depends(get_current_user)
@@ -200,11 +212,13 @@ async def get_lead_stats(
             "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
         })
 
-        # 3. Follow-ups today (follow_up_date is today in IST)
-        follow_up_today = await db.leads.count_documents({
-            **base_query,
-            "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
-        })
+        # 3. Follow-ups today: open leads, current owner, follow-up date today (IST)
+        fu_query = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]},
+                    "status": {"$nin": CLOSED_LEAD_STATUSES},
+                    "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}}
+        if is_agent:
+            fu_query.update(owned_by(user_id))
+        follow_up_today = await db.leads.count_documents(fu_query)
 
         # 4. Assigned today (for agents - leads assigned or reassigned to them today)
         assigned_today = 0
@@ -607,6 +621,7 @@ async def get_leads(
     created_date_to: Optional[str] = None,
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
+    open_follow_ups: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
@@ -776,6 +791,13 @@ async def get_leads(
             {"assigned_date": {"$gte": a_start, "$lte": a_end}},
             {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
         ]}]}
+
+    # "Follow-ups Today" card: only open leads, and for SPOCs only the ones they own now
+    if open_follow_ups:
+        extra = [{"status": {"$nin": CLOSED_LEAD_STATUSES}}]
+        if current_user["role"] == "agent":
+            extra.append(owned_by(current_user["user_id"]))
+        query = {"$and": [query, *extra]}
 
     # Duplicate visibility: hide pending/confirmed duplicates from Leads, but keep
     # Enrolled leads visible regardless (they also live on Enrollments).
