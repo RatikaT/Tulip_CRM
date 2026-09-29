@@ -75,10 +75,8 @@ export const enrollmentService = {
     return response.data;
   },
 
-  exportExcel: async (startDate?: string, endDate?: string): Promise<Blob> => {
-    const params: Record<string, string> = {};
-    if (startDate) params.start_date = startDate;
-    if (endDate) params.end_date = endDate;
+  // Exports exactly the list on screen: same filters/search as getEnrollments
+  exportExcel: async (params: EnrollmentQueryParams = {}): Promise<Blob> => {
     const response = await api.get('/enrollments/export/excel', {
       responseType: 'blob',
       params,

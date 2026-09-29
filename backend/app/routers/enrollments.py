@@ -568,33 +568,51 @@ async def bulk_upload_enrollments(
 async def export_enrollments_excel(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
+    search: Optional[str] = None,
+    connect_status: Optional[List[str]] = Query(None),
+    action_taken: Optional[List[str]] = Query(None),
+    service_partner: Optional[List[str]] = Query(None),
+    service_enrolled: Optional[List[str]] = Query(None),
+    package: Optional[str] = None,
+    uhid: Optional[List[str]] = Query(None),
+    hclhc_spoc: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    my_role: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
     Enrollments MIS export: Summary (+ Agent x Service matrix), Enrollments (with
-    care roll-ups), Care Journey (per step), Follow-ups. Agents export only where
-    they are the HCLHC SPOC. Optional IST-aware created_at range.
+    care roll-ups), Care Journey (per step), Follow-ups. Exports exactly the list
+    the user is looking at (same filters, search and visibility as the page).
+    start_date / end_date (created, IST) are kept for older links.
     """
     IST_OFFSET = timedelta(hours=5, minutes=30)
     today = (datetime.utcnow() + IST_OFFSET).date()
-
-    query: dict = {"is_deleted": False}
-    if current_user.get("role") == "agent":
-        user_name = current_user.get("full_name", "")
-        query["hclhc_spoc"] = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
-    created_range: dict = {}
-    if start_date:
-        try:
-            created_range["$gte"] = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date (expected YYYY-MM-DD)")
-    if end_date:
-        try:
-            created_range["$lt"] = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date (expected YYYY-MM-DD)")
-    if created_range:
-        query["created_at"] = created_range
+    for d in (start_date, end_date, created_date_from, created_date_to):
+        if d:
+            try:
+                datetime.strptime(d, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date (expected YYYY-MM-DD)")
+    query = build_enrollment_list_query(
+        search=search,
+        connect_status=connect_status,
+        action_taken=action_taken,
+        service_partner=service_partner,
+        service_enrolled=service_enrolled,
+        package=package,
+        uhid=uhid,
+        hclhc_spoc=hclhc_spoc,
+        created_date_from=created_date_from or start_date,
+        created_date_to=created_date_to or end_date,
+        next_follow_up_date=next_follow_up_date,
+        assigned_today=assigned_today,
+        my_role=my_role,
+        current_user=current_user,
+    )
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
 
@@ -735,6 +753,145 @@ async def export_enrollments_excel(
     )
 
 
+def build_enrollment_list_query(
+    search: Optional[str] = None,
+    connect_status: Optional[List[str]] = None,
+    action_taken: Optional[List[str]] = None,
+    service_partner: Optional[List[str]] = None,
+    service_enrolled: Optional[List[str]] = None,
+    package: Optional[str] = None,
+    uhid: Optional[List[str]] = None,
+    hclhc_spoc: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    my_role: Optional[str] = None,
+    current_user: dict = None
+) -> dict:
+    """The Enrollments page filters as one Mongo query (agent visibility, filters,
+    search, quick filters). Shared by the list and the MIS export."""
+    query = {"is_deleted": False}
+
+    # Visibility for agents: an enrollment shows on their page if they are the
+    # current follow-up SPOC OR they are the agent who enrolled it (monitor view).
+    # `my_role` lets the agent split the two:
+    #   'following_up' = mine to act on (I'm the SPOC)
+    #   'enrolled'     = I enrolled it but someone else now follows up (read-only)
+    agent_or = None
+    if current_user.get("role") == "agent":
+        user_name = current_user.get("full_name", "")
+        user_id = current_user["user_id"]
+        spoc_regex = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
+        spoc_match = {"hclhc_spoc": spoc_regex}
+        enrolled_monitor = {"$and": [
+            {"created_by": user_id},
+            {"hclhc_spoc": {"$not": spoc_regex}},
+        ]}
+        if my_role == "following_up":
+            agent_or = [spoc_match]
+        elif my_role == "enrolled":
+            agent_or = [enrolled_monitor]
+        else:
+            agent_or = [spoc_match, {"created_by": user_id}]
+
+    # Apply filters (support multiple values with $in)
+    if connect_status and len(connect_status) > 0:
+        query["connect_status"] = {"$in": connect_status}
+    if action_taken and len(action_taken) > 0:
+        query["action_taken"] = {"$in": action_taken}
+    if service_partner and len(service_partner) > 0:
+        query["service_partner"] = {"$in": service_partner}
+    # Service enrolled - multi-select; matches legacy variants too
+    # (e.g. "Antenatal" also matches "Tulip Antenatal").
+    if service_enrolled and len(service_enrolled) > 0:
+        svc_pats = [service_match_pattern(s) for s in service_enrolled if s and s.strip()]
+        if svc_pats:
+            query["service_enrolled"] = {"$regex": "(" + "|".join(svc_pats) + ")", "$options": "i"}
+    # Package (free text) - partial, case-insensitive match on package_name_enrolled
+    if package and package.strip():
+        query["package_name_enrolled"] = {"$regex": re.escape(package.strip()), "$options": "i"}
+    # UHID: whitespace-tolerant case-insensitive match (some rows have padding)
+    if uhid and len(uhid) > 0:
+        uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
+        if uhid_alternation:
+            query["uhid"] = {"$regex": f"^\\s*({uhid_alternation})\\s*$", "$options": "i"}
+    if hclhc_spoc:
+        query["hclhc_spoc"] = {"$regex": re.escape(hclhc_spoc), "$options": "i"}
+
+    # Date range filter for created_at
+    if created_date_from or created_date_to:
+        created_at_filter = {}
+        if created_date_from:
+            try:
+                from_date = datetime.strptime(created_date_from, "%Y-%m-%d").date()
+                created_at_filter["$gte"] = ist_day_start_utc(from_date)
+            except ValueError:
+                pass
+        if created_date_to:
+            try:
+                to_date = datetime.strptime(created_date_to, "%Y-%m-%d").date()
+                created_at_filter["$lt"] = ist_day_start_utc(to_date) + timedelta(days=1)
+            except ValueError:
+                pass
+        if created_at_filter:
+            query["created_at"] = created_at_filter
+
+    if next_follow_up_date:
+        try:
+            filter_date = datetime.strptime(next_follow_up_date, "%Y-%m-%d").date()
+            day_start, day_end = ist_range_utc(filter_date)
+            query["next_follow_up_date"] = {"$gte": day_start, "$lt": day_end}
+        except ValueError:
+            pass
+
+    # Search across all common identifying fields (escape regex special chars for security)
+    search_conditions = None
+    if search and search.strip():
+        escaped_search = re.escape(search.strip())
+        search_conditions = [
+            {"subscriber_name": {"$regex": escaped_search, "$options": "i"}},
+            {"employee_id": {"$regex": escaped_search, "$options": "i"}},
+            {"name": {"$regex": escaped_search, "$options": "i"}},
+            {"phone_number": {"$regex": escaped_search}},
+            {"enrollment_id": {"$regex": escaped_search, "$options": "i"}},
+            {"linked_lead_id": {"$regex": escaped_search, "$options": "i"}},
+            {"email": {"$regex": escaped_search, "$options": "i"}},
+            {"uhid": {"$regex": escaped_search, "$options": "i"}},
+            {"package_name_enrolled": {"$regex": escaped_search, "$options": "i"}},
+            {"doctor_name": {"$regex": escaped_search, "$options": "i"}},
+            {"hclhc_spoc": {"$regex": escaped_search, "$options": "i"}},
+            {"partner_centre_selected": {"$regex": escaped_search, "$options": "i"}},
+            {"assigned_to_name": {"$regex": escaped_search, "$options": "i"}},
+            {"reassign_to_name": {"$regex": escaped_search, "$options": "i"}},
+            {"created_by_name": {"$regex": escaped_search, "$options": "i"}},
+        ]
+
+    # Combine agent visibility and search as ANDed $or groups (each must hold)
+    and_groups = []
+    if agent_or is not None:
+        and_groups.append({"$or": agent_or})
+    if search_conditions is not None:
+        and_groups.append({"$or": search_conditions})
+    if and_groups:
+        query.setdefault("$and", []).extend(and_groups)
+
+    # "Assigned today" quick filter: assigned_date OR reassigned_date is today (IST).
+    # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper.
+    if assigned_today:
+        IST_OFFSET = timedelta(hours=5, minutes=30)
+        t = today_ist()
+        a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
+        a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
+        query = {"$and": [query, {"$or": [
+            {"assigned_date": {"$gte": a_start, "$lte": a_end}},
+            {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
+        ]}]}
+
+    # Get total count
+    return query
+
+
 @router.get("", response_model=EnrollmentListResponse)
 async def get_enrollments(
     page: int = Query(1, ge=1),
@@ -756,124 +913,23 @@ async def get_enrollments(
 ):
     """Get enrollments with pagination and filters"""
     try:
-        query = {"is_deleted": False}
+        query = build_enrollment_list_query(
+            search=search,
+            connect_status=connect_status,
+            action_taken=action_taken,
+            service_partner=service_partner,
+            service_enrolled=service_enrolled,
+            package=package,
+            uhid=uhid,
+            hclhc_spoc=hclhc_spoc,
+            created_date_from=created_date_from,
+            created_date_to=created_date_to,
+            next_follow_up_date=next_follow_up_date,
+            assigned_today=assigned_today,
+            my_role=my_role,
+            current_user=current_user,
+        )
 
-        # Visibility for agents: an enrollment shows on their page if they are the
-        # current follow-up SPOC OR they are the agent who enrolled it (monitor view).
-        # `my_role` lets the agent split the two:
-        #   'following_up' = mine to act on (I'm the SPOC)
-        #   'enrolled'     = I enrolled it but someone else now follows up (read-only)
-        agent_or = None
-        if current_user.get("role") == "agent":
-            user_name = current_user.get("full_name", "")
-            user_id = current_user["user_id"]
-            spoc_regex = {"$regex": f"^{re.escape(user_name)}$", "$options": "i"}
-            spoc_match = {"hclhc_spoc": spoc_regex}
-            enrolled_monitor = {"$and": [
-                {"created_by": user_id},
-                {"hclhc_spoc": {"$not": spoc_regex}},
-            ]}
-            if my_role == "following_up":
-                agent_or = [spoc_match]
-            elif my_role == "enrolled":
-                agent_or = [enrolled_monitor]
-            else:
-                agent_or = [spoc_match, {"created_by": user_id}]
-
-        # Apply filters (support multiple values with $in)
-        if connect_status and len(connect_status) > 0:
-            query["connect_status"] = {"$in": connect_status}
-        if action_taken and len(action_taken) > 0:
-            query["action_taken"] = {"$in": action_taken}
-        if service_partner and len(service_partner) > 0:
-            query["service_partner"] = {"$in": service_partner}
-        # Service enrolled - multi-select; matches legacy variants too
-        # (e.g. "Antenatal" also matches "Tulip Antenatal").
-        if service_enrolled and len(service_enrolled) > 0:
-            svc_pats = [service_match_pattern(s) for s in service_enrolled if s and s.strip()]
-            if svc_pats:
-                query["service_enrolled"] = {"$regex": "(" + "|".join(svc_pats) + ")", "$options": "i"}
-        # Package (free text) - partial, case-insensitive match on package_name_enrolled
-        if package and package.strip():
-            query["package_name_enrolled"] = {"$regex": re.escape(package.strip()), "$options": "i"}
-        # UHID: whitespace-tolerant case-insensitive match (some rows have padding)
-        if uhid and len(uhid) > 0:
-            uhid_alternation = "|".join(re.escape(u.strip()) for u in uhid if u and u.strip())
-            if uhid_alternation:
-                query["uhid"] = {"$regex": f"^\\s*({uhid_alternation})\\s*$", "$options": "i"}
-        if hclhc_spoc:
-            query["hclhc_spoc"] = {"$regex": re.escape(hclhc_spoc), "$options": "i"}
-
-        # Date range filter for created_at
-        if created_date_from or created_date_to:
-            created_at_filter = {}
-            if created_date_from:
-                try:
-                    from_date = datetime.strptime(created_date_from, "%Y-%m-%d").date()
-                    created_at_filter["$gte"] = ist_day_start_utc(from_date)
-                except ValueError:
-                    pass
-            if created_date_to:
-                try:
-                    to_date = datetime.strptime(created_date_to, "%Y-%m-%d").date()
-                    created_at_filter["$lt"] = ist_day_start_utc(to_date) + timedelta(days=1)
-                except ValueError:
-                    pass
-            if created_at_filter:
-                query["created_at"] = created_at_filter
-
-        if next_follow_up_date:
-            try:
-                filter_date = datetime.strptime(next_follow_up_date, "%Y-%m-%d").date()
-                day_start, day_end = ist_range_utc(filter_date)
-                query["next_follow_up_date"] = {"$gte": day_start, "$lt": day_end}
-            except ValueError:
-                pass
-
-        # Search across all common identifying fields (escape regex special chars for security)
-        search_conditions = None
-        if search and search.strip():
-            escaped_search = re.escape(search.strip())
-            search_conditions = [
-                {"subscriber_name": {"$regex": escaped_search, "$options": "i"}},
-                {"employee_id": {"$regex": escaped_search, "$options": "i"}},
-                {"name": {"$regex": escaped_search, "$options": "i"}},
-                {"phone_number": {"$regex": escaped_search}},
-                {"enrollment_id": {"$regex": escaped_search, "$options": "i"}},
-                {"linked_lead_id": {"$regex": escaped_search, "$options": "i"}},
-                {"email": {"$regex": escaped_search, "$options": "i"}},
-                {"uhid": {"$regex": escaped_search, "$options": "i"}},
-                {"package_name_enrolled": {"$regex": escaped_search, "$options": "i"}},
-                {"doctor_name": {"$regex": escaped_search, "$options": "i"}},
-                {"hclhc_spoc": {"$regex": escaped_search, "$options": "i"}},
-                {"partner_centre_selected": {"$regex": escaped_search, "$options": "i"}},
-                {"assigned_to_name": {"$regex": escaped_search, "$options": "i"}},
-                {"reassign_to_name": {"$regex": escaped_search, "$options": "i"}},
-                {"created_by_name": {"$regex": escaped_search, "$options": "i"}},
-            ]
-
-        # Combine agent visibility and search as ANDed $or groups (each must hold)
-        and_groups = []
-        if agent_or is not None:
-            and_groups.append({"$or": agent_or})
-        if search_conditions is not None:
-            and_groups.append({"$or": search_conditions})
-        if and_groups:
-            query.setdefault("$and", []).extend(and_groups)
-
-        # "Assigned today" quick filter: assigned_date OR reassigned_date is today (IST).
-        # Mirrors the Assigned-Today KPI card. Applied last as an $and wrapper.
-        if assigned_today:
-            IST_OFFSET = timedelta(hours=5, minutes=30)
-            t = today_ist()
-            a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
-            a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
-            query = {"$and": [query, {"$or": [
-                {"assigned_date": {"$gte": a_start, "$lte": a_end}},
-                {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
-            ]}]}
-
-        # Get total count
         total = await Enrollment.find(query).count()
         pages = math.ceil(total / per_page) if total > 0 else 1
 

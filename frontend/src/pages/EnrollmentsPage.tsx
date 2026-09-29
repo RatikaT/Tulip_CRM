@@ -220,8 +220,6 @@ export default function EnrollmentsPage() {
   // Export state
   const [exporting, setExporting] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportStartDate, setExportStartDate] = useState<Date | null>(null);
-  const [exportEndDate, setExportEndDate] = useState<Date | null>(null);
 
   // View mode toggle: 'all' for all enrollments, 'user' for user-level view
   const [viewMode, setViewMode] = useState<'all' | 'user'>((savedEnrollmentFilters.viewMode as 'all' | 'user') ?? 'all');
@@ -335,25 +333,31 @@ export default function EnrollmentsPage() {
     }
   }, []);
 
+  // The filters behind the list on screen; the MIS export sends exactly the same
+  // (the colour filter is screen-only and stays out of both).
+  const listFilters = () => ({
+    search: searchTerm || undefined,
+    connect_status: connectStatusFilter.length > 0 ? connectStatusFilter : undefined,
+    action_taken: actionTakenFilter.length > 0 ? actionTakenFilter : undefined,
+    service_partner: servicePartnerFilter.length > 0 ? servicePartnerFilter : undefined,
+    service_enrolled: serviceEnrolledFilter.length > 0 ? serviceEnrolledFilter : undefined,
+    package: packageFilter || undefined,
+    uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
+    hclhc_spoc: hclhcSpocFilter || undefined,
+    my_role: myRoleFilter || undefined,
+    created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
+    created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
+    next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
+    assigned_today: assignedTodayFilter || undefined,
+  });
+
   const fetchEnrollments = useCallback(async () => {
     setLoading(true);
     try {
       const response = await enrollmentService.getEnrollments({
         page: paginationModel.page + 1,
         per_page: paginationModel.pageSize,
-        search: searchTerm || undefined,
-        connect_status: connectStatusFilter.length > 0 ? connectStatusFilter : undefined,
-        action_taken: actionTakenFilter.length > 0 ? actionTakenFilter : undefined,
-        service_partner: servicePartnerFilter.length > 0 ? servicePartnerFilter : undefined,
-        service_enrolled: serviceEnrolledFilter.length > 0 ? serviceEnrolledFilter : undefined,
-        package: packageFilter || undefined,
-        uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
-        hclhc_spoc: hclhcSpocFilter || undefined,
-        my_role: myRoleFilter || undefined,
-        created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
-        created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
-        next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
-        assigned_today: assignedTodayFilter || undefined,
+        ...listFilters(),
       });
       setEnrollments(response.enrollments);
       setTotalCount(response.total);
@@ -619,9 +623,7 @@ export default function EnrollmentsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const start = exportStartDate ? format(exportStartDate, 'yyyy-MM-dd') : undefined;
-      const end = exportEndDate ? format(exportEndDate, 'yyyy-MM-dd') : undefined;
-      const blob = await enrollmentService.exportExcel(start, end);
+      const blob = await enrollmentService.exportExcel(listFilters());
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -2049,36 +2051,17 @@ export default function EnrollmentsPage() {
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Export Enrollments</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Choose a date range to export enrollments created within it (IST). Leave both blank to export all.
+          <DialogContentText sx={{ mb: 1.5 }}>
+            {hasActiveFilters || searchTerm
+              ? <>This exports the <b>{totalCount.toLocaleString('en-IN')}</b> enrollment{totalCount === 1 ? '' : 's'} in your current list, with the same filters{searchTerm ? ' and search' : ''}.</>
+              : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> enrollments you can see.</>}
           </DialogContentText>
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <Box sx={{ display: 'flex', gap: 1.5, mt: 1 }}>
-              <DatePicker
-                label="From"
-                value={exportStartDate}
-                onChange={(d) => setExportStartDate(d)}
-                maxDate={exportEndDate || undefined}
-                slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              />
-              <DatePicker
-                label="To"
-                value={exportEndDate}
-                onChange={(d) => setExportEndDate(d)}
-                minDate={exportStartDate || undefined}
-                slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              />
-            </Box>
-          </LocalizationProvider>
+          <DialogContentText variant="body2">
+            To export a smaller set (for example a date range, a service or a Nurture Buddy), close this, set the filters, and export again.
+            {colorFilter ? ' The colour filter only changes the screen and isn\'t applied to the export.' : ''}
+          </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => { setExportStartDate(null); setExportEndDate(null); }}
-            disabled={exporting || (!exportStartDate && !exportEndDate)}
-            sx={{ textTransform: 'none', mr: 'auto' }}
-          >
-            Clear
-          </Button>
           <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>
             Cancel
           </Button>

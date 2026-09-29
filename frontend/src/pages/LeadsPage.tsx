@@ -52,7 +52,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
-import { leadService } from '../services/leadService';
+import { leadService, buildLeadParams } from '../services/leadService';
 import { Lead } from '../types/lead.types';
 import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
@@ -210,8 +210,6 @@ export default function LeadsPage() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportStartDate, setExportStartDate] = useState<Date | null>(null);
-  const [exportEndDate, setExportEndDate] = useState<Date | null>(null);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -344,26 +342,32 @@ export default function LeadsPage() {
     fetchAgents();
   }, []);
 
+  // The filters behind the list on screen; the MIS export sends exactly the same
+  // (the colour filter is screen-only and stays out of both).
+  const listFilters = () => ({
+    search: searchTerm || undefined,
+    status: statusFilter.length > 0 ? statusFilter : undefined,
+    lead_source: sourceFilter.length > 0 ? sourceFilter : undefined,
+    uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
+    package_requested: packageRequestedFilter.length > 0 ? packageRequestedFilter : undefined,
+    service_requested: serviceRequestedFilter.length > 0 ? serviceRequestedFilter : undefined,
+    assigned_to: assignedToFilter || undefined,
+    reassign_to: reassignedToFilter || undefined,
+    created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
+    created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
+    next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
+    assigned_today: assignedTodayFilter || undefined,
+    // Same rule as the Follow-ups Today card: open leads the user owns now
+    open_follow_ups: activeKpi === 'follow_up_today' || undefined,
+  });
+
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
       const response = await leadService.getLeads({
         page: paginationModel.page + 1,
         per_page: paginationModel.pageSize,
-        search: searchTerm || undefined,
-        status: statusFilter.length > 0 ? statusFilter : undefined,
-        lead_source: sourceFilter.length > 0 ? sourceFilter : undefined,
-        uhid: uhidFilter.length > 0 ? uhidFilter : undefined,
-        package_requested: packageRequestedFilter.length > 0 ? packageRequestedFilter : undefined,
-        service_requested: serviceRequestedFilter.length > 0 ? serviceRequestedFilter : undefined,
-        assigned_to: assignedToFilter || undefined,
-        reassign_to: reassignedToFilter || undefined,
-        created_date_from: createdDateFrom ? format(createdDateFrom, 'yyyy-MM-dd') : undefined,
-        created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
-        next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
-        assigned_today: assignedTodayFilter || undefined,
-        // Same rule as the Follow-ups Today card: open leads the user owns now
-        open_follow_ups: activeKpi === 'follow_up_today' || undefined,
+        ...listFilters(),
       });
       setLeads(response.leads);
       setTotalCount(response.total);
@@ -559,12 +563,9 @@ export default function LeadsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params: Record<string, string> = {};
-      if (exportStartDate) params.start_date = format(exportStartDate, 'yyyy-MM-dd');
-      if (exportEndDate) params.end_date = format(exportEndDate, 'yyyy-MM-dd');
       const response = await api.get('/leads/export/excel', {
         responseType: 'blob',
-        params,
+        params: buildLeadParams(listFilters()),
       });
 
       // Create download link
@@ -2022,36 +2023,17 @@ export default function LeadsPage() {
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Export Leads</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Choose a date range to export leads created within it (IST). Leave both blank to export all.
+          <DialogContentText sx={{ mb: 1.5 }}>
+            {hasActiveFilters || searchTerm
+              ? <>This exports the <b>{totalCount.toLocaleString('en-IN')}</b> lead{totalCount === 1 ? '' : 's'} in your current list, with the same filters{searchTerm ? ' and search' : ''}.</>
+              : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> leads you can see.</>}
           </DialogContentText>
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <Box sx={{ display: 'flex', gap: 1.5, mt: 1 }}>
-              <DatePicker
-                label="From"
-                value={exportStartDate}
-                onChange={(d) => setExportStartDate(d)}
-                maxDate={exportEndDate || undefined}
-                slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              />
-              <DatePicker
-                label="To"
-                value={exportEndDate}
-                onChange={(d) => setExportEndDate(d)}
-                minDate={exportStartDate || undefined}
-                slotProps={{ textField: { size: 'small', fullWidth: true } }}
-              />
-            </Box>
-          </LocalizationProvider>
+          <DialogContentText variant="body2">
+            To export a smaller set (for example a date range, a source or a SPOC), close this, set the filters, and export again.
+            {colorFilter ? ' The colour filter only changes the screen and isn\'t applied to the export.' : ''}
+          </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => { setExportStartDate(null); setExportEndDate(null); }}
-            disabled={exporting || (!exportStartDate && !exportEndDate)}
-            sx={{ textTransform: 'none', mr: 'auto' }}
-          >
-            Clear
-          </Button>
           <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>
             Cancel
           </Button>

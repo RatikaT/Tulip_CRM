@@ -605,15 +605,12 @@ async def bulk_upload_leads(
     }
 
 
-@router.get("", response_model=LeadListResponse)
-async def get_leads(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=100),
-    status: Optional[List[str]] = Query(None),
-    lead_source: Optional[List[str]] = Query(None),
-    uhid: Optional[List[str]] = Query(None),
-    package_requested: Optional[List[str]] = Query(None),
-    service_requested: Optional[List[str]] = Query(None),
+def build_lead_list_query(
+    status: Optional[List[str]] = None,
+    lead_source: Optional[List[str]] = None,
+    uhid: Optional[List[str]] = None,
+    package_requested: Optional[List[str]] = None,
+    service_requested: Optional[List[str]] = None,
     city: Optional[str] = None,
     assigned_to: Optional[str] = None,
     reassign_to: Optional[str] = None,
@@ -623,13 +620,11 @@ async def get_leads(
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
     search: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Get paginated list of leads with filters
-    Agents can only see leads assigned to them or reassigned to them
-    Supports multi-select filters for status, lead_source, uhid, package_requested
-    """
+    current_user: dict = None
+) -> dict:
+    """The Leads page filters as one Mongo query (agent visibility, filters, search,
+    quick filters, duplicate rule). Shared by the list and the MIS export so the
+    export always matches what the user sees."""
     # Build query
     query = {"is_deleted": False}
     # NOTE: pending/confirmed duplicates are hidden from the Leads page — EXCEPT
@@ -806,6 +801,52 @@ async def get_leads(
         {"status": LeadStatus.ENROLLED.value},
     ]}]}
 
+    return query
+
+
+@router.get("", response_model=LeadListResponse)
+async def get_leads(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    status: Optional[List[str]] = Query(None),
+    lead_source: Optional[List[str]] = Query(None),
+    uhid: Optional[List[str]] = Query(None),
+    package_requested: Optional[List[str]] = Query(None),
+    service_requested: Optional[List[str]] = Query(None),
+    city: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    reassign_to: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    open_follow_ups: Optional[bool] = None,
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get paginated list of leads with filters
+    Agents can only see leads assigned to them or reassigned to them
+    Supports multi-select filters for status, lead_source, uhid, package_requested
+    """
+    query = build_lead_list_query(
+        status=status,
+        lead_source=lead_source,
+        uhid=uhid,
+        package_requested=package_requested,
+        service_requested=service_requested,
+        city=city,
+        assigned_to=assigned_to,
+        reassign_to=reassign_to,
+        created_date_from=created_date_from,
+        created_date_to=created_date_to,
+        next_follow_up_date=next_follow_up_date,
+        assigned_today=assigned_today,
+        open_follow_ups=open_follow_ups,
+        search=search,
+        current_user=current_user,
+    )
+
     # Count total
     total = await Lead.find(query).count()
     pages = math.ceil(total / per_page) if total > 0 else 1
@@ -827,31 +868,41 @@ async def get_leads(
 async def export_leads_excel(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD), inclusive, IST"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD), inclusive, IST"),
+    status: Optional[List[str]] = Query(None),
+    lead_source: Optional[List[str]] = Query(None),
+    uhid: Optional[List[str]] = Query(None),
+    package_requested: Optional[List[str]] = Query(None),
+    service_requested: Optional[List[str]] = Query(None),
+    city: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    reassign_to: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    open_follow_ups: Optional[bool] = None,
+    search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
     Leads MIS export: Summary, Leads, Lead History, Calls, Comments.
-    Excludes duplicates (they have a separate export). Agents export only leads
-    assigned/reassigned to them. Optional IST-aware created_at date range.
+    Exports exactly the list the user is looking at: the same filters, search,
+    quick filters, agent visibility and duplicate rule as the Leads page.
+    start_date / end_date (created, IST) are kept for older links.
     """
-    IST_OFFSET = timedelta(hours=5, minutes=30)
-    query: dict = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
-    if current_user["role"] == "agent":
-        uid = current_user["user_id"]
-        query["$or"] = [{"assigned_to": uid}, {"reassign_to": uid}]
-    created_range: dict = {}
-    if start_date:
-        try:
-            created_range["$gte"] = datetime.strptime(start_date, "%Y-%m-%d") - IST_OFFSET
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid start_date (expected YYYY-MM-DD)")
-    if end_date:
-        try:
-            created_range["$lt"] = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - IST_OFFSET
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid end_date (expected YYYY-MM-DD)")
-    if created_range:
-        query["created_at"] = created_range
+    for d in (start_date, end_date, created_date_from, created_date_to):
+        if d:
+            try:
+                datetime.strptime(d, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date (expected YYYY-MM-DD)")
+    query = build_lead_list_query(
+        status=status, lead_source=lead_source, uhid=uhid, package_requested=package_requested,
+        service_requested=service_requested, city=city, assigned_to=assigned_to, reassign_to=reassign_to,
+        created_date_from=created_date_from or start_date, created_date_to=created_date_to or end_date,
+        next_follow_up_date=next_follow_up_date, assigned_today=assigned_today,
+        open_follow_ups=open_follow_ups, search=search, current_user=current_user,
+    )
 
     leads = await Lead.find(query).sort("-created_at").to_list()
 

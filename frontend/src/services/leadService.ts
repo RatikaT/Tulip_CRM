@@ -68,36 +68,45 @@ export interface RelatedLeadsResponse {
   total: number;
 }
 
+// The Leads page filters as query params; shared by the list and the MIS export
+// so the export always matches the list on screen.
+export const buildLeadParams = (filters: LeadFilters = {}): URLSearchParams => {
+  const params = new URLSearchParams();
+  if (filters.page) params.append('page', filters.page.toString());
+  if (filters.per_page) params.append('per_page', filters.per_page.toString());
+  if (filters.search && filters.search.trim()) params.append('search', filters.search.trim());
+  // Multi-select filters - append each value separately
+  if (filters.status && filters.status.length > 0) {
+    filters.status.forEach(s => params.append('status', s));
+  }
+  if (filters.lead_source && filters.lead_source.length > 0) {
+    filters.lead_source.forEach(s => params.append('lead_source', s));
+  }
+  if (filters.uhid && filters.uhid.length > 0) {
+    filters.uhid.forEach(u => params.append('uhid', u));
+  }
+  if (filters.package_requested && filters.package_requested.length > 0) {
+    filters.package_requested.forEach(p => params.append('package_requested', p));
+  }
+  if (filters.service_requested && filters.service_requested.length > 0) {
+    filters.service_requested.forEach(sv => params.append('service_requested', sv));
+  }
+  // Single value filters
+  if (filters.city) params.append('city', filters.city);
+  if (filters.assigned_to) params.append('assigned_to', filters.assigned_to);
+  if (filters.reassign_to) params.append('reassign_to', filters.reassign_to);
+  // Date filters
+  if (filters.created_date_from) params.append('created_date_from', filters.created_date_from);
+  if (filters.created_date_to) params.append('created_date_to', filters.created_date_to);
+  if (filters.next_follow_up_date) params.append('next_follow_up_date', filters.next_follow_up_date);
+  if (filters.assigned_today) params.append('assigned_today', 'true');
+  if (filters.open_follow_ups) params.append('open_follow_ups', 'true');
+  return params;
+};
+
 export const leadService = {
   getLeads: async (filters: LeadFilters = {}): Promise<LeadListResponse> => {
-    const params = new URLSearchParams();
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-    if (filters.search && filters.search.trim()) params.append('search', filters.search.trim());
-    // Multi-select filters - append each value separately
-    if (filters.status && filters.status.length > 0) {
-      filters.status.forEach(s => params.append('status', s));
-    }
-    if (filters.lead_source && filters.lead_source.length > 0) {
-      filters.lead_source.forEach(s => params.append('lead_source', s));
-    }
-    if (filters.uhid && filters.uhid.length > 0) {
-      filters.uhid.forEach(u => params.append('uhid', u));
-    }
-    if (filters.package_requested && filters.package_requested.length > 0) {
-      filters.package_requested.forEach(p => params.append('package_requested', p));
-    }
-    // Single value filters
-    if (filters.city) params.append('city', filters.city);
-    if (filters.assigned_to) params.append('assigned_to', filters.assigned_to);
-    if (filters.reassign_to) params.append('reassign_to', filters.reassign_to);
-    // Date filters
-    if (filters.created_date_from) params.append('created_date_from', filters.created_date_from);
-    if (filters.created_date_to) params.append('created_date_to', filters.created_date_to);
-    if (filters.next_follow_up_date) params.append('next_follow_up_date', filters.next_follow_up_date);
-    if (filters.assigned_today) params.append('assigned_today', 'true');
-    if (filters.open_follow_ups) params.append('open_follow_ups', 'true');
-
+    const params = buildLeadParams(filters);
     const response = await api.get<LeadListResponse>(`/leads?${params.toString()}`);
     return response.data;
   },
