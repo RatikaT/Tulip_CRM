@@ -382,7 +382,7 @@ export default function EnrollmentsPage() {
     fetchStats();
   }, [fetchEnrollments, fetchStats]);
 
-  // Fetch users tagged for Tulip CRM for HCLHC SPOC dropdown
+  // Fetch users tagged for Tulip CRM for HCLH SPOC (Nurture Buddy) dropdown
   useEffect(() => {
     const fetchTulipUsers = async () => {
       try {
@@ -544,7 +544,7 @@ export default function EnrollmentsPage() {
     </Grid>
   );
 
-  // Super-admin one-time fix: fill blank HCLHC SPOCs from the enrolling agent.
+  // Super-admin one-time fix: fill blank HCLH SPOC (Nurture Buddy) from the enrolling agent.
   const [backfillingSpoc, setBackfillingSpoc] = useState(false);
   const handleBackfillSpoc = async () => {
     setBackfillingSpoc(true);
@@ -552,8 +552,8 @@ export default function EnrollmentsPage() {
       const result = await enrollmentService.backfillSpoc();
       toast.success(
         result.updated > 0
-          ? `Backfilled HCLHC SPOC on ${result.updated} enrollment(s)`
-          : 'No enrollments needed a SPOC backfill'
+          ? `Backfilled HCLH SPOC (Nurture Buddy) on ${result.updated} enrollment(s)`
+          : 'No enrollments needed an HCLH SPOC (Nurture Buddy) backfill'
       );
       // Refresh so the updated SPOCs show immediately
       fetchEnrollments();
@@ -562,7 +562,7 @@ export default function EnrollmentsPage() {
       console.error('Backfill SPOC failed:', error);
       const msg =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        'Failed to backfill HCLHC SPOC';
+        'Failed to backfill HCLH SPOC (Nurture Buddy)';
       toast.error(msg);
     } finally {
       setBackfillingSpoc(false);
@@ -737,7 +737,7 @@ export default function EnrollmentsPage() {
     },
     {
       field: 'next_follow_up_date',
-      headerName: 'Next Follow Up',
+      headerName: 'Next Follow-up Due',
       flex: 0.8,
       minWidth: 95,
       renderCell: (params: GridRenderCellParams) => {
@@ -877,7 +877,7 @@ export default function EnrollmentsPage() {
             {exporting ? 'Exporting...' : 'Export'}
           </Button>
           {isSuperAdmin && (
-            <Tooltip title="Fill blank HCLHC SPOCs on old enrollments from the enrolling agent">
+            <Tooltip title="Fill blank HCLH SPOC (Nurture Buddy) on old enrollments from the enrolling agent">
               <span>
                 <Button
                   variant="outlined"
@@ -1340,7 +1340,7 @@ export default function EnrollmentsPage() {
                   disableCloseOnSelect
                 />
 
-                {/* HCLHC SPOC - User dropdown */}
+                {/* HCLH SPOC (Nurture Buddy) - User dropdown */}
                 <Autocomplete
                   size="small"
                   options={tulipUsers}
@@ -1348,7 +1348,7 @@ export default function EnrollmentsPage() {
                   value={tulipUsers.find(u => u.full_name === hclhcSpocFilter) || null}
                   onChange={(_, newValue) => setHclhcSpocFilter(newValue?.full_name || '')}
                   renderInput={(params) => (
-                    <TextField {...params} label="HCLHC SPOC" placeholder="" sx={{ ...compactInputSx, width: 150 }} />
+                    <TextField {...params} label="HCLH SPOC (Nurture Buddy)" placeholder="" sx={{ ...compactInputSx, width: 210 }} />
                   )}
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                 />
@@ -1374,13 +1374,13 @@ export default function EnrollmentsPage() {
                   }}
                 />
 
-                {/* Next Follow Up Date */}
+                {/* Next Follow-up Due */}
                 <DatePicker
-                  label="Next Follow Up"
+                  label="Next Follow-up Due"
                   value={nextFollowUpDateFilter}
                   onChange={setNextFollowUpDateFilter}
                   slotProps={{
-                    textField: { size: 'small', sx: { ...compactInputSx, width: 140 } },
+                    textField: { size: 'small', sx: { ...compactInputSx, width: 165 } },
                     field: { clearable: true }
                   }}
                 />
@@ -1590,7 +1590,7 @@ export default function EnrollmentsPage() {
                       }}
                       onClick={() => setHclhcSpocFilter('')}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>SPOC: {hclhcSpocFilter}</Typography>
+                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>HCLH SPOC (Nurture Buddy): {hclhcSpocFilter}</Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
                   )}
@@ -1635,7 +1635,7 @@ export default function EnrollmentsPage() {
                       onClick={() => setNextFollowUpDateFilter(null)}
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
-                        Follow Up: {format(nextFollowUpDateFilter, 'dd/MM/yy')}
+                        Next Follow-up Due: {format(nextFollowUpDateFilter, 'dd/MM/yy')}
                       </Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
@@ -1897,7 +1897,7 @@ export default function EnrollmentsPage() {
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Partner</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Connect Status</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Action Taken</TableCell>
-                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Follow Up</TableCell>
+                          <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Next Follow-up Due</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem' }}>Created</TableCell>
                           <TableCell sx={{ fontWeight: 600, fontSize: '0.75rem', width: isAdmin ? 100 : 60 }}>Action</TableCell>
                         </TableRow>

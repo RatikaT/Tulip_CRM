@@ -351,7 +351,6 @@ export default function LeadDetailPage() {
             partner_gynaecologist: enrollmentData.partner_gynaecologist || undefined,
             connect_status: enrollmentData.connect_status || undefined,
             action_taken: enrollmentData.action_taken || undefined,
-            follow_up_date: enrollmentData.follow_up_date || undefined,
             next_follow_up_date: enrollmentData.next_follow_up_date || undefined,
             customer_feedback: enrollmentData.customer_feedback || undefined,
             remarks: enrollmentData.remarks || undefined,

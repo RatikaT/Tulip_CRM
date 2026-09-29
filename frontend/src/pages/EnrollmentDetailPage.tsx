@@ -148,7 +148,7 @@ export default function EnrollmentDetailPage() {
   // Users list for Assigned To dropdown
   const [users, setUsers] = useState<UserOption[]>([]);
 
-  // Fetch users for Assigned To and HCLHC SPOC dropdowns - only users with Tulip CRM access
+  // Fetch users for Assigned To and HCLH SPOC (Nurture Buddy) dropdowns - only users with Tulip CRM access
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -204,7 +204,6 @@ export default function EnrollmentDetailPage() {
         partner_gynaecologist: data.partner_gynaecologist || undefined,
         connect_status: data.connect_status || undefined,
         action_taken: data.action_taken || undefined,
-        follow_up_date: data.follow_up_date || undefined,
         next_follow_up_date: data.next_follow_up_date || undefined,
         customer_feedback: data.customer_feedback || undefined,
         remarks: data.remarks || undefined,
@@ -505,7 +504,7 @@ export default function EnrollmentDetailPage() {
               <Grid item xs={12} sm={6} md={4}>
                 <TextField
                   fullWidth
-                  label="Name"
+                  label="Employee Name"
                   value={formData.name || ''}
                   onChange={(e) => handleInputChange('name', e.target.value)}
                   disabled={!canEdit('name')}
@@ -613,13 +612,13 @@ export default function EnrollmentDetailPage() {
                       handleInputChange('hclhc_spoc', newValue || '')
                     }
                     renderInput={(params) => (
-                      <TextField {...params} fullWidth label="HCLHC SPOC" size="small" />
+                      <TextField {...params} fullWidth label="HCLH SPOC (Nurture Buddy)" size="small" />
                     )}
                   />
                 ) : (
                   <TextField
                     fullWidth
-                    label="HCLHC SPOC"
+                    label="HCLH SPOC (Nurture Buddy)"
                     value={formData.hclhc_spoc || ''}
                     disabled
                     size="small"
@@ -849,7 +848,7 @@ export default function EnrollmentDetailPage() {
                   </Grid>
                   <Grid item xs={12} sm={6} md={3}>
                     <DateTimePicker
-                      label="Next Follow-up Date (IST)"
+                      label="Next Follow-up Due (IST)"
                       value={toISTForPicker(newFollowUp.follow_up_date)}
                       onChange={(date) => {
                         if (date && startOfDay(date) < startOfDay(new Date())) {
@@ -922,7 +921,7 @@ export default function EnrollmentDetailPage() {
                   </Grid>
                   <Grid item xs={6} sm={3}>
                     <Typography variant="caption" color="text.secondary">
-                      Next Follow-up
+                      Next Follow-up Due
                     </Typography>
                     <Typography>
                       {formatFullDateTimeIST(enrollment.next_follow_up_date)}

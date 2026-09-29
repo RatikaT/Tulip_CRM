@@ -64,7 +64,7 @@ export default function AddServiceModal({
     if (!form.billed_date) return toast.error('Billed Date is required');
     if (!form.package_billed.trim()) return toast.error('Package Billed is required');
     if (!form.service_enrolled) return toast.error('Service Enrolled is required');
-    if (!form.hclhc_spoc.trim()) return toast.error('HCLHC SPOC is required');
+    if (!form.hclhc_spoc.trim()) return toast.error('HCLH SPOC (Nurture Buddy) is required');
 
     setSubmitting(true);
     try {
@@ -126,7 +126,7 @@ export default function AddServiceModal({
             <TextField
               fullWidth
               size="small"
-              label="HCLHC SPOC *"
+              label="HCLH SPOC (Nurture Buddy) *"
               value={form.hclhc_spoc}
               onChange={(e) => setField('hclhc_spoc', e.target.value)}
             />

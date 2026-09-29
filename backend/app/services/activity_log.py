@@ -67,7 +67,16 @@ _CALL_DATE_RE = re.compile(r"Date: (\d{4}-\d{2}-\d{2} \d{2}:\d{2})")
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
 
-def _label(field: str) -> str:
+# Enrollment-only overrides: on enrollments `name` is the employee's name
+# (distinct from subscriber_name); leads keep the plain "Name" label.
+_ENR_LABELS = {
+    "name": "Employee Name",
+}
+
+
+def _label(field: str, enrollment: bool = False) -> str:
+    if enrollment and field in _ENR_LABELS:
+        return _ENR_LABELS[field]
     return _LABELS.get(field) or field.replace("_", " ").strip().title()
 
 
@@ -237,7 +246,7 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
                 and abs((lg.timestamp - e.created_at).total_seconds()) < 120
                 and all(ch.get("old_value") in (None, "") for ch in (lg.changes or []))):
             rows.append(enr_row(e, lg.timestamp, CREATED, f"From lead {e.linked_lead_id}", None, "created",
-                                lg.user_name, details=_details(lg.changes)))
+                                lg.user_name, details=_details(lg.changes, enrollment=True)))
             continue
         for ch in (lg.changes or []):
             field = ch.get("field") or ""
@@ -245,7 +254,7 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
             if not action:
                 continue
             rows.append(enr_row(e, lg.timestamp, action,
-                                "" if action in (CREATED, DELETED) else _label(field),
+                                "" if action in (CREATED, DELETED) else _label(field, enrollment=True),
                                 ch.get("old_value"), ch.get("new_value"), lg.user_name,
                                 record_id=lg.enrollment_id))
 
@@ -312,13 +321,13 @@ DELETED_RECORD = "(record deleted)"
 _FOLDABLE = {FIELD_UPDATED}
 
 
-def _details(changes) -> str:
+def _details(changes, enrollment: bool = False) -> str:
     parts = []
     for ch in changes or []:
         f = ch.get("field") or ""
         if f in _SKIP_FIELDS or ch.get("new_value") in (None, ""):
             continue
-        parts.append(f"{_label(f)}: {_display(ch.get('new_value'))}")
+        parts.append(f"{_label(f, enrollment)}: {_display(ch.get('new_value'))}")
     return "; ".join(parts)
 
 

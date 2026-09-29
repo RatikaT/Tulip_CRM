@@ -70,7 +70,6 @@ export interface EnrollmentPreviewData {
   // Status & Follow-up
   connect_status: string;
   action_taken: string;
-  follow_up_date: string;
   next_follow_up_date: string;
   customer_feedback: string;
   remarks: string;
@@ -113,7 +112,6 @@ export default function EnrollmentConfirmModal({
     partner_gynaecologist: '',
     connect_status: 'Connected',
     action_taken: '',
-    follow_up_date: '',
     next_follow_up_date: '',
     customer_feedback: '',
     remarks: '',
@@ -125,10 +123,9 @@ export default function EnrollmentConfirmModal({
   // Date picker states
   const [billedDate, setBilledDate] = useState<Date | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
-  const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
 
-  // Users for the HCLHC SPOC dropdown (only users with Tulip CRM access)
+  // Users for the HCLH SPOC (Nurture Buddy) dropdown (only users with Tulip CRM access)
   const [users, setUsers] = useState<UserOption[]>([]);
   useEffect(() => {
     if (!open) return;
@@ -173,7 +170,6 @@ export default function EnrollmentConfirmModal({
         partner_gynaecologist: '',
         connect_status: 'Connected',
         action_taken: '',
-        follow_up_date: '',
         next_follow_up_date: '',
         customer_feedback: '',
         remarks: '',
@@ -181,7 +177,6 @@ export default function EnrollmentConfirmModal({
       // Reset date pickers
       setBilledDate(null);
       setDob(null);
-      setFollowUpDate(null);
       setNextFollowUpDate(null);
       // Reset validation errors
       setErrors({});
@@ -223,7 +218,6 @@ export default function EnrollmentConfirmModal({
       ...formData,
       billed_date: billedDate ? format(billedDate, 'yyyy-MM-dd') : '',
       dob: dob ? format(dob, 'yyyy-MM-dd') : '',
-      follow_up_date: followUpDate ? format(followUpDate, 'yyyy-MM-dd') : '',
       next_follow_up_date: nextFollowUpDate ? format(nextFollowUpDate, 'yyyy-MM-dd') : '',
     };
     onConfirm(dataWithDates);
@@ -325,7 +319,7 @@ export default function EnrollmentConfirmModal({
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Name"
+                label="Employee Name"
                 value={formData.name}
                 onChange={(e) => handleChange('name', e.target.value)}
                 size="small"
@@ -418,7 +412,7 @@ export default function EnrollmentConfirmModal({
                     {...params}
                     fullWidth
                     required
-                    label="HCLHC SPOC"
+                    label="HCLH SPOC (Nurture Buddy)"
                     size="small"
                     error={!!errors.hclhc_spoc}
                     helperText={errors.hclhc_spoc ? 'Required' : undefined}
@@ -614,16 +608,7 @@ export default function EnrollmentConfirmModal({
 
             <Grid item xs={12} sm={6}>
               <DatePicker
-                label="Follow Up Date"
-                value={followUpDate}
-                onChange={setFollowUpDate}
-                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-              />
-            </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <DatePicker
-                label="Next Follow Up Date"
+                label="Next Follow-up Due"
                 value={nextFollowUpDate}
                 onChange={setNextFollowUpDate}
                 slotProps={{ textField: { fullWidth: true, size: 'small' } }}

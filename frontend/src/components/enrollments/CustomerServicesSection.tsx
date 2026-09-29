@@ -106,7 +106,7 @@ export default function CustomerServicesSection({
               <TableCell>Package Billed</TableCell>
               <TableCell>Billed Date</TableCell>
               <TableCell>Trimester</TableCell>
-              <TableCell>SPOC</TableCell>
+              <TableCell>HCLH SPOC (Nurture Buddy)</TableCell>
               <TableCell>Care Progress</TableCell>
             </TableRow>
           </TableHead>

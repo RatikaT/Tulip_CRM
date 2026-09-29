@@ -573,7 +573,7 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
         <>
           <Divider sx={{ my: 1.5 }} />
           <Typography variant="caption" color="text.secondary">
-            You are viewing this enrollment as the enroller — only the follow-up SPOC can update the journey.
+            You are viewing this enrollment as the enroller — only the HCLH SPOC (Nurture Buddy) can update the journey.
           </Typography>
         </>
       )}

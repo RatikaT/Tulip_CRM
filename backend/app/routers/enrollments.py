@@ -304,6 +304,32 @@ async def get_bulk_upload_template(
     )
 
 
+# Bulk-upload header aliases. The first entry is the current template header;
+# the rest keep older files (and the snake_case template) working.
+_EMPLOYEE_NAME_HEADERS = ("Employee Name", "Name", "name", "employee_name")
+_SPOC_HEADERS = (
+    "HCLH SPOC (Nurture Buddy)", "HCLH SPOC", "HCLHC SPOC", "Hclhc Spoc", "hclhc_spoc",
+)
+_NEXT_FOLLOW_UP_HEADERS = (
+    "Next Follow-up Due", "Next Follow Up Date", "Next Follow-up Date", "next_follow_up_date",
+)
+
+
+def _upload_cell(row: dict, *headers: str) -> str:
+    """First non-empty value among the given headers (exact match first, then
+    case/whitespace-insensitive), stripped. Returns '' when none match."""
+    for h in headers:
+        v = row.get(h)
+        if v and str(v).strip():
+            return str(v).strip()
+    norm = {" ".join(str(k).split()).lower(): v for k, v in row.items() if k}
+    for h in headers:
+        v = norm.get(" ".join(h.split()).lower())
+        if v and str(v).strip():
+            return str(v).strip()
+    return ""
+
+
 @router.post("/bulk-upload", response_model=BulkUploadResponse)
 async def bulk_upload_enrollments(
     file: UploadFile = File(...),
@@ -466,21 +492,10 @@ async def bulk_upload_enrollments(
                     except:
                         pass
 
-                follow_up_date = None
-                follow_str = row.get('Follow Up Date', row.get('follow_up_date', '')).strip()
-                if follow_str:
-                    try:
-                        for fmt in ['%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y']:
-                            try:
-                                follow_up_date = datetime.strptime(follow_str, fmt)
-                                break
-                            except ValueError:
-                                continue
-                    except:
-                        pass
-
+                # The legacy "Follow Up Date" / follow_up_date column is no longer
+                # used for enrollments; if an old file still has it, it's ignored.
                 next_follow_up_date = None
-                next_follow_str = row.get('Next Follow Up Date', row.get('next_follow_up_date', '')).strip()
+                next_follow_str = _upload_cell(row, *_NEXT_FOLLOW_UP_HEADERS)
                 if next_follow_str:
                     try:
                         for fmt in ['%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y']:
@@ -501,11 +516,11 @@ async def bulk_upload_enrollments(
                     email=email,
                     billed_date=billed_date,
                     package_billed=row.get('Package Billed', row.get('package_billed', '')).strip() or None,
-                    hclhc_spoc=row.get('HCLH SPOC', row.get('hclhc_spoc', '')).strip() or None,
+                    hclhc_spoc=_upload_cell(row, *_SPOC_HEADERS) or None,
                     hcl_facility=row.get('HCL Facility', row.get('hcl_facility', '')).strip() or None,
                     uhid=uhid,
                     dob=dob,
-                    name=row.get('Name', row.get('name', '')).strip() or None,
+                    name=_upload_cell(row, *_EMPLOYEE_NAME_HEADERS) or None,
                     address=row.get('Address', row.get('address', '')).strip() or None,
                     trimester=trimester,
                     service_enrolled=service_enrolled,
@@ -516,7 +531,6 @@ async def bulk_upload_enrollments(
                     partner_gynaecologist=row.get('Partner Gynaecologist', row.get('partner_gynaecologist', '')).strip() or None,
                     connect_status=connect_status,
                     action_taken=action_taken,
-                    follow_up_date=follow_up_date,
                     next_follow_up_date=next_follow_up_date,
                     customer_feedback=row.get('Customer Feedback', row.get('customer_feedback', '')).strip() or None,
                     remarks=row.get('Remarks', row.get('remarks', '')).strip() or None,
@@ -618,7 +632,7 @@ async def export_enrollments_excel(
     by_spoc = Counter(e.hclhc_spoc or "Unassigned" for e in enrollments)
     by_connect = Counter(_v(e.connect_status) or "-" for e in enrollments)
     summary_section(sm, "By Service Enrolled", sorted(by_service.items(), key=lambda x: -x[1]))
-    summary_section(sm, "By SPOC", sorted(by_spoc.items(), key=lambda x: -x[1]))
+    summary_section(sm, "By HCLH SPOC (Nurture Buddy)", sorted(by_spoc.items(), key=lambda x: -x[1]))
     summary_section(sm, "By Connect Status", sorted(by_connect.items(), key=lambda x: -x[1]))
 
     # Agent x Service matrix (rows = SPOC, cols = the 3 standard services).
@@ -632,7 +646,7 @@ async def export_enrollments_excel(
     from app.utils.excel_export import HEADER_FONT as _HF, HEADER_FILL as _HFill, LABEL_FONT as _LF
     hc.font = _HF; hc.fill = _HFill
     mr += 1
-    sm.cell(row=mr, column=1, value="SPOC").font = _LF
+    sm.cell(row=mr, column=1, value="HCLH SPOC (Nurture Buddy)").font = _LF
     for ci, svc in enumerate(CARE_SERVICES, 2):
         sm.cell(row=mr, column=ci, value=svc).font = _LF
     mr += 1
@@ -646,14 +660,14 @@ async def export_enrollments_excel(
     # ===== Enrollments =====
     ws = wb.create_sheet("Enrollments")
     headers = [
-        "Enrollment ID", "Linked Lead", "Source", "Subscriber Name", "Name",
+        "Enrollment ID", "Linked Lead", "Source", "Subscriber Name", "Employee Name",
         "EmployeeID", "Contact No.", "Email", "UHID",
         "Service Enrolled", "Package Name Enrolled", "Package Billed", "Current Trimester",
-        "HCLH SPOC", "Service (Partner)", "Partner Centre Selected", "Partner Gynaecologist",
+        "HCLH SPOC (Nurture Buddy)", "Service (Partner)", "Partner Centre Selected", "Partner Gynaecologist",
         "Doctor Name", "HCL Facility", "Connect Status", "Action Taken",
         "Care Progress", "Next Care Step", "Next Due", "Last Completed Step",
         "Last Completed On", "Care Overdue",
-        "Billed Date", "Follow Up Date", "Next Follow Up Date",
+        "Billed Date", "Next Follow-up Due",
         "Customer Feedback", "Remarks", "Assigned To", "DOB", "Address", "Created At",
     ]
     write_headers(ws, headers)
@@ -667,10 +681,10 @@ async def export_enrollments_excel(
             e.doctor_name, e.hcl_facility, _v(e.connect_status), _v(e.action_taken),
             ru["progress"], ru["next_step"], ru["next_due"], ru["last_step"],
             ru["last_on"], ru["overdue"],
-            e.billed_date, e.follow_up_date, e.next_follow_up_date,
+            e.billed_date, e.next_follow_up_date,
             e.customer_feedback, e.remarks, e.assigned_to_name, e.dob, e.address, e.created_at,
         ]
-        write_row(ws, r, row, dt_cols={29, 30, 36}, date_cols={24, 26, 28, 34})
+        write_row(ws, r, row, dt_cols={29, 35}, date_cols={24, 26, 28, 33})
     finalize(ws)
 
     # ===== Care Journey (one row per step) =====
@@ -1126,7 +1140,7 @@ async def backfill_hclhc_spoc(current_user: dict = Depends(get_current_super_adm
         f"assigned_filled={assigned_filled}, skipped_no_creator={skipped_no_creator}"
     )
     return {
-        "message": f"Backfilled HCLHC SPOC on {updated} enrollment(s)",
+        "message": f"Backfilled HCLH SPOC (Nurture Buddy) on {updated} enrollment(s)",
         "checked": len(candidates),
         "updated": updated,
         "assigned_filled": assigned_filled,
@@ -1222,7 +1236,7 @@ async def get_enrollment(
     if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view enrollments where you are the HCLHC SPOC"
+            detail="You can only view enrollments where you are the HCLH SPOC (Nurture Buddy)"
         )
 
     return enrollment_to_response(enrollment)
@@ -1271,7 +1285,7 @@ async def update_enrollment(
     if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only edit enrollments where you are the HCLHC SPOC"
+            detail="You can only edit enrollments where you are the HCLH SPOC (Nurture Buddy)"
         )
 
     # Track changes for audit log
@@ -1439,7 +1453,7 @@ async def add_follow_up(
     if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the assigned follow-up SPOC can add follow-ups"
+            detail="Only the assigned HCLH SPOC (Nurture Buddy) can add follow-ups"
         )
 
     # Create follow-up entry
@@ -1544,7 +1558,7 @@ def _require_spoc_or_admin(enrollment: Enrollment, current_user: dict):
     if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the assigned follow-up SPOC can update the care journey",
+            detail="Only the assigned HCLH SPOC (Nurture Buddy) can update the care journey",
         )
 
 
@@ -1584,7 +1598,7 @@ async def add_service_to_enrollment(
     if not (body.service_enrolled or "").strip():
         missing.append("Service Enrolled")
     if not (body.hclhc_spoc or "").strip():
-        missing.append("HCLHC SPOC")
+        missing.append("HCLH SPOC (Nurture Buddy)")
     if missing:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

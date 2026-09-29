@@ -56,7 +56,7 @@ const createEnrollmentSchema = z.object({
   // billed date (validated separately), package billed, SPOC, trimester,
   // service enrolled, service partner.
   package_billed: z.string().min(1, 'Package Billed is required'),
-  hclhc_spoc: z.string().min(1, 'HCLHC SPOC is required'),
+  hclhc_spoc: z.string().min(1, 'HCLH SPOC (Nurture Buddy) is required'),
   hcl_facility: z.string().optional(),
   trimester: z.string().min(1, 'Trimester is required'),
   service_enrolled: z.string().min(1, 'Service Enrolled is required'),
@@ -90,7 +90,6 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [billedDate, setBilledDate] = useState<Date | null>(null);
   const [billedDateError, setBilledDateError] = useState(false);
   const [dob, setDob] = useState<Date | null>(null);
-  const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
@@ -120,7 +119,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const servicePartnerValue = watch('service_partner');
   const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
 
-  // Fetch users for HCLHC SPOC dropdown - only users with Tulip CRM access
+  // Fetch users for HCLH SPOC (Nurture Buddy) dropdown - only users with Tulip CRM access
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -141,7 +140,6 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
     reset();
     setBilledDate(null);
     setDob(null);
-    setFollowUpDate(null);
     setNextFollowUpDate(null);
     setSelectedSpoc(null);
     onClose();
@@ -200,7 +198,6 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
         remarks: data.remarks || undefined,
         billed_date: billedDate ? format(billedDate, 'yyyy-MM-dd') : undefined,
         dob: dob ? format(dob, 'yyyy-MM-dd') : undefined,
-        follow_up_date: followUpDate ? format(followUpDate, 'yyyy-MM-dd') : undefined,
         next_follow_up_date: nextFollowUpDate ? format(nextFollowUpDate, 'yyyy-MM-dd') : undefined,
       };
 
@@ -332,7 +329,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
               </Grid>
 
               <Grid item xs={12} sm={6}>
-                <TextField {...register('name')} fullWidth label="Name" />
+                <TextField {...register('name')} fullWidth label="Employee Name" />
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -401,7 +398,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
                       {...params}
                       fullWidth
                       required
-                      label="HCLH SPOC"
+                      label="HCLH SPOC (Nurture Buddy)"
                       error={!!errors.hclhc_spoc}
                       helperText={errors.hclhc_spoc?.message}
                     />
@@ -670,16 +667,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
 
               <Grid item xs={12} sm={6}>
                 <DatePicker
-                  label="Follow Up Date"
-                  value={followUpDate}
-                  onChange={setFollowUpDate}
-                  slotProps={{ textField: { fullWidth: true } }}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <DatePicker
-                  label="Next Follow Up Date"
+                  label="Next Follow-up Due"
                   value={nextFollowUpDate}
                   onChange={setNextFollowUpDate}
                   slotProps={{ textField: { fullWidth: true } }}

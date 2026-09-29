@@ -77,7 +77,7 @@ interface EnrollmentViewModalProps {
 export default function EnrollmentViewModal({ open, enrollment, onClose, onSuccess }: EnrollmentViewModalProps) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  // An agent can edit / log follow-ups only when they are the current HCLHC SPOC.
+  // An agent can edit / log follow-ups only when they are the current HCLH SPOC (Nurture Buddy).
   // The agent who enrolled the lead can view it (monitor) but is read-only once
   // it's handed off to another SPOC — mirrors the backend permission check.
   const isFollowUpSpoc =
@@ -101,7 +101,6 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
   // Form state
   const [billedDate, setBilledDate] = useState<Date | null>(null);
   const [dob, setDob] = useState<Date | null>(null);
-  const [followUpDate, setFollowUpDate] = useState<Date | null>(null);
   const [nextFollowUpDate, setNextFollowUpDate] = useState<Date | null>(null);
 
   // Follow-up form state
@@ -113,7 +112,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
     follow_up_date: null as Date | null,
   });
 
-  // Users for HCLHC SPOC dropdown
+  // Users for HCLH SPOC (Nurture Buddy) dropdown
   const [users, setUsers] = useState<UserOption[]>([]);
 
   const { register, handleSubmit, control, setValue, watch } = useForm();
@@ -122,7 +121,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
   const servicePartnerValue = watch('service_partner');
   const partnerCenterOptions = servicePartnerValue ? PARTNER_CENTER_OPTIONS[servicePartnerValue] || [] : [];
 
-  // Fetch users for HCLHC SPOC dropdown - only users with Tulip CRM access
+  // Fetch users for HCLH SPOC (Nurture Buddy) dropdown - only users with Tulip CRM access
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -167,7 +166,6 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
       // Set dates
       setBilledDate(enrollment.billed_date ? parseISO(enrollment.billed_date) : null);
       setDob(enrollment.dob ? parseISO(enrollment.dob) : null);
-      setFollowUpDate(enrollment.follow_up_date ? parseISO(enrollment.follow_up_date) : null);
       setNextFollowUpDate(enrollment.next_follow_up_date ? parseISO(enrollment.next_follow_up_date) : null);
     }
   }, [enrollment, setValue]);
@@ -206,7 +204,6 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
         action_taken: (data.action_taken as import('../../types/enrollment.types').ActionTaken) || undefined,
         billed_date: billedDate ? format(billedDate, 'yyyy-MM-dd') : undefined,
         dob: dob ? format(dob, 'yyyy-MM-dd') : undefined,
-        follow_up_date: followUpDate ? format(followUpDate, 'yyyy-MM-dd') : undefined,
         next_follow_up_date: nextFollowUpDate ? format(nextFollowUpDate, 'yyyy-MM-dd') : undefined,
       };
 
@@ -315,7 +312,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                     <TextField {...register('email')} fullWidth label="Email" size="small" />
                   </Grid>
                   <Grid item xs={12} sm={6}>
-                    <TextField {...register('name')} fullWidth label="Name" size="small" />
+                    <TextField {...register('name')} fullWidth label="Employee Name" size="small" />
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <TextField {...register('uhid')} fullWidth label="UHID" size="small" />
@@ -357,7 +354,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       inputValue={watch('hclhc_spoc') || ''}
                       onInputChange={(_, newValue) => setValue('hclhc_spoc', newValue || '')}
                       renderInput={(params) => (
-                        <TextField {...params} fullWidth label="HCLHC SPOC" />
+                        <TextField {...params} fullWidth label="HCLH SPOC (Nurture Buddy)" />
                       )}
                     />
                   </Grid>
@@ -499,15 +496,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <DatePicker
-                      label="Follow Up Date"
-                      value={followUpDate}
-                      onChange={setFollowUpDate}
-                      slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <DatePicker
-                      label="Next Follow Up Date"
+                      label="Next Follow-up Due"
                       value={nextFollowUpDate}
                       onChange={setNextFollowUpDate}
                       slotProps={{ textField: { fullWidth: true, size: 'small' } }}
@@ -532,7 +521,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                   <InfoRow label="EmployeeID" value={enrollment.employee_id} />
                   <InfoRow label="Contact No." value={enrollment.phone_number} />
                   <InfoRow label="Email" value={enrollment.email} />
-                  <InfoRow label="Name" value={enrollment.name} />
+                  <InfoRow label="Employee Name" value={enrollment.name} />
                   <InfoRow label="UHID" value={enrollment.uhid} />
                   <InfoRow label="Date of Birth" value={enrollment.dob ? format(parseISO(enrollment.dob), 'dd/MM/yyyy') : null} />
                   <InfoRow label="Address" value={enrollment.address} />
@@ -545,7 +534,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                   </Grid>
                   <InfoRow label="Billed Date" value={enrollment.billed_date ? format(parseISO(enrollment.billed_date), 'dd/MM/yyyy') : null} />
                   <InfoRow label="Package Billed" value={enrollment.package_billed} />
-                  <InfoRow label="HCLHC SPOC" value={enrollment.hclhc_spoc} />
+                  <InfoRow label="HCLH SPOC (Nurture Buddy)" value={enrollment.hclhc_spoc} />
                   <InfoRow label="HCL Facility" value={enrollment.hcl_facility} />
                   <InfoRow label="Doctor Name" value={enrollment.doctor_name} />
 
@@ -584,8 +573,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                       <Typography variant="body2">-</Typography>
                     )}
                   </Grid>
-                  <InfoRow label="Follow Up Date" value={enrollment.follow_up_date ? format(parseISO(enrollment.follow_up_date), 'dd/MM/yyyy') : null} />
-                  <InfoRow label="Next Follow Up Date" value={enrollment.next_follow_up_date ? format(parseISO(enrollment.next_follow_up_date), 'dd/MM/yyyy') : null} />
+                  <InfoRow label="Next Follow-up Due" value={enrollment.next_follow_up_date ? format(parseISO(enrollment.next_follow_up_date), 'dd/MM/yyyy') : null} />
                   <InfoRow label="Customer Feedback" value={enrollment.customer_feedback} />
                   <InfoRow label="Remarks" value={enrollment.remarks} />
 
@@ -658,7 +646,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
                     </Grid>
                     <Grid item xs={12} sm={6}>
                       <DatePicker
-                        label="Next Follow Up Date"
+                        label="Next Follow-up Due"
                         value={newFollowUp.follow_up_date}
                         onChange={(d) => setNewFollowUp({ ...newFollowUp, follow_up_date: d })}
                         slotProps={{ textField: { fullWidth: true, size: 'small' } }}
