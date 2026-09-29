@@ -1,516 +1,201 @@
-import { useState, useEffect, useCallback } from 'react';
-import {
-  Box,
-  Paper,
-  Typography,
-  Button,
-  TextField,
-  MenuItem,
-  Grid,
-  CircularProgress,
-  Divider,
-  Chip,
-  IconButton,
-  Tooltip,
-} from '@mui/material';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import DeleteIcon from '@mui/icons-material/Delete';
+import { useCallback, useEffect, useState } from 'react';
+import { Box, Button, CircularProgress, MenuItem, Paper, TextField, Typography } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { toast } from 'react-toastify';
-import { format, subDays } from 'date-fns';
 import api from '../services/api';
-import { formatFullDateTimeIST } from '../utils/dateUtils';
+import { dashboardService } from '../services/dashboardService';
+import { todayISTKey } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
-import AgentDailySummary from '../components/summaries/AgentDailySummary';
-import Scorecard from '../components/summaries/Scorecard';
+import type { SpocReport, SpocReportParams } from '../types/summary.types';
+import SpocReportCard from '../components/summaries/SpocReportCard';
+import SpocScorecard from '../components/summaries/SpocScorecard';
+import SavedReports from '../components/summaries/SavedReports';
+import RecordDrawer, { DrawerContent } from '../components/summaries/RecordDrawer';
+import { cardSx, errorDetail, periodLabel } from '../components/summaries/shared';
 
-interface User {
+interface UserOption {
   id: string;
   full_name: string;
-}
-
-interface StoredSummary {
-  id: string;
-  summary_type: string;
-  content: string;
-  agent_id: string | null;
-  agent_name: string | null;
-  summary_date: string | null;
-  total_leads: number;
-  created_at: string;
-  created_by_name: string;
 }
 
 export default function SummariesPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-  const [summaryType, setSummaryType] = useState<'overall' | 'agent' | 'daily'>('overall');
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
-  const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [generating, setGenerating] = useState(false);
-  const [summary, setSummary] = useState('');
-  const [agents, setAgents] = useState<User[]>([]);
+  const [start, setStart] = useState(todayISTKey());
+  const [end, setEnd] = useState(todayISTKey());
+  const [spoc, setSpoc] = useState('');
+  const [users, setUsers] = useState<UserOption[]>([]);
 
-  // Stored summaries
-  const [storedSummaries, setStoredSummaries] = useState<StoredSummary[]>([]);
-  const [loadingSummaries, setLoadingSummaries] = useState(true);
+  const [report, setReport] = useState<SpocReport | null>(null);
+  // Params the current report was loaded with (download / AI note / save reuse them).
+  const [loaded, setLoaded] = useState<SpocReportParams | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [drawer, setDrawer] = useState<DrawerContent | null>(null);
+  const [savedKey, setSavedKey] = useState(0);
 
-  const fetchStoredSummaries = useCallback(async () => {
-    try {
-      const response = await api.get<{ summaries: StoredSummary[] }>('/dashboard/summaries');
-      setStoredSummaries(response.data.summaries || []);
-    } catch (error) {
-      console.error('Failed to fetch summaries:', error);
-    } finally {
-      setLoadingSummaries(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (p: SpocReportParams) => {
+      if (p.end < p.start) {
+        toast.error('"To" date is before "From" date');
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await dashboardService.getSpocReport(p);
+        setReport(data);
+        setLoaded(p);
+      } catch (err) {
+        console.error('Failed to load SPOC report:', err);
+        toast.error(errorDetail(err, 'Failed to load SPOC report'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    const fetchData = async () => {
-      // Fetch agents for admin
-      if (isAdmin) {
-        try {
-          const usersResponse = await api.get<{ users: User[] }>('/users');
-          setAgents(usersResponse.data.users || []);
-        } catch (error) {
-          console.error('Failed to fetch users:', error);
-        }
-      }
+    load({ start: todayISTKey(), end: todayISTKey() });
+  }, [load]);
 
-      // Fetch stored summaries
-      await fetchStoredSummaries();
-    };
+  useEffect(() => {
+    if (!isAdmin) return;
+    api
+      .get<{ users: UserOption[] }>('/users')
+      .then((res) => setUsers(res.data.users || []))
+      .catch((err) => console.error('Failed to fetch users:', err));
+  }, [isAdmin]);
 
-    fetchData();
-  }, [isAdmin, fetchStoredSummaries]);
-
-  const buildSummaryPrompt = (type: string, data: Record<string, unknown>) => {
-    const dateRange = data.date_range as { from?: string; to?: string } | undefined;
-    const basePrompt = `You are a CRM analytics assistant for Tulip Healthcare (a maternity care program). Generate a concise, professional summary in bullet points.
-
-Data:
-- Total Leads: ${data.total_leads}
-- Status Distribution: ${JSON.stringify(data.status_distribution)}
-- Source Distribution: ${JSON.stringify(data.source_distribution)}
-- Service Distribution: ${JSON.stringify(data.service_distribution)}
-- Date Range: ${dateRange?.from || 'All time'} to ${dateRange?.to || 'Today'}
-`;
-
-    if (type === 'agent' && data.agent_name) {
-      return `${basePrompt}
-Agent: ${data.agent_name}
-
-Generate a performance summary for this agent including:
-1. Total leads handled
-2. Status breakdown and conversion insights
-3. Key recommendations for improvement`;
-    }
-
-    if (type === 'daily') {
-      return `${basePrompt}
-
-Generate a daily/period summary including:
-1. Leads received in the selected period
-2. Status distribution
-3. Notable trends or concerns`;
-    }
-
-    return `${basePrompt}
-
-Generate an overall summary including:
-1. Total lead overview
-2. Status distribution analysis
-3. Source effectiveness
-4. Service enrollment insights
-5. Key recommendations`;
-  };
-
-  const generateSummary = async () => {
-    setGenerating(true);
-    setSummary('');
-
-    try {
-      // Get summary data from backend
-      const params = new URLSearchParams();
-      params.append('summary_type', summaryType);
-      if (summaryType === 'agent' && selectedAgent) {
-        params.append('agent_id', selectedAgent);
-      }
-      // Always include date range
-      if (dateFrom) {
-        params.append('date_from', dateFrom);
-      }
-      if (dateTo) {
-        params.append('date_to', dateTo);
-      }
-
-      const dataResponse = await api.get(`/dashboard/summary-data?${params.toString()}`);
-      const summaryData = dataResponse.data;
-
-      // Call Gemini API for summary
-      const prompt = buildSummaryPrompt(summaryType, summaryData);
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyABOdHz94WEqV4sc8id1lRo-vPPUo0ne20`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-          }),
-        }
-      );
-
-      const geminiData = await geminiResponse.json();
-      const generatedText =
-        geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate summary.';
-      setSummary(generatedText);
-
-      // Save summary to backend
-      const agentName = selectedAgent
-        ? agents.find((a) => a.id === selectedAgent)?.full_name
-        : null;
-
-      await api.post('/dashboard/summaries', {
-        summary_type: summaryType,
-        content: generatedText,
-        agent_id: summaryType === 'agent' ? selectedAgent : null,
-        agent_name: summaryType === 'agent' ? agentName : null,
-        summary_date: `${dateFrom} to ${dateTo}`,
-        total_leads: summaryData.total_leads,
-        status_distribution: summaryData.status_distribution,
-        source_distribution: summaryData.source_distribution,
-        service_distribution: summaryData.service_distribution,
-      });
-
-      // Refresh stored summaries
-      await fetchStoredSummaries();
-
-      toast.success('Summary generated and saved!');
-    } catch (error) {
-      console.error('Failed to generate summary:', error);
-      setSummary('Failed to generate summary. Please try again.');
-      toast.error('Failed to generate summary');
-    } finally {
-      setGenerating(false);
+  const quick = (q: 'today' | 'yday' | 'week') => {
+    if (q === 'today') {
+      setStart(todayISTKey());
+      setEnd(todayISTKey());
+    } else if (q === 'yday') {
+      setStart(todayISTKey(-1));
+      setEnd(todayISTKey(-1));
+    } else {
+      setStart(todayISTKey(-6));
+      setEnd(todayISTKey());
     }
   };
 
-  const deleteSummary = async (summaryId: string) => {
-    try {
-      await api.delete(`/dashboard/summaries/${summaryId}`);
-      setStoredSummaries((prev) => prev.filter((s) => s.id !== summaryId));
-      toast.success('Summary deleted');
-    } catch (error) {
-      console.error('Failed to delete summary:', error);
-      toast.error('Failed to delete summary');
-    }
-  };
-
-  const inputSx = {
-    '& .MuiOutlinedInput-root': {
-      borderRadius: 2.5,
-      '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(30,64,136,0.12)' },
-    },
-  };
-
-  const getSummaryTypeColor = (type: string): string => {
-    switch (type) {
-      case 'overall':
-        return '#1E4088';
-      case 'agent':
-        return '#7B4B94';
-      case 'daily':
-        return '#0f8a63';
-      default:
-        return '#475569';
-    }
-  };
-
-  const getSummaryTypeLabel = (type: string) => {
-    switch (type) {
-      case 'overall':
-        return 'Overall';
-      case 'agent':
-        return 'Agent-wise';
-      case 'daily':
-        return 'Daily';
-      default:
-        return type;
-    }
-  };
+  const period = report ? periodLabel(report.start, report.end) : '';
+  const quickBtn = { textTransform: 'none' as const, color: 'text.primary', borderColor: 'divider', fontWeight: 500 };
 
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
         <Typography variant="h5" sx={{ fontWeight: 700 }}>
-          AI Summaries
+          Summaries
         </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Generate and review AI-powered activity and performance summaries
+        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '70ch' }}>
+          Pick the dates once at the top, and every section uses them. Click any number to see the leads or customers
+          behind it. Click a SPOC's row to see their day.
         </Typography>
       </Box>
 
-      {/* Agent Daily Activity Summary */}
-      <Box sx={{ mb: 3 }}>
-        <AgentDailySummary />
-      </Box>
-
-      {/* Performance Scorecard (structured MIS across Lead / Care / Outreach) */}
-      <Scorecard />
-
-      {/* Generate Summary Section */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3,
-          mb: 3,
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor: 'divider',
-          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <AutoAwesomeIcon color="primary" />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Generate New Summary
-          </Typography>
-        </Box>
-
-        <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-          <Grid item xs={12} sm={2}>
+      {/* Controls */}
+      <Paper elevation={0} sx={{ ...cardSx, mb: 3, px: 2.25, py: 2, display: 'grid', gap: 1.25 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.25, alignItems: 'center' }}>
+          <TextField
+            size="small"
+            type="date"
+            label="From"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ width: 165 }}
+          />
+          <TextField
+            size="small"
+            type="date"
+            label="To"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ width: 165 }}
+          />
+          {isAdmin && (
             <TextField
-              fullWidth
-              size="small"
               select
-              label="Summary Type"
-              value={summaryType}
-              onChange={(e) => setSummaryType(e.target.value as 'overall' | 'agent' | 'daily')}
-              sx={inputSx}
+              size="small"
+              label="SPOC"
+              value={spoc}
+              onChange={(e) => setSpoc(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              SelectProps={{ displayEmpty: true }}
+              sx={{ minWidth: 190 }}
             >
-              <MenuItem value="overall">Overall Summary</MenuItem>
-              <MenuItem value="agent">Agent-wise Summary</MenuItem>
-              <MenuItem value="daily">Day-wise Summary</MenuItem>
+              <MenuItem value="">All SPOCs</MenuItem>
+              {users.map((u) => (
+                <MenuItem key={u.id} value={u.id}>
+                  {u.full_name}
+                </MenuItem>
+              ))}
             </TextField>
-          </Grid>
-
-          {summaryType === 'agent' && (
-            <Grid item xs={12} sm={2}>
-              <TextField
-                fullWidth
-                size="small"
-                select
-                label="Select Agent"
-                value={selectedAgent}
-                onChange={(e) => setSelectedAgent(e.target.value)}
-                sx={inputSx}
-              >
-                <MenuItem value="">All Agents</MenuItem>
-                {agents.map((agent) => (
-                  <MenuItem key={agent.id} value={agent.id}>
-                    {agent.full_name}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
           )}
-
-          <Grid item xs={6} sm={2}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="From Date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={inputSx}
-            />
-          </Grid>
-
-          <Grid item xs={6} sm={2}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="To Date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={inputSx}
-            />
-          </Grid>
-
-          <Grid item xs={12} sm={2}>
-            <Button
-              variant="contained"
-              onClick={generateSummary}
-              disabled={generating}
-              startIcon={generating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
-              fullWidth
-            >
-              {generating ? 'Generating...' : 'Generate'}
+          <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+            <Button variant="outlined" size="small" sx={quickBtn} onClick={() => quick('today')}>
+              Today
             </Button>
-          </Grid>
-        </Grid>
-
-        {summary && (
-          <>
-            <Divider sx={{ my: 2 }} />
-            <Box
-              sx={{
-                p: 2,
-                bgcolor: 'rgba(30,64,136,0.05)',
-                borderRadius: 2.5,
-                whiteSpace: 'pre-wrap',
-                border: '1px solid rgba(30,64,136,0.18)',
-              }}
-            >
-              <Typography variant="subtitle2" color="primary" sx={{ mb: 1, fontWeight: 700 }}>
-                Latest Generated Summary
-              </Typography>
-              <Box
-                component="div"
-                sx={{
-                  lineHeight: 1.8,
-                  fontSize: '0.875rem',
-                  '& strong': { fontWeight: 700 },
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: summary
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\n/g, '<br />')
-                }}
-              />
-            </Box>
-          </>
-        )}
-      </Paper>
-
-      {/* Summary History Section */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3,
-          borderRadius: 3,
-          border: '1px solid',
-          borderColor: 'divider',
-          boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-        }}
-      >
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Summary History
-          </Typography>
-          <Tooltip title="Refresh">
-            <IconButton onClick={fetchStoredSummaries} color="primary" size="small">
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
-
-        {loadingSummaries ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
+            <Button variant="outlined" size="small" sx={quickBtn} onClick={() => quick('yday')}>
+              Yesterday
+            </Button>
+            <Button variant="outlined" size="small" sx={quickBtn} onClick={() => quick('week')}>
+              Last 7 days
+            </Button>
           </Box>
-        ) : storedSummaries.length > 0 ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {storedSummaries.map((s) => (
-              <Paper
-                key={s.id}
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 3,
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  boxShadow: '0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04)',
-                }}
-              >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip
-                      label={getSummaryTypeLabel(s.summary_type)}
-                      size="small"
-                      sx={{
-                        bgcolor: `${getSummaryTypeColor(s.summary_type)}1A`,
-                        color: getSummaryTypeColor(s.summary_type),
-                        fontWeight: 600,
-                        fontSize: '0.7rem',
-                        height: 24,
-                        borderRadius: '8px',
-                        border: `1px solid ${getSummaryTypeColor(s.summary_type)}33`,
-                        '& .MuiChip-label': { px: 1 },
-                      }}
-                    />
-                    {s.agent_name && (
-                      <Typography variant="body2" color="text.secondary">
-                        Agent: {s.agent_name}
-                      </Typography>
-                    )}
-                    {s.summary_date && (
-                      <Typography variant="body2" color="text.secondary">
-                        Period: {s.summary_date}
-                      </Typography>
-                    )}
-                    <Typography variant="caption" color="text.secondary">
-                      ({s.total_leads} leads)
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {formatFullDateTimeIST(s.created_at)}
-                    </Typography>
-                    {isAdmin && (
-                      <Tooltip title="Delete">
-                        <IconButton size="small" onClick={() => deleteSummary(s.id)} color="error">
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Box>
-                </Box>
-                <Box
-                  component="div"
-                  sx={{
-                    lineHeight: 1.6,
-                    fontSize: '0.875rem',
-                    '& strong': { fontWeight: 700 },
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: s.content
-                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                      .replace(/\n/g, '<br />')
-                  }}
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  Generated by: {s.created_by_name}
-                </Typography>
-              </Paper>
-            ))}
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              py: 6,
-              color: 'text.secondary',
-            }}
+          <Button
+            variant="contained"
+            onClick={() => load({ start, end, ...(isAdmin && spoc ? { user_id: spoc } : {}) })}
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <RefreshIcon />}
+            sx={{ textTransform: 'none', fontWeight: 700 }}
           >
-            <AutoAwesomeIcon sx={{ fontSize: 48, mb: 2, opacity: 0.3 }} />
-            <Typography variant="body1">No summaries generated yet</Typography>
-            <Typography variant="body2">
-              Click "Generate" above to create your first AI-powered summary
-            </Typography>
-          </Box>
+            Load
+          </Button>
+        </Box>
+        {report && (
+          <Typography variant="caption" color="text.secondary">
+            Showing {period} (IST).
+          </Typography>
         )}
       </Paper>
+
+      {!report ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          {loading ? (
+            <CircularProgress />
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Couldn't load the report. Press Load to try again.
+            </Typography>
+          )}
+        </Box>
+      ) : (
+        <Box sx={{ opacity: loading ? 0.6 : 1, transition: 'opacity .15s' }}>
+          <SpocReportCard
+            report={report}
+            params={loaded as SpocReportParams}
+            period={period}
+            isAdmin={isAdmin}
+            openDrawer={setDrawer}
+            onSaved={() => setSavedKey((k) => k + 1)}
+          />
+          <SpocScorecard
+            report={report}
+            period={period}
+            isAdmin={isAdmin}
+            preferredKey={loaded?.user_id}
+            openDrawer={setDrawer}
+          />
+        </Box>
+      )}
+
+      <SavedReports isAdmin={isAdmin} refreshKey={savedKey} />
+
+      <RecordDrawer content={drawer} onClose={() => setDrawer(null)} />
     </Box>
   );
 }

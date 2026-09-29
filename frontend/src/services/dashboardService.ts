@@ -1,90 +1,66 @@
 import api from './api';
-import {
-  AgentActivityResponse,
-  Summary,
-  CreateSummaryRequest,
-  SummaryType,
-  ScorecardResponse,
-} from '../types/summary.types';
+import { SpocReport, SpocReportParams, Summary, SummaryType } from '../types/summary.types';
 
-interface SummariesResponse {
-  summaries: Summary[];
-}
-
-interface SaveSummaryResponse {
-  id: string;
-  message: string;
+function cleanParams(p: SpocReportParams) {
+  return { start: p.start, end: p.end, ...(p.user_id ? { user_id: p.user_id } : {}) };
 }
 
 export const dashboardService = {
-  /**
-   * Get agent activity for a specific date
-   */
-  async getAgentActivity(agentId: string, date: string): Promise<AgentActivityResponse> {
-    const response = await api.get<AgentActivityResponse>('/dashboard/agent-activity', {
-      params: { agent_id: agentId, date },
+  /** Daily SPOC Report - one fetch serves the whole Summaries page. */
+  async getSpocReport(params: SpocReportParams): Promise<SpocReport> {
+    const response = await api.get<SpocReport>('/dashboard/spoc-report', { params: cleanParams(params) });
+    return response.data;
+  },
+
+  /** Download the SPOC report MIS (.xlsx). Saves the file in the browser. */
+  async downloadSpocReport(params: SpocReportParams): Promise<void> {
+    const response = await api.get('/dashboard/spoc-report/export', {
+      params: cleanParams(params),
+      responseType: 'blob',
+    });
+    const cd: string | undefined = response.headers['content-disposition'];
+    let filename = `spoc_report_${params.start}_${params.end}.xlsx`;
+    const match = cd?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    if (match) filename = decodeURIComponent(match[1].trim());
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  /** Short AI-written note on the report (server-side; numbers come from the server). */
+  async getSpocAiNote(params: SpocReportParams): Promise<string> {
+    const response = await api.post<{ note: string }>('/dashboard/spoc-report/ai-note', {
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id || null,
+    });
+    return response.data.note || '';
+  },
+
+  /** Save the report's numbers plus the AI note (admin only). */
+  async saveSpocReport(params: SpocReportParams, note: string): Promise<{ id: string; message: string }> {
+    const response = await api.post<{ id: string; message: string }>('/dashboard/spoc-report/save', {
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id || null,
+      note: note || null,
     });
     return response.data;
   },
 
-  /**
-   * Get stored summaries
-   */
-  async getSummaries(params?: {
-    limit?: number;
-    agent_id?: string;
-    summary_type?: SummaryType;
-  }): Promise<Summary[]> {
-    const response = await api.get<SummariesResponse>('/dashboard/summaries', { params });
-    return response.data.summaries;
+  /** Stored summaries / saved reports. */
+  async getSummaries(params?: { limit?: number; agent_id?: string; summary_type?: SummaryType }): Promise<Summary[]> {
+    const response = await api.get<{ summaries: Summary[] }>('/dashboard/summaries', { params });
+    return response.data.summaries || [];
   },
 
-  /**
-   * Save a summary
-   */
-  async saveSummary(request: CreateSummaryRequest): Promise<SaveSummaryResponse> {
-    const response = await api.post<SaveSummaryResponse>('/dashboard/summaries', request);
-    return response.data;
-  },
-
-  /**
-   * Delete a summary (admin only)
-   */
+  /** Delete a summary (admin only). */
   async deleteSummary(summaryId: string): Promise<void> {
     await api.delete(`/dashboard/summaries/${summaryId}`);
-  },
-
-  /**
-   * Get the structured scorecard (Lead / Care / Outreach journeys).
-   * Non-admins are forced to their own scope and get no Outreach section.
-   */
-  async getScorecard(params?: {
-    user_id?: string;
-    start?: string;
-    end?: string;
-    team?: boolean;
-  }): Promise<ScorecardResponse> {
-    const response = await api.get<ScorecardResponse>('/dashboard/scorecard', { params });
-    return response.data;
-  },
-
-  /**
-   * Get summary data for AI generation
-   */
-  async getSummaryData(params: {
-    summary_type?: string;
-    agent_id?: string;
-    date_from?: string;
-    date_to?: string;
-  }): Promise<{
-    total_leads: number;
-    status_distribution: Record<string, number>;
-    source_distribution: Record<string, number>;
-    service_distribution: Record<string, number>;
-    agent_name?: string;
-    date_range: { from?: string; to?: string };
-  }> {
-    const response = await api.get('/dashboard/summary-data', { params });
-    return response.data;
   },
 };
