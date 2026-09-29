@@ -282,6 +282,8 @@ export interface AuditLogEntry {
   action: string;
   changes: Array<{ field: string; old_value: unknown; new_value: unknown }>;
   timestamp: string;
+  // Readable version: typed action, plain field name, IST values
+  entries?: Array<{ action: string; field: string; from: unknown; to: unknown; details: string }>;
 }
 
 export interface AuditTrailResponse {

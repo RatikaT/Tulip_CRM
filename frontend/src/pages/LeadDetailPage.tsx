@@ -1471,30 +1471,29 @@ export default function LeadDetailPage() {
                           <Typography variant="subtitle2" color="primary">
                             {log.user_name || log.user_email}
                           </Typography>
-                          <Chip
-                            label={log.action}
-                            size="small"
-                            color={
-                              log.action === 'CREATED'
-                                ? 'success'
-                                : log.action === 'DELETED'
-                                ? 'error'
-                                : 'info'
-                            }
-                            sx={{ mt: 0.5 }}
-                          />
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                            {[...new Set((log.entries || []).map((e) => e.action))].map((a) => (
+                              <Chip
+                                key={a}
+                                label={a}
+                                size="small"
+                                color={a === 'Created' ? 'success' : a === 'Deleted' ? 'error' : 'info'}
+                              />
+                            ))}
+                          </Box>
                         </Box>
                         <Typography variant="caption" color="text.secondary">
                           {formatFullDateTimeIST(log.timestamp)}
                         </Typography>
                       </Box>
-                      {log.changes && log.changes.length > 0 && (
+                      {log.entries && log.entries.length > 0 && (
                         <Box sx={{ mt: 1 }}>
-                          {log.changes.map((change, idx) => (
+                          {log.entries.map((e, idx) => (
                             <Typography key={idx} variant="body2" color="text.secondary">
-                              <strong>{change.field}:</strong>{' '}
-                              {String(change.old_value || 'null')} &rarr;{' '}
-                              {String(change.new_value || 'null')}
+                              <strong>{e.field || e.action}:</strong>{' '}
+                              {e.from != null && e.from !== '' && <>{String(e.from)} &rarr; </>}
+                              {e.to != null && e.to !== '' ? String(e.to) : e.from != null && e.from !== '' ? '(blank)' : ''}
+                              {e.details && <> &middot; {e.details}</>}
                             </Typography>
                           ))}
                         </Box>

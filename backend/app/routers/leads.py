@@ -2155,17 +2155,53 @@ async def get_lead_audit_trail(
         AuditLog.lead_id == lead_id
     ).sort("-timestamp").to_list()
 
-    return {
-        "lead_id": lead_id,
-        "audit_trail": [
-            {
-                "id": str(log.id),
-                "user_email": log.user_email,
-                "user_name": log.user_name,
-                "action": log.action,
-                "changes": log.changes,
-                "timestamp": log.timestamp
-            }
-            for log in audit_logs
-        ]
-    }
+    # Readable version of each entry, same rules as the Activity Log MIS:
+    # typed actions, plain field names, IST values, no fake reassignments.
+    from app.services.activity_log import (
+        classify_lead_change, _label, _display, _phantom_reassign_filter, _fold_into_status,
+        CREATED, DELETED, REMARK,
+    )
+    phantom = _phantom_reassign_filter(audit_logs, {lead_id: lead})
+    trail = []
+    for log in audit_logs:
+        rows = []
+        for i, ch in enumerate(log.changes or []):
+            field = ch.get("field") or ""
+            action = classify_lead_change(field, ch.get("new_value"))
+            if not action or (str(log.id), i) in phantom:
+                continue
+            rows.append({"action": action,
+                         "field": "" if action in (CREATED, DELETED, REMARK) else _label(field),
+                         "from": _display(ch.get("old_value")), "to": _display(ch.get("new_value")),
+                         "details": ""})
+        rows = _fold_into_status(rows)
+        if not rows:
+            continue
+        trail.append({
+            "id": str(log.id), "user_email": log.user_email, "user_name": log.user_name,
+            "action": log.action, "changes": log.changes, "timestamp": log.timestamp,
+            "entries": rows,
+        })
+
+    # Outreach steps, stop journey and DNC write no audit entry - read them from the lead
+    extra = []
+    for st in lead.journey or []:
+        if st.get("status") == "done" and st.get("completed_date"):
+            extra.append((st["completed_date"], st.get("completed_by_name"), "Outreach step done", st.get("name")))
+        for e in st.get("log") or []:
+            extra.append((e.get("at"), e.get("by_name"),
+                          "Outreach step skipped" if e.get("action") == "skipped" else "Outreach step rescheduled",
+                          st.get("name") if e.get("action") == "skipped"
+                          else f"{st.get('name')}: {_display(e.get('from'))} → {_display(e.get('to'))}"))
+    if lead.journey_stopped_at:
+        extra.append((lead.journey_stopped_at, lead.journey_stopped_by_name, "Journey stopped", lead.journey_stopped_reason))
+    if getattr(lead, "do_not_contact", False) and lead.dnc_at:
+        extra.append((lead.dnc_at, None, "Do Not Contact set", getattr(lead, "dnc_reason", None)))
+    for at, by, action, detail in extra:
+        if at:
+            trail.append({"id": f"x-{action}-{at}", "user_email": "", "user_name": by or "",
+                          "action": "journey", "changes": [], "timestamp": at,
+                          "entries": [{"action": action, "field": "", "from": None, "to": detail, "details": ""}]})
+    trail.sort(key=lambda t: t["timestamp"], reverse=True)
+
+    return {"lead_id": lead_id, "audit_trail": trail}

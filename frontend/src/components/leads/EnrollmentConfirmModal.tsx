@@ -159,7 +159,10 @@ export default function EnrollmentConfirmModal({
         address: data.address || lead?.address || '',
         billed_date: '',
         package_billed: '',
-        hclhc_spoc: data.hclhc_spoc || lead?.hclhc_spoc || '',
+        // Nurture Buddy defaults to whoever owns the lead now (reassigned-to, else
+        // assigned-to). The lead's own hclhc_spoc field is hidden on the lead screen
+        // and often stale from uploads, so it's only a last resort.
+        hclhc_spoc: lead?.reassign_to_name || lead?.assigned_to_name || data.hclhc_spoc || lead?.hclhc_spoc || '',
         hcl_facility: data.user_facility || lead?.user_facility || '',
         trimester: data.trimester || lead?.trimester || '',
         doctor_name: data.doctor_name || lead?.doctor_name || '',
