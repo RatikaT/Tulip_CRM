@@ -126,6 +126,10 @@ async def build_report(start_day, end_day, *, only_user_id: Optional[str] = None
     core = await _compute(F, T, leads, enrs, uname, by_name)
     rows = core["rows"]
 
+    # Every active agent gets a row, even with nothing to do
+    for uid in agents:
+        rows.setdefault(uid, _empty_row(uid, uname.get(uid)))
+
     # Trend: one line per day when several days are chosen
     days = (end_day - start_day).days + 1
     if with_trend and 2 <= days <= 31:
@@ -139,10 +143,6 @@ async def build_report(start_day, end_day, *, only_user_id: Optional[str] = None
                 c = day["rows"].get(key, {}).get("counts", {})
                 r.setdefault("trend", []).append({"date": d.isoformat(), "total": c.get("total", 0),
                                                   "acted": c.get("acted", 0)})
-
-    # Every active agent gets a row, even with nothing to do
-    for uid in agents:
-        rows.setdefault(uid, _empty_row(uid, uname.get(uid)))
 
     # Portfolio (as of today)
     lead_own = Counter((l.reassign_to or l.assigned_to) for l in leads)
