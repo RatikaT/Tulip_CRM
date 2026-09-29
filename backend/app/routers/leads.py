@@ -978,7 +978,7 @@ async def export_leads_excel(
     write_headers(ws_h, ["Lead ID", "Name", "Date/Time", "Change", "From", "To", "By"])
     name_by_id = {l.lead_id: l.name for l in leads}
     hr = 2
-    phantom = _phantom_reassign_filter(all_logs)
+    phantom = _phantom_reassign_filter(all_logs, {l.lead_id: l for l in leads})
     for lg in all_logs:
         for ci, ch in enumerate(lg.changes or []):
             if (str(lg.id), ci) in phantom:

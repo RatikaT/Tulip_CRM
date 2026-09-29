@@ -148,7 +148,7 @@ def classify_enrollment_change(field: str) -> Optional[str]:
     return FIELD_UPDATED
 
 
-def _phantom_reassign_filter(logs: List[AuditLog], leads: Dict) -> set:
+def _phantom_reassign_filter(logs: List[AuditLog], leads: Optional[Dict] = None) -> set:
     """(log id, change index) pairs for reassignment rows that were never real:
     the old edit form re-sent 'reassign to = current owner' on every save."""
     phantom = set()
@@ -161,7 +161,7 @@ def _phantom_reassign_filter(logs: List[AuditLog], leads: Dict) -> set:
         # lead's current assignee (it was never changed).
         first = next((ch for lg in lead_logs for ch in (lg.changes or [])
                       if ch.get("field") == "assigned_to_name"), None)
-        lead = leads.get(lead_id)
+        lead = (leads or {}).get(lead_id)
         owner = first.get("old_value") if first else (lead.assigned_to_name if lead else None)
         for lg in lead_logs:
             for i, ch in enumerate(lg.changes or []):
