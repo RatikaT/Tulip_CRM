@@ -39,7 +39,26 @@ async def lifespan(app: FastAPI):
         logger.error(f"Journey migrate/seed failed (non-fatal): {e}")
     logger.info("CRM API started successfully")
 
+    # Paused care journeys resume by themselves on their date (checked hourly,
+    # and also whenever enrollment screens / reports load)
+    import asyncio
+
+    async def _auto_resume_loop():
+        from app.routers.enrollments import resume_due_pauses
+        while True:
+            try:
+                n = await resume_due_pauses()
+                if n:
+                    logger.info(f"Auto-resumed {n} paused care journey(s)")
+            except Exception as e:
+                logger.error(f"Auto-resume failed: {e}")
+            await asyncio.sleep(3600)
+
+    resume_task = asyncio.create_task(_auto_resume_loop())
+
     yield
+
+    resume_task.cancel()
 
     # Shutdown
     logger.info("Shutting down Tulip CRM API...")

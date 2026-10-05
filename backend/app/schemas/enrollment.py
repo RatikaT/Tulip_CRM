@@ -201,6 +201,10 @@ class EnrollmentResponse(BaseModel):
     journey_stopped_reason: Optional[str] = None
     journey_stopped_by_name: Optional[str] = None
     journey_stopped_at: Optional[datetime] = None
+    paused_at: Optional[datetime] = None
+    paused_by_name: Optional[str] = None
+    pause_reason: Optional[str] = None
+    resume_on: Optional[datetime] = None
     journey_flag: Optional[str] = None
     journey_flag_note: Optional[str] = None
     journey_classification: Optional[str] = None

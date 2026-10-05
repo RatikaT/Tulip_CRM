@@ -82,6 +82,17 @@ export const journeyService = {
     return res.data;
   },
 
+  // Pause until a date (steps frozen); the journey resumes by itself on that date
+  pauseEnrollmentJourney: async (enrollmentId: string, resumeOn: string, reason?: string): Promise<Enrollment> => {
+    const res = await api.post<Enrollment>(`/enrollments/${enrollmentId}/journey/pause`, { resume_on: resumeOn, reason });
+    return res.data;
+  },
+
+  resumeEnrollmentJourney: async (enrollmentId: string): Promise<Enrollment> => {
+    const res = await api.post<Enrollment>(`/enrollments/${enrollmentId}/journey/resume`);
+    return res.data;
+  },
+
   setEnrollmentDnc: async (enrollmentId: string, doNotContact: boolean, reason?: string): Promise<Enrollment> => {
     const res = await api.post<Enrollment>(`/enrollments/${enrollmentId}/dnc`, { do_not_contact: doNotContact, reason });
     return res.data;

@@ -109,11 +109,19 @@ class Enrollment(Document):
 
     # Journey-level controls. "stopped" cancels remaining pending steps (reason
     # kept) but retains done/skipped history for attribution/reporting.
-    journey_status: str = "active"            # active | stopped
+    journey_status: str = "active"            # active | paused | stopped
     journey_stopped_reason: Optional[str] = None
     journey_stopped_by: Optional[str] = None
     journey_stopped_by_name: Optional[str] = None
     journey_stopped_at: Optional[datetime] = None
+
+    # Pause (SPOC/admin): steps are kept but frozen until resume_on, when the
+    # journey resumes by itself and the remaining steps move forward by the pause.
+    paused_at: Optional[datetime] = None
+    paused_by: Optional[str] = None
+    paused_by_name: Optional[str] = None
+    pause_reason: Optional[str] = None
+    resume_on: Optional[datetime] = None
 
     # Do-Not-Contact — hard-stops all journeys; no new touchpoints generate.
     do_not_contact: bool = False

@@ -502,8 +502,8 @@ export default function EnrollmentsPage() {
         icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
       })}
       {renderKpiCard({
-        kpiKey: 'stopped_or_dnc', sm, md, title: 'Stopped / Do Not Contact', value: stats.stopped_or_dnc ?? 0,
-        subtitle: 'Journey stopped or DNC: do not contact',
+        kpiKey: 'stopped_or_dnc', sm, md, title: 'Paused / Stopped / DNC', value: stats.stopped_or_dnc ?? 0,
+        subtitle: 'Not to be contacted for now',
         iconBg: 'linear-gradient(135deg, #eceff1 0%, #cfd8dc 100%)',
         icon: <Typography sx={{ color: '#455a64', fontSize: '1.2rem' }}>⊘</Typography>,
       })}
@@ -765,7 +765,13 @@ export default function EnrollmentsPage() {
       renderCell: (params: GridRenderCellParams) => {
         const e = params.row as Enrollment;
         const today = todayISTKey();
-        const stopped = e.journey_status === 'stopped' || e.do_not_contact;
+        const stopped = e.journey_status === 'stopped' || e.journey_status === 'paused' || e.do_not_contact;
+        if (e.journey_status === 'paused') {
+          return (
+            <Chip size="small" label={`Paused until ${formatShortDateIST(e.resume_on as string)}`}
+              title={e.pause_reason || undefined} sx={{ fontWeight: 600, bgcolor: '#e3f2fd', color: '#1565c0' }} />
+          );
+        }
         const late = stopped ? [] : (e.journey || [])
           .filter((st) => st.status === 'pending' && st.planned_date && (istDateKey(st.planned_date) || '') < today)
           .sort((x, y) => String(x.planned_date).localeCompare(String(y.planned_date)));

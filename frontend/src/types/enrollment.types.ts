@@ -93,6 +93,10 @@ export interface Enrollment {
   journey_stopped_reason?: string | null;
   journey_stopped_by_name?: string | null;
   journey_stopped_at?: string | null;
+  paused_at?: string | null;
+  paused_by_name?: string | null;
+  pause_reason?: string | null;
+  resume_on?: string | null;
   journey_flag?: string | null;
   journey_flag_note?: string | null;
   journey_classification?: string | null;

@@ -38,7 +38,7 @@ from app.utils.mis_helpers import parse_dt
 CLOSED_STATUSES = {"Enrolled", "Not Interested", "Lead Closed-No Response", "Duplicate"}
 NO_SALE_STATUSES = {"Not Interested", "Lead Closed-No Response"}
 LEAD_ACTIONS = {STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE}
-ENR_ACTION_FIELDS = {"next_follow_up_date", "remarks", "customer_feedback"}
+ENR_ACTION_FIELDS = {"next_follow_up_date", "remarks", "customer_feedback", "journey_status"}
 BUCKETS = ("newL", "due", "over", "enrDue", "enrOver")
 NO_BUDDY = "(No Nurture Buddy)"
 
@@ -112,6 +112,8 @@ def _step_log_actions(steps) -> List[Tuple[datetime, str, str]]:
 async def build_report(start_day, end_day, *, only_user_id: Optional[str] = None,
                        with_trend: bool = True) -> Dict[str, Any]:
     F, T = ist_range_utc(start_day, end_day)
+    from app.routers.enrollments import resume_due_pauses
+    await resume_due_pauses()
     users = await User.find_all().to_list()
     uname = {str(u.id): u.full_name for u in users}
     by_name = {(u.full_name or "").strip().lower(): str(u.id) for u in users}
@@ -284,7 +286,8 @@ async def _compute(F, T, leads, enrs, uname, by_name, light=False) -> Dict[str, 
                 nfu_changes[lg.enrollment_id].append((lg.timestamp, _d(ch.get("old_value"))))
             if f in ENR_ACTION_FIELDS and lg.timestamp < T and _v(lg.action) != "follow_up_added":
                 label = {"next_follow_up_date": "Next follow-up changed", "remarks": "Remarks edited",
-                         "customer_feedback": "Feedback edited"}[f]
+                         "customer_feedback": "Feedback edited",
+                         "journey_status": "Journey paused" if ch.get("new_value") == "paused" else "Journey resumed"}[f]
                 e_acts.add(lg.enrollment_id, lg.timestamp, label, lg.user_name)
     for e in enrs:
         for fu in e.follow_ups or []:
@@ -311,6 +314,9 @@ async def _compute(F, T, leads, enrs, uname, by_name, light=False) -> Dict[str, 
 
     for e in enrs:
         if e.do_not_contact and e.dnc_at and _d(e.dnc_at) < F:
+            continue
+        # Paused before the dates: not to be contacted until it resumes
+        if e.journey_status == "paused" and e.paused_at and _d(e.paused_at) < F:
             continue
         # Stopped before the dates (a journey rebuilt after a stop is active again)
         if e.journey_status == "stopped" and e.journey_stopped_at and _d(e.journey_stopped_at) < F:

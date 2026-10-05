@@ -133,6 +133,10 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
         "journey_stopped_reason": getattr(enrollment, "journey_stopped_reason", None),
         "journey_stopped_by_name": getattr(enrollment, "journey_stopped_by_name", None),
         "journey_stopped_at": getattr(enrollment, "journey_stopped_at", None),
+        "paused_at": getattr(enrollment, "paused_at", None),
+        "paused_by_name": getattr(enrollment, "paused_by_name", None),
+        "pause_reason": getattr(enrollment, "pause_reason", None),
+        "resume_on": getattr(enrollment, "resume_on", None),
         "journey_flag": getattr(enrollment, "journey_flag", None),
         "journey_flag_note": getattr(enrollment, "journey_flag_note", None),
         "journey_classification": getattr(enrollment, "journey_classification", None),
@@ -168,9 +172,9 @@ def _enr_scope(current_user: dict) -> dict:
 
 
 def stopped_or_dnc_query(current_user: dict) -> dict:
-    """"Stopped / Do Not Contact" card: journey stopped or DNC set."""
+    """"Paused / Stopped / DNC" card: journey paused or stopped, or DNC set."""
     return {**_enr_scope(current_user),
-            "$or": [{"do_not_contact": True}, {"journey_status": "stopped"}]}
+            "$or": [{"do_not_contact": True}, {"journey_status": {"$in": ["stopped", "paused"]}}]}
 
 
 async def enrollment_follow_ups_due(current_user: dict) -> Tuple[List[str], List[str]]:
@@ -181,7 +185,9 @@ async def enrollment_follow_ups_due(current_user: dict) -> Tuple[List[str], List
     count their care steps. Returns (due_today_ids, overdue_ids)."""
     from app.utils.mis_helpers import parse_dt
     day_start, day_end = ist_range_utc(today_ist())
-    enrs = await Enrollment.find({**_enr_scope(current_user), "do_not_contact": {"$ne": True}}).to_list()
+    await resume_due_pauses()
+    enrs = await Enrollment.find({**_enr_scope(current_user), "do_not_contact": {"$ne": True},
+                                  "journey_status": {"$ne": "paused"}}).to_list()
 
     def d(x):
         """Stored value -> naive UTC datetime."""
@@ -254,6 +260,7 @@ async def get_enrollment_stats(
     is_agent = current_user.get("role") == "agent"
     agent_name = current_user.get("full_name", "")
     db = get_database()
+    await resume_due_pauses()
 
     logger.info(f"Fetching stats for user: {agent_name}, role: {current_user.get('role')}")
     logger.info(f"Today (IST): {today}, UTC range: {today_start_utc} to {today_end_utc}")
@@ -2097,6 +2104,95 @@ async def stop_enrollment_journey(
     enrollment.journey_stopped_at = datetime.utcnow()
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
+    return enrollment_to_response(enrollment)
+
+
+class JourneyPauseRequest(BaseModel):
+    resume_on: datetime
+    reason: Optional[str] = None
+
+
+def _pause_audit(enrollment, current_user, old, new, extra=None):
+    return EnrollmentAuditLog(
+        enrollment_id=enrollment.enrollment_id,
+        user_id=current_user.get("user_id"),
+        user_email=current_user.get("email", ""),
+        user_name=current_user.get("full_name", current_user.get("email", "")),
+        action=EnrollmentAuditAction.UPDATED,
+        changes=[{"field": "journey_status", "old_value": old, "new_value": new}] + (extra or []),
+    )
+
+
+def _apply_resume(enrollment, at: datetime):
+    """Back to active; remaining (pending) steps move forward by the pause length."""
+    shift = at - enrollment.paused_at if enrollment.paused_at else timedelta(0)
+    if shift > timedelta(0):
+        for st in enrollment.journey or []:
+            if st.get("status") == "pending" and isinstance(st.get("planned_date"), datetime):
+                st["planned_date"] = st["planned_date"] + shift
+    enrollment.journey_status = "active"
+    enrollment.paused_at = enrollment.paused_by = enrollment.paused_by_name = None
+    enrollment.pause_reason = enrollment.resume_on = None
+    enrollment.updated_at = datetime.utcnow()
+    return shift
+
+
+async def resume_due_pauses() -> int:
+    """Resume every paused journey whose resume-on date has come (idempotent, cheap)."""
+    now = datetime.utcnow()
+    due = await Enrollment.find({"journey_status": "paused", "resume_on": {"$lte": now}}).to_list()
+    for e in due:
+        shift = _apply_resume(e, e.resume_on)
+        await e.save()
+        await _pause_audit(e, {"user_id": None, "email": "system", "full_name": "Auto-resume"},
+                           "paused", "active",
+                           [{"field": "journey_shift_days", "old_value": None, "new_value": shift.days}]).insert()
+    return len(due)
+
+
+@router.post("/{enrollment_id}/journey/pause")
+async def pause_enrollment_journey(
+    enrollment_id: str,
+    body: JourneyPauseRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Pause the care journey until a date (SPOC / Nurture Buddy or admin)."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    if enrollment.journey_status != "active" or enrollment.do_not_contact:
+        raise HTTPException(status_code=400, detail="Only an active care journey can be paused.")
+    resume_on = body.resume_on.replace(tzinfo=None) if body.resume_on.tzinfo is None else \
+        body.resume_on.astimezone(timezone.utc).replace(tzinfo=None)
+    if resume_on <= datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Choose a resume date in the future.")
+    enrollment.journey_status = "paused"
+    enrollment.paused_at = datetime.utcnow()
+    enrollment.paused_by = current_user["user_id"]
+    enrollment.paused_by_name = current_user.get("full_name", current_user["email"])
+    enrollment.pause_reason = body.reason
+    enrollment.resume_on = resume_on
+    enrollment.updated_at = datetime.utcnow()
+    await enrollment.save()
+    await _pause_audit(enrollment, current_user, "active", "paused",
+                       [{"field": "resume_on", "old_value": None, "new_value": resume_on},
+                        {"field": "pause_reason", "old_value": None, "new_value": body.reason}]).insert()
+    return enrollment_to_response(enrollment)
+
+
+@router.post("/{enrollment_id}/journey/resume")
+async def resume_enrollment_journey(
+    enrollment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Resume a paused journey now (before its resume date)."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    if enrollment.journey_status != "paused":
+        raise HTTPException(status_code=400, detail="This care journey isn't paused.")
+    shift = _apply_resume(enrollment, datetime.utcnow())
+    await enrollment.save()
+    await _pause_audit(enrollment, current_user, "paused", "active",
+                       [{"field": "journey_shift_days", "old_value": None, "new_value": shift.days}]).insert()
     return enrollment_to_response(enrollment)
 
 

@@ -36,6 +36,8 @@ ENR_FOLLOWUP = "Follow-up logged"
 CARE_STEP = "Care step done"
 OUTREACH_STEP = "Outreach step done"
 JOURNEY_STOPPED = "Journey stopped"
+JOURNEY_PAUSED = "Journey paused"
+JOURNEY_RESUMED = "Journey resumed"
 DNC = "Do Not Contact set"
 SERVICE_ADDED = "Service added"
 DELETED = "Deleted"
@@ -130,9 +132,11 @@ def classify_lead_change(field: str, new_value) -> Optional[str]:
     return FIELD_UPDATED
 
 
-def classify_enrollment_change(field: str) -> Optional[str]:
-    if field in _SKIP_FIELDS:
+def classify_enrollment_change(field: str, new_value=None) -> Optional[str]:
+    if field in _SKIP_FIELDS or field in ("journey_shift_days", "resume_on", "pause_reason"):
         return None
+    if field == "journey_status":
+        return JOURNEY_PAUSED if new_value == "paused" else JOURNEY_RESUMED if new_value == "active" else FIELD_UPDATED
     if field == "enrollment":
         return CREATED
     if field == "service_added":
@@ -250,7 +254,7 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
             continue
         for ch in (lg.changes or []):
             field = ch.get("field") or ""
-            action = classify_enrollment_change(field)
+            action = classify_enrollment_change(field, ch.get("new_value"))
             if not action:
                 continue
             rows.append(enr_row(e, lg.timestamp, action,
@@ -350,7 +354,7 @@ def _stopped_by_dnc(rec) -> bool:
 # Columns of the per-person summary, in display order
 SUMMARY_COLUMNS = [
     STATUS, FOLLOWUP_DATE, CALL_ADDED, CALL_EDITED, REMARK, ENR_FOLLOWUP, CARE_STEP,
-    OUTREACH_STEP, JOURNEY_STOPPED, DNC, SERVICE_ADDED, ASSIGNED, REASSIGNED,
+    OUTREACH_STEP, JOURNEY_PAUSED, JOURNEY_RESUMED, JOURNEY_STOPPED, DNC, SERVICE_ADDED, ASSIGNED, REASSIGNED,
     CREATED, DELETED, FIELD_UPDATED,
 ]
 # Creating or deleting a record isn't "working" it

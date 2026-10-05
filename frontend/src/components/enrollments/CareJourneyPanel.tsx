@@ -25,7 +25,7 @@ import { toast } from 'react-toastify';
 import { journeyService } from '../../services/journeyService';
 import { JourneyStepInstance, JourneyStepStatus, STEP_TYPE_OPTIONS } from '../../types/journey.types';
 import { Enrollment } from '../../types/enrollment.types';
-import { formatShortDateIST, istDateKey, todayISTKey, toISTForPicker } from '../../utils/dateUtils';
+import { formatShortDateIST, fromISTPickerToUTC, istDateKey, todayISTKey, toISTForPicker } from '../../utils/dateUtils';
 
 interface CareJourneyPanelProps {
   enrollment: Enrollment;
@@ -68,6 +68,9 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   // Journey-level controls
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [showStop, setShowStop] = useState(false);
+  const [showPause, setShowPause] = useState(false);
+  const [resumeOn, setResumeOn] = useState<Date | null>(null);
+  const [pauseReason, setPauseReason] = useState('');
   const [stopReason, setStopReason] = useState('');
   const [showDnc, setShowDnc] = useState(false);
   const [dncReason, setDncReason] = useState('');
@@ -190,6 +193,40 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
     }
   };
 
+  const handlePause = async () => {
+    const iso = fromISTPickerToUTC(resumeOn);
+    if (!iso) {
+      toast.error('Choose the date to resume the journey');
+      return;
+    }
+    setActionBusy('pause');
+    try {
+      const updated = await journeyService.pauseEnrollmentJourney(enrollment.enrollment_id, iso, pauseReason.trim() || undefined);
+      applyResult(updated);
+      setShowPause(false);
+      setPauseReason('');
+      setResumeOn(null);
+      toast.success('Journey paused');
+    } catch (e) {
+      toast.error(errDetail(e, 'Failed to pause journey'));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handleResume = async () => {
+    setActionBusy('resume');
+    try {
+      const updated = await journeyService.resumeEnrollmentJourney(enrollment.enrollment_id);
+      applyResult(updated);
+      toast.success('Journey resumed; remaining steps moved forward by the pause');
+    } catch (e) {
+      toast.error(errDetail(e, 'Failed to resume journey'));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const handleSetDnc = async (value: boolean) => {
     setActionBusy('dnc');
     try {
@@ -299,6 +336,21 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
           sx={{ alignSelf: 'flex-start', bgcolor: 'grey.200', color: 'text.secondary', fontWeight: 600 }}
         />
       )}
+      {enrollment.journey_status === 'paused' && (
+        <Alert
+          severity="info"
+          action={canEdit ? (
+            <Button color="inherit" size="small" onClick={handleResume} disabled={actionBusy === 'resume'}>
+              {actionBusy === 'resume' ? <CircularProgress size={16} /> : 'Resume now'}
+            </Button>
+          ) : undefined}
+        >
+          Journey paused until <b>{formatShortDateIST(enrollment.resume_on as string)}</b>
+          {enrollment.pause_reason ? ` · ${enrollment.pause_reason}` : ''}
+          {enrollment.paused_by_name ? ` · by ${enrollment.paused_by_name}` : ''}.
+          It resumes by itself on that date, and the remaining steps move forward by the pause.
+        </Alert>
+      )}
       {enrollment.do_not_contact && (
         <Chip
           label={`Do Not Contact${enrollment.dnc_reason ? ` — ${enrollment.dnc_reason}` : ''}`}
@@ -314,6 +366,11 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   const controls = canEdit && (
     <Box sx={{ mt: 1 }}>
       <Stack direction="row" spacing={1} flexWrap="wrap">
+        {enrollment.journey_status === 'active' && !enrollment.do_not_contact && (
+          <Button size="small" color="info" variant="outlined" onClick={() => setShowPause((v) => !v)}>
+            Pause journey
+          </Button>
+        )}
         {enrollment.journey_status !== 'stopped' && (
           <Button size="small" color="warning" variant="outlined" onClick={() => setShowStop((v) => !v)}>
             Stop journey
@@ -335,6 +392,29 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
           </Button>
         )}
       </Stack>
+
+      <Collapse in={showPause} unmountOnExit>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" sx={{ mt: 1 }}>
+          <DatePicker
+            label="Resume on *"
+            value={resumeOn}
+            onChange={(d) => setResumeOn(d)}
+            disablePast
+            minDate={new Date(Date.now() + 24 * 3600 * 1000)}
+            slotProps={{ textField: { size: 'small', sx: { width: 170 } } }}
+          />
+          <TextField
+            size="small"
+            label="Reason (optional)"
+            value={pauseReason}
+            onChange={(e) => setPauseReason(e.target.value)}
+            sx={{ flex: 1, minWidth: 180 }}
+          />
+          <Button size="small" color="info" variant="contained" onClick={handlePause} disabled={actionBusy === 'pause'}>
+            {actionBusy === 'pause' ? <CircularProgress size={18} /> : 'Confirm pause'}
+          </Button>
+        </Stack>
+      </Collapse>
 
       <Collapse in={showStop} unmountOnExit>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" sx={{ mt: 1 }}>

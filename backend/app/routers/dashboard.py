@@ -1073,6 +1073,8 @@ async def get_my_tasks(current_user: dict = Depends(get_current_user)):
         d = ist_date(dt)
         return d, (d < today), (d <= cutoff)
 
+    from app.routers.enrollments import resume_due_pauses
+    await resume_due_pauses()
     items = []
 
     # --- CARE STEPS: earliest pending step on the user's SPOC enrollments ---
