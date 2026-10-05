@@ -982,6 +982,65 @@ def build_enrollment_list_query(
     return query
 
 
+@router.get("/user-groups")
+async def get_enrollments_user_groups(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    search: Optional[str] = None,
+    connect_status: Optional[List[str]] = Query(None),
+    action_taken: Optional[List[str]] = Query(None),
+    service_partner: Optional[List[str]] = Query(None),
+    service_enrolled: Optional[List[str]] = Query(None),
+    package: Optional[str] = None,
+    uhid: Optional[List[str]] = Query(None),
+    hclhc_spoc: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    my_role: Optional[str] = None,
+    follow_ups_due: Optional[str] = None,
+    stopped_or_dnc: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """User Level view: the filtered list grouped by customer (UHID) across ALL
+    matching records, a page of groups at a time, with each group's records."""
+    from app.utils.user_groups import group_by_uhid, records_for_keys, uhid_key
+    query = build_enrollment_list_query(
+        search=search,
+        connect_status=connect_status,
+        action_taken=action_taken,
+        service_partner=service_partner,
+        service_enrolled=service_enrolled,
+        package=package,
+        uhid=uhid,
+        hclhc_spoc=hclhc_spoc,
+        created_date_from=created_date_from,
+        created_date_to=created_date_to,
+        next_follow_up_date=next_follow_up_date,
+        assigned_today=assigned_today,
+        my_role=my_role,
+        current_user=current_user,
+        enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
+        stopped_or_dnc=stopped_or_dnc,
+    )
+    db = get_database()
+    g = await group_by_uhid(db.enrollments, query, page, per_page, ist_range_utc(today_ist()))
+    recs = await Enrollment.find(records_for_keys(query, g["keys"])).sort("-created_at").to_list() if g["keys"] else []
+    by_key = {}
+    for r in recs:
+        by_key.setdefault(uhid_key(r.uhid), []).append(enrollment_to_response(r))
+    return {
+        "total_users": g["total_users"],
+        "users_created_today": g["users_created_today"],
+        "total_records": g["total_records"],
+        "total_groups": g["total_groups"],
+        "page": page,
+        "pages": max(1, -(-g["total_groups"] // per_page)),
+        "groups": [{"uhid": k or "Unknown", "records": by_key.get(k, [])} for k in g["keys"]],
+    }
+
+
 @router.get("", response_model=EnrollmentListResponse)
 async def get_enrollments(
     page: int = Query(1, ge=1),

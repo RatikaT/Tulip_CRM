@@ -864,6 +864,67 @@ def build_lead_list_query(
     return query
 
 
+@router.get("/user-groups")
+async def get_leads_user_groups(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    status: Optional[List[str]] = Query(None),
+    lead_source: Optional[List[str]] = Query(None),
+    uhid: Optional[List[str]] = Query(None),
+    package_requested: Optional[List[str]] = Query(None),
+    service_requested: Optional[List[str]] = Query(None),
+    city: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    reassign_to: Optional[str] = None,
+    created_date_from: Optional[str] = None,
+    created_date_to: Optional[str] = None,
+    next_follow_up_date: Optional[str] = None,
+    assigned_today: Optional[bool] = None,
+    open_follow_ups: Optional[bool] = None,
+    follow_ups_due_filter: Optional[str] = Query(None, alias="follow_ups_due"),
+    no_follow_up_date: Optional[bool] = None,
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """User Level view: the filtered list grouped by customer (UHID) across ALL
+    matching records, a page of groups at a time, with each group's records."""
+    from app.utils.user_groups import group_by_uhid, records_for_keys, uhid_key
+    query = build_lead_list_query(
+        status=status,
+        lead_source=lead_source,
+        uhid=uhid,
+        package_requested=package_requested,
+        service_requested=service_requested,
+        city=city,
+        assigned_to=assigned_to,
+        reassign_to=reassign_to,
+        created_date_from=created_date_from,
+        created_date_to=created_date_to,
+        next_follow_up_date=next_follow_up_date,
+        assigned_today=assigned_today,
+        open_follow_ups=open_follow_ups,
+        search=search,
+        current_user=current_user,
+        lead_ids=await _due_ids(follow_ups_due_filter, current_user),
+        no_follow_up_date=no_follow_up_date,
+    )
+    db = get_database()
+    g = await group_by_uhid(db.leads, query, page, per_page, ist_range_utc(today_ist()))
+    recs = await Lead.find(records_for_keys(query, g["keys"])).sort("-created_at").to_list() if g["keys"] else []
+    by_key = {}
+    for r in recs:
+        by_key.setdefault(uhid_key(r.uhid), []).append(lead_to_response(r))
+    return {
+        "total_users": g["total_users"],
+        "users_created_today": g["users_created_today"],
+        "total_records": g["total_records"],
+        "total_groups": g["total_groups"],
+        "page": page,
+        "pages": max(1, -(-g["total_groups"] // per_page)),
+        "groups": [{"uhid": k or "Unknown", "records": by_key.get(k, [])} for k in g["keys"]],
+    }
+
+
 @router.get("", response_model=LeadListResponse)
 async def get_leads(
     page: int = Query(1, ge=1),
