@@ -166,6 +166,14 @@ def owned_by(user_id: str) -> dict:
 FOLLOW_UP_STATUSES = ["Follow up-In Process", "Follow up-No Response"]
 
 
+async def _due_ids(which: Optional[str], current_user: dict) -> Optional[List[str]]:
+    """Card filter: 'today', 'overdue', or anything truthy for both."""
+    if not which or which.lower() in ("false", "0"):
+        return None
+    due, overdue = await follow_ups_due(current_user)
+    return due if which == "today" else overdue if which == "overdue" else due + overdue
+
+
 def _scope(current_user: dict) -> dict:
     """SPOCs count only the leads they own now; admins count everyone's."""
     base = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
@@ -261,13 +269,13 @@ async def get_lead_stats(
         assigned_today = 0
         if is_agent:
             # Count leads where assigned_date or reassigned_date is today
-            assigned_today = await db.leads.count_documents({
-                "is_deleted": False,
-                "$or": [
-                    {"assigned_to": user_id, "assigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}},
-                    {"reassign_to": user_id, "reassigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}}
-                ]
-            })
+            # "New / Assigned Today": leads that reached this SPOC today - created
+            # for them, assigned, or reassigned - and that they still own
+            assigned_today = await db.leads.count_documents({"$and": [
+                _scope(current_user),
+                {"$or": [{"assigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}},
+                         {"reassigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}}]},
+            ]})
 
         logger.info(f"Lead stats - total: {total}, new_today: {new_today}, follow_up_today: {follow_up_today}, assigned_today: {assigned_today}")
 
@@ -829,6 +837,8 @@ def build_lead_list_query(
             {"assigned_date": {"$gte": a_start, "$lte": a_end}},
             {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
         ]}]}
+        if current_user and current_user.get("role") == "agent":
+            query = {"$and": [query, owned_by(current_user["user_id"])]}
 
     # "Follow-ups Today" card: only open leads, and for SPOCs only the ones they own now
     if open_follow_ups:
@@ -871,7 +881,7 @@ async def get_leads(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
-    follow_ups_due_filter: Optional[bool] = Query(None, alias="follow_ups_due"),
+    follow_ups_due_filter: Optional[str] = Query(None, alias="follow_ups_due"),
     no_follow_up_date: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
@@ -897,7 +907,7 @@ async def get_leads(
         open_follow_ups=open_follow_ups,
         search=search,
         current_user=current_user,
-        lead_ids=(sum(await follow_ups_due(current_user), []) if follow_ups_due_filter else None),
+        lead_ids=await _due_ids(follow_ups_due_filter, current_user),
         no_follow_up_date=no_follow_up_date,
     )
 
@@ -935,7 +945,7 @@ async def export_leads_excel(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
-    follow_ups_due_filter: Optional[bool] = Query(None, alias="follow_ups_due"),
+    follow_ups_due_filter: Optional[str] = Query(None, alias="follow_ups_due"),
     no_follow_up_date: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
@@ -959,7 +969,7 @@ async def export_leads_excel(
         created_date_from=created_date_from or start_date, created_date_to=created_date_to or end_date,
         next_follow_up_date=next_follow_up_date, assigned_today=assigned_today,
         open_follow_ups=open_follow_ups, search=search, current_user=current_user,
-        lead_ids=(sum(await follow_ups_due(current_user), []) if follow_ups_due_filter else None),
+        lead_ids=await _due_ids(follow_ups_due_filter, current_user),
         no_follow_up_date=no_follow_up_date,
     )
 

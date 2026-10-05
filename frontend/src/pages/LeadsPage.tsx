@@ -147,6 +147,9 @@ const ExpandableCell = ({ value }: { value: string | null }) => {
   );
 };
 
+// Leads in these statuses aren't followed up, so their old dates aren't "overdue"
+const CLOSED_STATUSES = ['Enrolled', 'Not Interested', 'Lead Closed-No Response', 'Duplicate'];
+
 export default function LeadsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -361,7 +364,8 @@ export default function LeadsPage() {
     next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
     assigned_today: assignedTodayFilter || undefined,
     // Card filters: due today + overdue with no action since / follow-up status with no date
-    follow_ups_due: activeKpi === 'follow_up_today' || undefined,
+    follow_ups_due: ({ follow_up_today: 'all', follow_up_due_today: 'today', follow_up_overdue: 'overdue' } as const)[
+      activeKpi as 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue'] ?? undefined,
     no_follow_up_date: activeKpi === 'no_follow_up_date' || undefined,
   });
 
@@ -490,7 +494,7 @@ export default function LeadsPage() {
   };
 
   // KPI card acts as a quick filter on the table
-  type KpiKey = 'total' | 'new_today' | 'assigned_today' | 'follow_up_today' | 'no_follow_up_date';
+  type KpiKey = 'total' | 'new_today' | 'assigned_today' | 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue' | 'no_follow_up_date';
   const handleKpiClick = (kpi: KpiKey) => {
     if (activeKpi === kpi) {
       clearAllFilters();
@@ -515,7 +519,25 @@ export default function LeadsPage() {
     <>
       {renderKpiCard({
         kpiKey: 'follow_up_today', sm, md, title: 'Follow-ups Today', value: stats.follow_up_today,
-        subtitle: `${stats.follow_up_due_today ?? 0} due today · ${stats.follow_up_overdue ?? 0} overdue, no action yet`,
+        alsoActiveFor: ['follow_up_due_today', 'follow_up_overdue'],
+        extra: (
+          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75, flexWrap: 'wrap' }}>
+            <Chip
+              size="small"
+              label={`Due today ${stats.follow_up_due_today ?? 0}`}
+              onClick={(e) => { e.stopPropagation(); handleKpiClick('follow_up_due_today'); }}
+              sx={{ fontWeight: 600, bgcolor: activeKpi === 'follow_up_due_today' ? '#f57c00' : '#fff3e0',
+                    color: activeKpi === 'follow_up_due_today' ? '#fff' : '#e65100' }}
+            />
+            <Chip
+              size="small"
+              label={`Overdue ${stats.follow_up_overdue ?? 0}`}
+              onClick={(e) => { e.stopPropagation(); handleKpiClick('follow_up_overdue'); }}
+              sx={{ fontWeight: 600, bgcolor: activeKpi === 'follow_up_overdue' ? '#c62828' : '#ffebee',
+                    color: activeKpi === 'follow_up_overdue' ? '#fff' : '#c62828' }}
+            />
+          </Box>
+        ),
         iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
         icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
       })}
@@ -538,6 +560,8 @@ export default function LeadsPage() {
     iconBg: string;
     sm: number;
     md?: number;
+    extra?: React.ReactNode;
+    alsoActiveFor?: KpiKey[];
   }) => (
     <Grid item xs={6} sm={opts.sm} md={opts.md ?? opts.sm} sx={{ display: 'flex' }}>
       <Card
@@ -553,7 +577,7 @@ export default function LeadsPage() {
           cursor: 'pointer',
           transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
           '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 12px 24px rgba(16,24,40,0.10)' },
-          ...(activeKpi === opts.kpiKey && {
+          ...((activeKpi === opts.kpiKey || (opts.alsoActiveFor || []).includes(activeKpi as KpiKey)) && {
             borderColor: 'primary.main',
             boxShadow: '0 0 0 2px rgba(30,64,136,0.35), 0 8px 20px rgba(16,24,40,0.10)',
           }),
@@ -573,6 +597,7 @@ export default function LeadsPage() {
                   {opts.subtitle}
                 </Typography>
               )}
+              {opts.extra}
             </Box>
             <Box sx={{ width: 40, height: 40, borderRadius: '50%', background: opts.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {opts.icon}
@@ -589,6 +614,8 @@ export default function LeadsPage() {
     const d = (x: Date) => format(x, 'dd MMM yy');
     const out: string[] = [];
     if (activeKpi === 'follow_up_today') out.push('Follow-ups due today + overdue');
+    if (activeKpi === 'follow_up_due_today') out.push('Follow-ups due today');
+    if (activeKpi === 'follow_up_overdue') out.push('Follow-ups overdue, no action yet');
     if (activeKpi === 'no_follow_up_date') out.push('No follow-up date');
     if (activeKpi === 'assigned_today' || assignedTodayFilter) out.push('Assigned today');
     if (searchTerm) out.push(`Search: "${searchTerm}"`);
@@ -684,6 +711,25 @@ export default function LeadsPage() {
           sx={getStatusChipSx(params.value as string)}
         />
       ),
+    },
+    {
+      field: 'follow_up_date',
+      headerName: 'Follow-up',
+      flex: 0.8,
+      minWidth: 105,
+      renderCell: (params: GridRenderCellParams) => {
+        if (!params.value) return '-';
+        const key = istDateKey(params.value as string);
+        const today = todayISTKey();
+        const label = formatShortDateIST(params.value as string);
+        if (key && key < today && !CLOSED_STATUSES.includes(params.row.status)) {
+          return <Chip size="small" label={`Overdue · ${label}`} sx={{ fontWeight: 600, bgcolor: '#ffebee', color: '#c62828' }} />;
+        }
+        if (key === today) {
+          return <Chip size="small" label="Today" sx={{ fontWeight: 600, bgcolor: '#fff3e0', color: '#e65100' }} />;
+        }
+        return label;
+      },
     },
     {
       field: 'lead_source',
@@ -1013,21 +1059,17 @@ export default function LeadsPage() {
         // Agent Stats Cards - 4 cards showing leads assigned or reassigned to this agent
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
           {renderKpiCard({
-            kpiKey: 'total', sm: 4, md: 2.4, title: 'Total Leads', value: stats.total, subtitle: 'Assigned/Reassigned to you',
+            kpiKey: 'total', sm: 6, md: 3, title: 'Total Leads', value: stats.total, subtitle: 'Assigned/Reassigned to you',
             iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
             icon: <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>,
           })}
           {renderKpiCard({
-            kpiKey: 'new_today', sm: 4, md: 2.4, title: 'New Leads Today', value: stats.new_today, subtitle: 'Created today for you',
+            kpiKey: 'assigned_today', sm: 6, md: 3, title: 'New / Assigned Today', value: stats.assigned_today,
+            subtitle: 'Given to you today: new or reassigned',
             iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-            icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
+            icon: <PersonIcon sx={{ color: '#2e7d32', fontSize: '1.2rem' }} />,
           })}
-          {renderKpiCard({
-            kpiKey: 'assigned_today', sm: 4, md: 2.4, title: 'Assigned Today', value: stats.assigned_today, subtitle: 'Assigned/Reassigned today',
-            iconBg: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)',
-            icon: <PersonIcon sx={{ color: '#c2185b', fontSize: '1.2rem' }} />,
-          })}
-          {followUpCards(6, 2.4)}
+          {followUpCards(6, 3)}
         </Grid>
       )}
 
