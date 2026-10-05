@@ -185,7 +185,6 @@ export default function LeadsPage() {
   const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(toDateOrNull(savedLeadFilters.createdDateFrom));
   const [createdDateTo, setCreatedDateTo] = useState<Date | null>(toDateOrNull(savedLeadFilters.createdDateTo));
   const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(toDateOrNull(savedLeadFilters.nextFollowUpDateFilter));
-  const [colorFilter, setColorFilter] = useState<string>((savedLeadFilters.colorFilter as string) ?? ''); // 'filled' or 'not_filled' or ''
   const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>((savedLeadFilters.assignedTodayFilter as boolean) ?? false);
   const [activeKpi, setActiveKpi] = useState<string>((savedLeadFilters.activeKpi as string) ?? '');
   const [showFilters, setShowFilters] = useState(true);
@@ -200,10 +199,10 @@ export default function LeadsPage() {
   const [agents, setAgents] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = statusFilter.length > 0 || sourceFilter.length > 0 || uhidFilter.length > 0 || packageRequestedFilter.length > 0 || serviceRequestedFilter.length > 0 || assignedToFilter || reassignedToFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter;
+  const hasActiveFilters = statusFilter.length > 0 || sourceFilter.length > 0 || uhidFilter.length > 0 || packageRequestedFilter.length > 0 || serviceRequestedFilter.length > 0 || assignedToFilter || reassignedToFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || assignedTodayFilter;
 
   // Get total number of active filter values
-  const activeFilterCount = statusFilter.length + sourceFilter.length + uhidFilter.length + packageRequestedFilter.length + serviceRequestedFilter.length + (assignedToFilter ? 1 : 0) + (reassignedToFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
+  const activeFilterCount = statusFilter.length + sourceFilter.length + uhidFilter.length + packageRequestedFilter.length + serviceRequestedFilter.length + (assignedToFilter ? 1 : 0) + (reassignedToFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -234,22 +233,14 @@ export default function LeadsPage() {
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
-      colorFilter, assignedTodayFilter, activeKpi, viewMode,
+      assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
-  // Filter leads by color filter (client-side filter for highlight status)
-  const filteredLeads = useMemo(() => {
-    if (!colorFilter) return leads;
-
-    if (colorFilter === 'filled') {
-      return leads.filter(l => shouldHighlightForAgent(l));
-    } else if (colorFilter === 'not_filled') {
-      return leads.filter(l => !shouldHighlightForAgent(l));
-    }
-    return leads;
-  }, [leads, colorFilter]);
+  // The colour filter was removed (the Follow-ups / New-Assigned cards cover it
+  // across all records); rows are still highlighted yellow.
+  const filteredLeads = leads;
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
@@ -488,7 +479,6 @@ export default function LeadsPage() {
     setCreatedDateFrom(null);
     setCreatedDateTo(null);
     setNextFollowUpDateFilter(null);
-    setColorFilter('');
     setAssignedTodayFilter(false);
     setActiveKpi('');
   };
@@ -1430,33 +1420,6 @@ export default function LeadsPage() {
                   )}
                 />
 
-                {/* Color Filter - only shown for agents */}
-                {!isAdmin && (
-                  <Autocomplete
-                    size="small"
-                    options={[
-                      { value: 'filled', label: 'Highlighted (Yellow)' },
-                      { value: 'not_filled', label: 'Not Highlighted' },
-                    ]}
-                    getOptionLabel={(option) => option.label}
-                    value={colorFilter ? { value: colorFilter, label: colorFilter === 'filled' ? 'Highlighted (Yellow)' : 'Not Highlighted' } : null}
-                    onChange={(_, newValue) => setColorFilter(newValue?.value || '')}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Color"
-                        placeholder=""
-                        sx={{
-                          width: 150,
-                          '& .MuiInputBase-root': { fontSize: '0.75rem' },
-                          '& .MuiInputLabel-root': { fontSize: '0.75rem' },
-                          '& .MuiOutlinedInput-root': { bgcolor: colorFilter === 'filled' ? '#fff9c4' : 'white' },
-                        }}
-                      />
-                    )}
-                    isOptionEqualToValue={(option, value) => option.value === value.value}
-                  />
-                )}
               </Box>
 
               {/* Selected Filters - text with cross icon below */}
@@ -1683,25 +1646,6 @@ export default function LeadsPage() {
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Assigned Today
-                      </Typography>
-                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                    </Box>
-                  )}
-                  {colorFilter && (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.25,
-                        cursor: 'pointer',
-                        bgcolor: colorFilter === 'filled' ? '#fff9c4' : 'transparent',
-                        px: 0.5,
-                        borderRadius: 0.5,
-                      }}
-                      onClick={() => setColorFilter('')}
-                    >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
-                        Color: {colorFilter === 'filled' ? 'Highlighted (Yellow)' : 'Not Highlighted'}
                       </Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
@@ -2115,11 +2059,6 @@ export default function LeadsPage() {
           ) : (
             <DialogContentText>
               No filters are applied, so this downloads <b>all {totalCount.toLocaleString('en-IN')}</b> leads you can see.
-            </DialogContentText>
-          )}
-          {colorFilter && (
-            <DialogContentText variant="body2" sx={{ mt: 1.5 }}>
-              The colour filter only changes the screen, so it isn't applied to the download.
             </DialogContentText>
           )}
         </DialogContent>

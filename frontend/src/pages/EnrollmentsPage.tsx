@@ -193,7 +193,6 @@ export default function EnrollmentsPage() {
   const [createdDateFrom, setCreatedDateFrom] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.createdDateFrom));
   const [createdDateTo, setCreatedDateTo] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.createdDateTo));
   const [nextFollowUpDateFilter, setNextFollowUpDateFilter] = useState<Date | null>(toDateOrNull(savedEnrollmentFilters.nextFollowUpDateFilter));
-  const [colorFilter, setColorFilter] = useState<string>((savedEnrollmentFilters.colorFilter as string) ?? ''); // 'filled' or 'not_filled' or ''
   const [assignedTodayFilter, setAssignedTodayFilter] = useState<boolean>((savedEnrollmentFilters.assignedTodayFilter as boolean) ?? false);
   const [activeKpi, setActiveKpi] = useState<string>((savedEnrollmentFilters.activeKpi as string) ?? '');
   const [showFilters, setShowFilters] = useState(true);
@@ -201,10 +200,10 @@ export default function EnrollmentsPage() {
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || colorFilter || assignedTodayFilter || (user?.role === 'agent' && !!myRoleFilter);
+  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || assignedTodayFilter || (user?.role === 'agent' && !!myRoleFilter);
 
   // Get total number of active filter values
-  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (colorFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0) + (user?.role === 'agent' && myRoleFilter ? 1 : 0);
+  const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0) + (user?.role === 'agent' && myRoleFilter ? 1 : 0);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -232,22 +231,14 @@ export default function EnrollmentsPage() {
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
-      colorFilter, assignedTodayFilter, activeKpi, viewMode,
+      assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, colorFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
-  // Filter enrollments by color filter (client-side filter for highlight status)
-  const filteredEnrollments = useMemo(() => {
-    if (!colorFilter) return enrollments;
-
-    if (colorFilter === 'filled') {
-      return enrollments.filter(e => shouldHighlightForAgent(e));
-    } else if (colorFilter === 'not_filled') {
-      return enrollments.filter(e => !shouldHighlightForAgent(e));
-    }
-    return enrollments;
-  }, [enrollments, colorFilter]);
+  // The colour filter was removed (the Follow-ups / New-Assigned cards cover it
+  // across all records); rows are still highlighted yellow.
+  const filteredEnrollments = enrollments;
 
   // Group enrollments by UHID for user-level view
   interface UserGroup {
@@ -472,7 +463,6 @@ export default function EnrollmentsPage() {
     setCreatedDateFrom(null);
     setCreatedDateTo(null);
     setNextFollowUpDateFilter(null);
-    setColorFilter('');
     setAssignedTodayFilter(false);
     setActiveKpi('');
   };
@@ -1446,34 +1436,6 @@ export default function EnrollmentsPage() {
                   }}
                 />
 
-                {/* Color Filter - only shown for agents */}
-                {!isAdmin && (
-                  <Autocomplete
-                    size="small"
-                    options={[
-                      { value: 'filled', label: 'Filled (Yellow)' },
-                      { value: 'not_filled', label: 'Not Filled' },
-                    ]}
-                    getOptionLabel={(option) => option.label}
-                    value={colorFilter ? { value: colorFilter, label: colorFilter === 'filled' ? 'Filled (Yellow)' : 'Not Filled' } : null}
-                    onChange={(_, newValue) => setColorFilter(newValue?.value || '')}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Color"
-                        placeholder=""
-                        sx={{
-                          ...compactInputSx,
-                          width: 130,
-                          '& .MuiOutlinedInput-root': {
-                            bgcolor: colorFilter === 'filled' ? '#fff9c4' : 'white',
-                          },
-                        }}
-                      />
-                    )}
-                    isOptionEqualToValue={(option, value) => option.value === value.value}
-                  />
-                )}
 
               </Box>
 
@@ -1720,25 +1682,6 @@ export default function EnrollmentsPage() {
                     >
                       <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
                         Assigned Today
-                      </Typography>
-                      <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                    </Box>
-                  )}
-                  {colorFilter && (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.25,
-                        cursor: 'pointer',
-                        bgcolor: colorFilter === 'filled' ? '#fff9c4' : 'transparent',
-                        px: 0.5,
-                        borderRadius: 0.5,
-                      }}
-                      onClick={() => setColorFilter('')}
-                    >
-                      <Typography sx={{ fontSize: '0.7rem', color: 'primary.dark', fontWeight: 600 }}>
-                        Color: {colorFilter === 'filled' ? 'Filled (Yellow)' : 'Not Filled'}
                       </Typography>
                       <CloseIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                     </Box>
@@ -2115,11 +2058,6 @@ export default function EnrollmentsPage() {
               ? <>Downloads the <b>{totalCount.toLocaleString('en-IN')}</b> enrollment{totalCount === 1 ? '' : 's'} in your filtered list (same filters{searchTerm ? ' and search' : ''} as on screen).</>
               : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> enrollments you can see.</>}
           </DialogContentText>
-          {colorFilter && (
-            <DialogContentText variant="body2">
-              The colour filter only changes the screen, so it isn't applied to the download.
-            </DialogContentText>
-          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>
