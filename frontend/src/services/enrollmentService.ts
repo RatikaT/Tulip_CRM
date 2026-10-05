@@ -1,3 +1,4 @@
+import type { UserGroupsResponse } from './leadService';
 import api from './api';
 import {
   Enrollment,
@@ -36,6 +37,14 @@ export interface EnrollmentQueryParams {
 export const enrollmentService = {
   getEnrollments: async (params: EnrollmentQueryParams = {}): Promise<EnrollmentListResponse> => {
     const response = await api.get<EnrollmentListResponse>('/enrollments', { params });
+    return response.data;
+  },
+
+  // User Level view: filtered list grouped by UHID on the server (all records)
+  getUserGroups: async (params: EnrollmentQueryParams = {}, page = 1, perPage = 25): Promise<UserGroupsResponse<Enrollment>> => {
+    const response = await api.get<UserGroupsResponse<Enrollment>>('/enrollments/user-groups', {
+      params: { ...params, page, per_page: perPage },
+    });
     return response.data;
   },
 

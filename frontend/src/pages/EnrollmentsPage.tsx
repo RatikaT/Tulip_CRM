@@ -8,6 +8,7 @@ import {
   TextField,
   Grid,
   Chip,
+  Pagination,
   IconButton,
   Tooltip,
   Card,
@@ -57,6 +58,7 @@ import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
+import type { UserGroupsResponse } from '../services/leadService';
 import {
   Enrollment,
   EnrollmentStatsResponse,
@@ -251,62 +253,29 @@ export default function EnrollmentsPage() {
     total_enrollments: number;
   }
 
-  const groupedByUser = useMemo((): UserGroup[] => {
-    const groups: Record<string, UserGroup> = {};
-    // Filter by UHID if filter is active
-    const uhidFilteredEnrollments = uhidFilter.length > 0
-      ? filteredEnrollments.filter(e => e.uhid && uhidFilter.includes(e.uhid))
-      : filteredEnrollments;
+  // User Level view comes from the server, grouped across ALL matching enrollments
+  const [userGroupsData, setUserGroupsData] = useState<UserGroupsResponse<Enrollment> | null>(null);
+  const [groupPage, setGroupPage] = useState(1);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
-    uhidFilteredEnrollments.forEach((enrollment) => {
-      const uhid = enrollment.uhid || 'Unknown';
-      if (!groups[uhid]) {
-        groups[uhid] = {
-          uhid,
-          subscriber_name: enrollment.subscriber_name || '',
-          phone_number: enrollment.phone_number || '',
-          email: enrollment.email || '',
-          employee_id: enrollment.employee_id || '',
-          enrollments: [],
-          total_enrollments: 0,
-        };
-      }
-      groups[uhid].enrollments.push(enrollment);
-      groups[uhid].total_enrollments++;
-      // Update user info if this enrollment has more complete data
-      if (!groups[uhid].subscriber_name && enrollment.subscriber_name) {
-        groups[uhid].subscriber_name = enrollment.subscriber_name;
-      }
-      if (!groups[uhid].phone_number && enrollment.phone_number) {
-        groups[uhid].phone_number = enrollment.phone_number;
-      }
-      if (!groups[uhid].email && enrollment.email) {
-        groups[uhid].email = enrollment.email;
-      }
-    });
-    return Object.values(groups).sort((a, b) => b.total_enrollments - a.total_enrollments);
-  }, [filteredEnrollments, uhidFilter]);
-
-  // Compute user-level stats
-  const userLevelStats = useMemo(() => {
-    const uniqueUhids = new Set<string>();
-    const usersEnrolledToday = new Set<string>();
-
-    filteredEnrollments.forEach(enrollment => {
-      if (enrollment.uhid) {
-        uniqueUhids.add(enrollment.uhid);
-        if (istDateKey(enrollment.created_at) === todayISTKey()) {
-          usersEnrolledToday.add(enrollment.uhid);
-        }
-      }
-    });
-
+  const groupedByUser = useMemo((): UserGroup[] => (userGroupsData?.groups || []).map((g) => {
+    const pick = (f: (e: Enrollment) => string | null | undefined) => g.records.map(f).find(Boolean) || '';
     return {
-      totalUsers: uniqueUhids.size,
-      usersEnrolledToday: usersEnrolledToday.size,
-      totalEnrollments: filteredEnrollments.length,
+      uhid: g.uhid,
+      subscriber_name: pick((e) => e.subscriber_name),
+      phone_number: pick((e) => e.phone_number),
+      email: pick((e) => e.email),
+      employee_id: pick((e) => e.employee_id),
+      enrollments: g.records,
+      total_enrollments: g.records.length,
     };
-  }, [filteredEnrollments]);
+  }), [userGroupsData]);
+
+  const userLevelStats = {
+    totalUsers: userGroupsData?.total_users ?? 0,
+    usersEnrolledToday: userGroupsData?.users_created_today ?? 0,
+    totalEnrollments: userGroupsData?.total_records ?? 0,
+  };
 
   const handleUserExpand = (uhid: string) => {
     setExpandedUsers(prev =>
@@ -380,6 +349,23 @@ export default function EnrollmentsPage() {
     fetchEnrollments();
     fetchStats();
   }, [fetchEnrollments, fetchStats]);
+
+  const fetchUserGroups = useCallback(async () => {
+    if (viewMode !== 'user' || !isAdmin) return;
+    setGroupsLoading(true);
+    try {
+      setUserGroupsData(await enrollmentService.getUserGroups(listFilters(), groupPage));
+    } catch (error) {
+      console.error('Failed to fetch user groups:', error);
+      toast.error('Failed to load the User Level view');
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, [viewMode, isAdmin, groupPage, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
+
+  useEffect(() => { fetchUserGroups(); }, [fetchUserGroups]);
+  // Back to the first page of groups whenever the filters change
+  useEffect(() => { setGroupPage(1); }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
 
   // Fetch users tagged for Tulip CRM for HCLH SPOC (Nurture Buddy) dropdown
   useEffect(() => {
@@ -926,7 +912,7 @@ export default function EnrollmentsPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Tooltip title="Refresh">
-            <IconButton onClick={() => { fetchEnrollments(); fetchStats(); }} color="primary" size="small">
+            <IconButton onClick={() => { fetchEnrollments(); fetchStats(); fetchUserGroups(); }} color="primary" size="small">
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -1802,7 +1788,7 @@ export default function EnrollmentsPage() {
       {/* User Level View */}
       {viewMode === 'user' && (
         <Paper sx={{ p: 2, maxHeight: 'calc(100vh - 380px)', overflow: 'auto' }}>
-          {loading ? (
+          {groupsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
               <Typography color="text.secondary">Loading...</Typography>
             </Box>
@@ -1812,9 +1798,15 @@ export default function EnrollmentsPage() {
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Showing {groupedByUser.length} unique users with {filteredEnrollments.length} enrollments
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {userGroupsData?.total_groups.toLocaleString('en-IN')} customers with {userGroupsData?.total_records.toLocaleString('en-IN')} enrollments
+                  {userGroupsData && userGroupsData.pages > 1 ? ` · page ${groupPage} of ${userGroupsData.pages}` : ''}
+                </Typography>
+                {userGroupsData && userGroupsData.pages > 1 && (
+                  <Pagination size="small" count={userGroupsData.pages} page={groupPage} onChange={(_, p) => setGroupPage(p)} />
+                )}
+              </Box>
               {groupedByUser.map((userGroup) => (
                 <Accordion
                   key={userGroup.uhid}

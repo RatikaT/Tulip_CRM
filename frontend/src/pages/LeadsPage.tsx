@@ -8,6 +8,7 @@ import {
   TextField,
   Grid,
   Chip,
+  Pagination,
   IconButton,
   Tooltip,
   Card,
@@ -52,7 +53,7 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
 import { formatShortDateIST, istDateKey, todayISTKey } from '../utils/dateUtils';
-import { leadService, buildLeadParams } from '../services/leadService';
+import { leadService, buildLeadParams, type UserGroupsResponse } from '../services/leadService';
 import { Lead } from '../types/lead.types';
 import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import LeadCreateModal from '../components/leads/LeadCreateModal';
@@ -263,60 +264,29 @@ export default function LeadsPage() {
     total_leads: number;
   }
 
-  const groupedByUser = useMemo((): UserGroup[] => {
-    const groups: Record<string, UserGroup> = {};
-    filteredLeads.forEach((lead) => {
-      const uhid = lead.uhid || 'Unknown';
-      if (!groups[uhid]) {
-        groups[uhid] = {
-          uhid,
-          name: lead.name || '',
-          phone_number: lead.phone_number || '',
-          email: lead.email || '',
-          employee_id: lead.employee_id || '',
-          leads: [],
-          total_leads: 0,
-        };
-      }
-      groups[uhid].leads.push(lead);
-      groups[uhid].total_leads++;
-      // Update user info if this lead has more complete data
-      if (!groups[uhid].name && lead.name) {
-        groups[uhid].name = lead.name;
-      }
-      if (!groups[uhid].phone_number && lead.phone_number) {
-        groups[uhid].phone_number = lead.phone_number;
-      }
-      if (!groups[uhid].email && lead.email) {
-        groups[uhid].email = lead.email;
-      }
-      if (!groups[uhid].employee_id && lead.employee_id) {
-        groups[uhid].employee_id = lead.employee_id;
-      }
-    });
-    return Object.values(groups).sort((a, b) => b.total_leads - a.total_leads);
-  }, [filteredLeads]);
+  // User Level view comes from the server, grouped across ALL matching leads
+  const [userGroupsData, setUserGroupsData] = useState<UserGroupsResponse<Lead> | null>(null);
+  const [groupPage, setGroupPage] = useState(1);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
-  // Compute user-level stats
-  const userLevelStats = useMemo(() => {
-    const uniqueUhids = new Set<string>();
-    const usersCreatedToday = new Set<string>();
-
-    filteredLeads.forEach(lead => {
-      if (lead.uhid) {
-        uniqueUhids.add(lead.uhid);
-        if (istDateKey(lead.created_at) === todayISTKey()) {
-          usersCreatedToday.add(lead.uhid);
-        }
-      }
-    });
-
+  const groupedByUser = useMemo((): UserGroup[] => (userGroupsData?.groups || []).map((g) => {
+    const pick = (f: (l: Lead) => string | null | undefined) => g.records.map(f).find(Boolean) || '';
     return {
-      totalUsers: uniqueUhids.size,
-      usersCreatedToday: usersCreatedToday.size,
-      totalLeads: filteredLeads.length,
+      uhid: g.uhid,
+      name: pick((l) => l.name),
+      phone_number: pick((l) => l.phone_number),
+      email: pick((l) => l.email),
+      employee_id: pick((l) => l.employee_id),
+      leads: g.records,
+      total_leads: g.records.length,
     };
-  }, [filteredLeads]);
+  }), [userGroupsData]);
+
+  const userLevelStats = {
+    totalUsers: userGroupsData?.total_users ?? 0,
+    usersCreatedToday: userGroupsData?.users_created_today ?? 0,
+    totalLeads: userGroupsData?.total_records ?? 0,
+  };
 
   const handleUserExpand = (uhid: string) => {
     setExpandedUsers(prev =>
@@ -395,6 +365,23 @@ export default function LeadsPage() {
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
   }, [searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+
+  const fetchUserGroups = useCallback(async () => {
+    if (viewMode !== 'user') return;
+    setGroupsLoading(true);
+    try {
+      setUserGroupsData(await leadService.getUserGroups(listFilters(), groupPage));
+    } catch (error) {
+      console.error('Failed to fetch user groups:', error);
+      toast.error('Failed to load the User Level view');
+    } finally {
+      setGroupsLoading(false);
+    }
+  }, [viewMode, groupPage, searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
+
+  useEffect(() => { fetchUserGroups(); }, [fetchUserGroups]);
+  // Back to the first page of groups whenever the filters change
+  useEffect(() => { setGroupPage(1); }, [searchTerm, statusFilter, sourceFilter, uhidFilter, packageRequestedFilter, serviceRequestedFilter, assignedToFilter, reassignedToFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
 
   useEffect(() => {
     fetchLeads();
@@ -883,7 +870,7 @@ export default function LeadsPage() {
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Tooltip title="Refresh">
-            <IconButton onClick={() => { fetchLeads(); fetchStats(); }} color="primary" size="small">
+            <IconButton onClick={() => { fetchLeads(); fetchStats(); fetchUserGroups(); }} color="primary" size="small">
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -1806,7 +1793,7 @@ export default function LeadsPage() {
       {/* User Level View */}
       {viewMode === 'user' && (
         <Paper sx={{ p: 2, maxHeight: 'calc(100vh - 380px)', overflow: 'auto' }}>
-          {loading ? (
+          {groupsLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
               <Typography color="text.secondary">Loading...</Typography>
             </Box>
@@ -1816,9 +1803,15 @@ export default function LeadsPage() {
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Showing {groupedByUser.length} unique users with {filteredLeads.length} leads
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {userGroupsData?.total_groups.toLocaleString('en-IN')} customers with {userGroupsData?.total_records.toLocaleString('en-IN')} leads
+                  {userGroupsData && userGroupsData.pages > 1 ? ` · page ${groupPage} of ${userGroupsData.pages}` : ''}
+                </Typography>
+                {userGroupsData && userGroupsData.pages > 1 && (
+                  <Pagination size="small" count={userGroupsData.pages} page={groupPage} onChange={(_, p) => setGroupPage(p)} />
+                )}
+              </Box>
               {groupedByUser.map((userGroup) => (
                 <Accordion
                   key={userGroup.uhid}

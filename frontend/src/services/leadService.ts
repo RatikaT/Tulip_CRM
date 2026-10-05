@@ -70,6 +70,16 @@ export interface RelatedLeadsResponse {
   total: number;
 }
 
+export interface UserGroupsResponse<T> {
+  total_users: number;
+  users_created_today: number;
+  total_records: number;
+  total_groups: number;
+  page: number;
+  pages: number;
+  groups: { uhid: string; records: T[] }[];
+}
+
 // The Leads page filters as query params; shared by the list and the MIS export
 // so the export always matches the list on screen.
 export const buildLeadParams = (filters: LeadFilters = {}): URLSearchParams => {
@@ -112,6 +122,15 @@ export const leadService = {
   getLeads: async (filters: LeadFilters = {}): Promise<LeadListResponse> => {
     const params = buildLeadParams(filters);
     const response = await api.get<LeadListResponse>(`/leads?${params.toString()}`);
+    return response.data;
+  },
+
+  // User Level view: filtered list grouped by UHID on the server (all records)
+  getUserGroups: async (filters: LeadFilters = {}, page = 1, perPage = 25): Promise<UserGroupsResponse<Lead>> => {
+    const params = buildLeadParams(filters);
+    params.set('page', String(page));
+    params.set('per_page', String(perPage));
+    const response = await api.get<UserGroupsResponse<Lead>>(`/leads/user-groups?${params.toString()}`);
     return response.data;
   },
 
