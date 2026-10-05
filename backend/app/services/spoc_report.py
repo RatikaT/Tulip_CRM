@@ -312,7 +312,8 @@ async def _compute(F, T, leads, enrs, uname, by_name, light=False) -> Dict[str, 
     for e in enrs:
         if e.do_not_contact and e.dnc_at and _d(e.dnc_at) < F:
             continue
-        if e.journey_stopped_at and _d(e.journey_stopped_at) < F:
+        # Stopped before the dates (a journey rebuilt after a stop is active again)
+        if e.journey_status == "stopped" and e.journey_stopped_at and _d(e.journey_stopped_at) < F:
             continue
         key = _buddy_key(e, by_name)
         nfu = nfu_asof[e.enrollment_id]
