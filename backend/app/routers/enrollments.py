@@ -4,7 +4,7 @@ Enrollment Management Routes
 # Updated: Bug fixes for bulk upload
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import datetime, date, timedelta, timezone
 import csv
 import io
@@ -158,6 +158,80 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
     }
 
 
+# ---- Enrollment follow-up cards (same rules as the Daily SPOC Report) ----
+def _enr_scope(current_user: dict) -> dict:
+    """SPOCs: customers where they are the Nurture Buddy; admins: everyone."""
+    q = {"is_deleted": False}
+    if current_user.get("role") == "agent":
+        q["hclhc_spoc"] = {"$regex": f"^{re.escape(current_user.get('full_name', ''))}$", "$options": "i"}
+    return q
+
+
+def stopped_or_dnc_query(current_user: dict) -> dict:
+    """"Stopped / Do Not Contact" card: journey stopped or DNC set."""
+    return {**_enr_scope(current_user),
+            "$or": [{"do_not_contact": True}, {"journey_status": "stopped"}]}
+
+
+async def enrollment_follow_ups_due(current_user: dict) -> Tuple[List[str], List[str]]:
+    """("Follow-ups Today" card) customers due today - Next Follow-up Due today or
+    a care step planned today - and customers overdue: Next Follow-up Due passed
+    with nothing done since, or a care step planned earlier still pending.
+    Counted once per customer (due wins). DNC excluded; stopped journeys don't
+    count their care steps. Returns (due_today_ids, overdue_ids)."""
+    from app.utils.mis_helpers import parse_dt
+    day_start, day_end = ist_range_utc(today_ist())
+    enrs = await Enrollment.find({**_enr_scope(current_user), "do_not_contact": {"$ne": True}}).to_list()
+
+    def d(x):
+        """Stored value -> naive UTC datetime."""
+        v = parse_dt(x)
+        if v is not None and v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
+    due, overdue, fu_past = [], [], {}
+    for e in enrs:
+        nfu = d(e.next_follow_up_date)
+        active = e.journey_status != "stopped"
+        pending = [d(s.get("planned_date")) for s in (e.journey or [])
+                   if active and s.get("status") == "pending" and d(s.get("planned_date"))]
+        if (nfu and day_start <= nfu < day_end) or any(day_start <= p < day_end for p in pending):
+            due.append(e.enrollment_id)
+        elif any(p < day_start for p in pending):
+            overdue.append(e.enrollment_id)
+        elif nfu and nfu < day_start:
+            fu_past[e.enrollment_id] = (e, nfu)
+
+    # Next Follow-up Due passed: overdue only if nothing was done since that date
+    if fu_past:
+        logs = await EnrollmentAuditLog.find({
+            "enrollment_id": {"$in": list(fu_past)},
+            "timestamp": {"$gte": min(v[1] for v in fu_past.values())},
+        }).to_list()
+        acted = {lg.enrollment_id for lg in logs if lg.timestamp >= fu_past[lg.enrollment_id][1]
+                 and any(c.get("field") in ("next_follow_up_date", "remarks", "customer_feedback")
+                         for c in lg.changes or [])}
+        for eid, (e, nfu) in fu_past.items():
+            if eid in acted:
+                continue
+            if any(d(f.get("created_at")) and d(f.get("created_at")) >= nfu for f in e.follow_ups or []):
+                continue
+            stamps = [d(s.get("completed_date")) for s in e.journey or []] + \
+                     [d(x.get("at")) for s in e.journey or [] for x in (s.get("log") or [])]
+            if any(t and t >= nfu for t in stamps):
+                continue
+            overdue.append(eid)
+    return due, overdue
+
+
+async def _enr_due_ids(which: Optional[str], current_user: dict) -> Optional[List[str]]:
+    if not which or which.lower() in ("false", "0"):
+        return None
+    due, overdue = await enrollment_follow_ups_due(current_user)
+    return due if which == "today" else overdue if which == "overdue" else due + overdue
+
+
 @router.get("/stats", response_model=EnrollmentStatsResponse)
 async def get_enrollment_stats(
     current_user: dict = Depends(get_current_user)
@@ -215,21 +289,17 @@ async def get_enrollment_stats(
 
         # 3. Enrollments Assigned Today - where hclhc_spoc is this agent AND
         # (assigned_date OR reassigned_date is today) - irrespective of created date
+        # "New / Assigned Today": created for them, assigned or reassigned today
         assigned_today = await db.enrollments.count_documents({
             "is_deleted": False,
             "hclhc_spoc": hclhc_filter,
             "$or": [
+                {"created_at": {"$gte": today_start_utc, "$lte": today_end_utc}},
                 {"assigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}},
                 {"reassigned_date": {"$gte": today_start_utc, "$lte": today_end_utc}}
             ]
         })
 
-        # 4. Follow-ups Today - where she is HCLHC SPOC AND next_follow_up_date is today
-        follow_up_today = await db.enrollments.count_documents({
-            "is_deleted": False,
-            "hclhc_spoc": hclhc_filter,
-            "next_follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}
-        })
 
         logger.info(f"Agent stats - new_today: {new_today}, assigned_today: {assigned_today}, follow_up_today: {follow_up_today}")
     else:
@@ -238,6 +308,11 @@ async def get_enrollment_stats(
             **base_query,
             "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
         })
+
+    # Follow-ups Today (due today + overdue) and Stopped / DNC - every role
+    due_ids, overdue_ids = await enrollment_follow_ups_due(current_user)
+    follow_up_today = len(due_ids) + len(overdue_ids)
+    stopped_or_dnc = await db.enrollments.count_documents(stopped_or_dnc_query(current_user))
 
     # By partner
     by_partner = {}
@@ -260,6 +335,9 @@ async def get_enrollment_stats(
         "new_today": new_today,
         "assigned_today": assigned_today,
         "follow_up_today": follow_up_today,
+        "follow_up_due_today": len(due_ids),
+        "follow_up_overdue": len(overdue_ids),
+        "stopped_or_dnc": stopped_or_dnc,
         "by_partner": by_partner,
         "by_status": by_status
     }
@@ -581,6 +659,8 @@ async def export_enrollments_excel(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     my_role: Optional[str] = None,
+    follow_ups_due: Optional[str] = None,
+    stopped_or_dnc: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -612,6 +692,8 @@ async def export_enrollments_excel(
         assigned_today=assigned_today,
         my_role=my_role,
         current_user=current_user,
+        enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
+        stopped_or_dnc=stopped_or_dnc,
     )
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
@@ -767,7 +849,9 @@ def build_enrollment_list_query(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     my_role: Optional[str] = None,
-    current_user: dict = None
+    current_user: dict = None,
+    enrollment_ids: Optional[List[str]] = None,
+    stopped_or_dnc: Optional[bool] = None,
 ) -> dict:
     """The Enrollments page filters as one Mongo query (agent visibility, filters,
     search, quick filters). Shared by the list and the MIS export."""
@@ -884,11 +968,17 @@ def build_enrollment_list_query(
         a_start = datetime.combine(t, datetime.min.time()) - IST_OFFSET
         a_end = datetime.combine(t, datetime.max.time()) - IST_OFFSET
         query = {"$and": [query, {"$or": [
+            {"created_at": {"$gte": a_start, "$lte": a_end}},
             {"assigned_date": {"$gte": a_start, "$lte": a_end}},
             {"reassigned_date": {"$gte": a_start, "$lte": a_end}},
         ]}]}
 
-    # Get total count
+    # Card filters: "Follow-ups Today" (ids from enrollment_follow_ups_due) and
+    # "Stopped / Do Not Contact"
+    if enrollment_ids is not None:
+        query = {"$and": [query, {"enrollment_id": {"$in": enrollment_ids}}]}
+    if stopped_or_dnc:
+        query = {"$and": [query, stopped_or_dnc_query(current_user)]}
     return query
 
 
@@ -909,6 +999,8 @@ async def get_enrollments(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     my_role: Optional[str] = None,
+    follow_ups_due: Optional[str] = None,
+    stopped_or_dnc: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollments with pagination and filters"""
@@ -928,6 +1020,8 @@ async def get_enrollments(
             assigned_today=assigned_today,
             my_role=my_role,
             current_user=current_user,
+            enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
+            stopped_or_dnc=stopped_or_dnc,
         )
 
         total = await Enrollment.find(query).count()

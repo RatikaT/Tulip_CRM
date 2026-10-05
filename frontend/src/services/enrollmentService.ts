@@ -29,6 +29,8 @@ export interface EnrollmentQueryParams {
   next_follow_up_date?: string;
   assigned_today?: boolean;
   my_role?: 'following_up' | 'enrolled';
+  follow_ups_due?: 'all' | 'today' | 'overdue';
+  stopped_or_dnc?: boolean;
 }
 
 export const enrollmentService = {

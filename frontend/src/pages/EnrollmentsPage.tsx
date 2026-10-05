@@ -349,6 +349,10 @@ export default function EnrollmentsPage() {
     created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
     next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
     assigned_today: assignedTodayFilter || undefined,
+    // Card filters: due today / overdue (no action since) / stopped or DNC
+    follow_ups_due: ({ follow_up_today: 'all', follow_up_due_today: 'today', follow_up_overdue: 'overdue' } as const)[
+      activeKpi as 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue'] ?? undefined,
+    stopped_or_dnc: activeKpi === 'stopped_or_dnc' || undefined,
   });
 
   const fetchEnrollments = useCallback(async () => {
@@ -474,7 +478,8 @@ export default function EnrollmentsPage() {
   };
 
   // KPI card acts as a quick filter on the table
-  const handleKpiClick = (kpi: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today') => {
+  type KpiKey = 'total' | 'new_today' | 'assigned_today' | 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue' | 'stopped_or_dnc';
+  const handleKpiClick = (kpi: KpiKey) => {
     if (activeKpi === kpi) {
       clearAllFilters();
       return;
@@ -487,24 +492,62 @@ export default function EnrollmentsPage() {
       setCreatedDateTo(today);
     } else if (kpi === 'assigned_today') {
       setAssignedTodayFilter(true);
-    } else if (kpi === 'follow_up_today') {
-      setNextFollowUpDateFilter(today);
     }
+    // follow-up and stopped/DNC cards filter on the server via activeKpi
     // 'total' = cleared (show all)
     setActiveKpi(kpi);
   };
 
+  // Follow-ups Today (with Due today / Overdue buttons) + Stopped / DNC, both layouts
+  const followUpCards = (sm: number, md: number) => stats && (
+    <>
+      {renderKpiCard({
+        kpiKey: 'follow_up_today', sm, md, title: 'Follow-ups Today', value: stats.follow_up_today,
+        alsoActiveFor: ['follow_up_due_today', 'follow_up_overdue'],
+        extra: (
+          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.75, flexWrap: 'wrap' }}>
+            <Chip
+              size="small"
+              label={`Due today ${stats.follow_up_due_today ?? 0}`}
+              onClick={(e) => { e.stopPropagation(); handleKpiClick('follow_up_due_today'); }}
+              sx={{ fontWeight: 600, bgcolor: activeKpi === 'follow_up_due_today' ? '#f57c00' : '#fff3e0',
+                    color: activeKpi === 'follow_up_due_today' ? '#fff' : '#e65100' }}
+            />
+            <Chip
+              size="small"
+              label={`Overdue ${stats.follow_up_overdue ?? 0}`}
+              onClick={(e) => { e.stopPropagation(); handleKpiClick('follow_up_overdue'); }}
+              sx={{ fontWeight: 600, bgcolor: activeKpi === 'follow_up_overdue' ? '#c62828' : '#ffebee',
+                    color: activeKpi === 'follow_up_overdue' ? '#fff' : '#c62828' }}
+            />
+          </Box>
+        ),
+        iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+        icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
+      })}
+      {renderKpiCard({
+        kpiKey: 'stopped_or_dnc', sm, md, title: 'Stopped / Do Not Contact', value: stats.stopped_or_dnc ?? 0,
+        subtitle: 'Journey stopped or DNC: do not contact',
+        iconBg: 'linear-gradient(135deg, #eceff1 0%, #cfd8dc 100%)',
+        icon: <Typography sx={{ color: '#455a64', fontSize: '1.2rem' }}>⊘</Typography>,
+      })}
+    </>
+  );
+
   // Clickable KPI card that doubles as a quick filter
   const renderKpiCard = (opts: {
-    kpiKey: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today';
+    kpiKey: KpiKey;
     title: string;
     value: number | string;
     subtitle?: string;
     icon: React.ReactNode;
     iconBg: string;
     sm: number;
+    md?: number;
+    extra?: React.ReactNode;
+    alsoActiveFor?: KpiKey[];
   }) => (
-    <Grid item xs={6} sm={opts.sm} sx={{ display: 'flex' }}>
+    <Grid item xs={6} sm={opts.sm} md={opts.md ?? opts.sm} sx={{ display: 'flex' }}>
       <Card
         onClick={() => handleKpiClick(opts.kpiKey)}
         sx={{
@@ -518,7 +561,7 @@ export default function EnrollmentsPage() {
           cursor: 'pointer',
           transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
           '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 12px 24px rgba(16,24,40,0.10)' },
-          ...(activeKpi === opts.kpiKey && {
+          ...((activeKpi === opts.kpiKey || (opts.alsoActiveFor || []).includes(activeKpi as KpiKey)) && {
             borderColor: 'primary.main',
             boxShadow: '0 0 0 2px rgba(30,64,136,0.35), 0 8px 20px rgba(16,24,40,0.10)',
           }),
@@ -538,6 +581,7 @@ export default function EnrollmentsPage() {
                   {opts.subtitle}
                 </Typography>
               )}
+              {opts.extra}
             </Box>
             <Box sx={{ width: 40, height: 40, borderRadius: '50%', background: opts.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {opts.icon}
@@ -740,11 +784,38 @@ export default function EnrollmentsPage() {
     {
       field: 'next_follow_up_date',
       headerName: 'Next Follow-up Due',
-      flex: 0.8,
-      minWidth: 95,
+      flex: 1,
+      minWidth: 130,
       renderCell: (params: GridRenderCellParams) => {
-        if (!params.value) return '-';
-        return formatShortDateIST(params.value as string);
+        const e = params.row as Enrollment;
+        const today = todayISTKey();
+        const stopped = e.journey_status === 'stopped' || e.do_not_contact;
+        const late = stopped ? [] : (e.journey || [])
+          .filter((st) => st.status === 'pending' && st.planned_date && (istDateKey(st.planned_date) || '') < today)
+          .sort((x, y) => String(x.planned_date).localeCompare(String(y.planned_date)));
+        const key = istDateKey(params.value as string);
+        const date = params.value
+          ? (key === today
+            ? <Chip size="small" label="Today" sx={{ fontWeight: 600, bgcolor: '#fff3e0', color: '#e65100' }} />
+            : key && key < today && !stopped
+              ? <Chip size="small" label={`Overdue · ${formatShortDateIST(params.value as string)}`} sx={{ fontWeight: 600, bgcolor: '#ffebee', color: '#c62828' }} />
+              : formatShortDateIST(params.value as string))
+          : '-';
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.25, lineHeight: 1.2, minWidth: 0, width: '100%' }}>
+            <Box>{date}</Box>
+            {late.length > 0 && (
+              <Typography
+                variant="caption"
+                noWrap
+                title={`${late.length} care step${late.length === 1 ? '' : 's'} overdue · oldest: ${late[0].name}, ${formatShortDateIST(late[0].planned_date as string)}`}
+                sx={{ color: '#c62828', display: 'block', maxWidth: '100%' }}
+              >
+                {late.length} care step{late.length === 1 ? '' : 's'} overdue · oldest: {late[0].name}, {formatShortDateIST(late[0].planned_date as string)}
+              </Typography>
+            )}
+          </Box>
+        );
       },
     },
     {
@@ -1074,44 +1145,32 @@ export default function EnrollmentsPage() {
         /* Agent Stats Cards - 4 cards for agents */
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
           {renderKpiCard({
-            kpiKey: 'total', sm: 3, title: 'Total Enrollments', value: stats.total, subtitle: 'Assigned or Reassigned',
+            kpiKey: 'total', sm: 6, md: 3, title: 'Total Enrollments', value: stats.total, subtitle: 'You are the Nurture Buddy',
             iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
             icon: <PersonIcon sx={{ color: '#1976d2', fontSize: '1.4rem' }} />,
           })}
           {renderKpiCard({
-            kpiKey: 'new_today', sm: 3, title: 'New Enrollments Today', value: stats.new_today, subtitle: 'Assigned Today',
+            kpiKey: 'assigned_today', sm: 6, md: 3, title: 'New / Assigned Today', value: stats.assigned_today,
+            subtitle: 'Given to you today: new or reassigned',
             iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
             icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
           })}
-          {renderKpiCard({
-            kpiKey: 'assigned_today', sm: 3, title: 'Enrollments Assigned Today', value: stats.assigned_today, subtitle: 'All Assignments',
-            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>*</Typography>,
-          })}
-          {renderKpiCard({
-            kpiKey: 'follow_up_today', sm: 3, title: 'Follow-ups Today', value: stats.follow_up_today, subtitle: 'Enrollments',
-            iconBg: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)',
-            icon: <Typography sx={{ color: '#c2185b', fontSize: '1.2rem' }}>!</Typography>,
-          })}
+          {followUpCards(6, 3)}
         </Grid>
       ) : stats && isAdmin && (
         /* Admin Stats Cards - 3 cards */
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
           {renderKpiCard({
-            kpiKey: 'total', sm: 4, title: 'Total Enrollments', value: stats.total,
+            kpiKey: 'total', sm: 6, md: 3, title: 'Total Enrollments', value: stats.total,
             iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
             icon: <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>,
           })}
           {renderKpiCard({
-            kpiKey: 'new_today', sm: 4, title: 'Enrollments Created Today', value: stats.new_today,
+            kpiKey: 'new_today', sm: 6, md: 3, title: 'Enrollments Created Today', value: stats.new_today,
             iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
             icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
           })}
-          {renderKpiCard({
-            kpiKey: 'follow_up_today', sm: 4, title: 'Follow-ups Today', value: stats.follow_up_today,
-            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
-          })}
+          {followUpCards(6, 3)}
         </Grid>
       )}
 
@@ -2052,7 +2111,7 @@ export default function EnrollmentsPage() {
         <DialogTitle sx={{ fontWeight: 700 }}>Export Enrollments</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 1.5 }}>
-            {hasActiveFilters || searchTerm
+            {hasActiveFilters || searchTerm || (activeKpi && activeKpi !== 'total')
               ? <>Downloads the <b>{totalCount.toLocaleString('en-IN')}</b> enrollment{totalCount === 1 ? '' : 's'} in your filtered list (same filters{searchTerm ? ' and search' : ''} as on screen).</>
               : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> enrollments you can see.</>}
           </DialogContentText>

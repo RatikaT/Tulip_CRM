@@ -235,7 +235,10 @@ export interface EnrollmentStatsResponse {
   total: number;
   new_today: number;
   assigned_today: number;  // For agents: enrollments assigned/reassigned to them today
-  follow_up_today: number;  // For agents: enrollments with follow-up required today
+  follow_up_today: number;  // due today + overdue (no action since)
+  follow_up_due_today?: number;
+  follow_up_overdue?: number;
+  stopped_or_dnc?: number;
   by_partner: Record<string, number>;
   by_status: Record<string, number>;
 }

@@ -240,6 +240,9 @@ class EnrollmentStatsResponse(BaseModel):
     new_today: int = 0
     assigned_today: int = 0  # For agents: enrollments assigned/reassigned to them today
     follow_up_today: int = 0  # For agents: enrollments with follow-up required today
+    follow_up_due_today: int = 0
+    follow_up_overdue: int = 0
+    stopped_or_dnc: int = 0
     by_partner: Dict[str, int]
     by_status: Dict[str, int]
 
