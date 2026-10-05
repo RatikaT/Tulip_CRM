@@ -1885,6 +1885,9 @@ async def instantiate_journey(
 
     if enrollment.journey and not force:
         return enrollment_to_response(enrollment)
+    # A stopped journey stays stopped: rebuilding must not quietly restart it
+    if enrollment.journey_status == "stopped":
+        raise HTTPException(status_code=409, detail="This care journey is stopped, so it can't be rebuilt. It has to be resumed on purpose first.")
 
     # Trimester-aware rebuild that preserves done/skipped attribution + ad-hoc steps.
     enrollment.journey = await reinstantiate_care_journey(enrollment)
@@ -2103,8 +2106,9 @@ async def reclassify_enrollment_journey(
         )
         enrollment.service_enrolled = canonical
         enrollment.journey_classification = canonical
-        enrollment.journey_status = "active"
-        enrollment.journey = await reinstantiate_care_journey(enrollment)
+        # A stopped journey stays stopped; only an active one is rebuilt
+        if enrollment.journey_status != "stopped":
+            enrollment.journey = await reinstantiate_care_journey(enrollment)
     elif target.lower() == "outreach":
         enrollment.journey_classification = "Outreach"
         enrollment.journey = stop_journey_steps(enrollment.journey or [])
