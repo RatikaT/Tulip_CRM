@@ -4,7 +4,7 @@ Lead Management Routes
 from fastapi import APIRouter, HTTPException, status, Depends, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import datetime, date, timedelta
 import csv
 import io
@@ -163,6 +163,45 @@ def owned_by(user_id: str) -> dict:
                     {"reassign_to": {"$in": [None, ""]}, "assigned_to": user_id}]}
 
 
+FOLLOW_UP_STATUSES = ["Follow up-In Process", "Follow up-No Response"]
+
+
+def _scope(current_user: dict) -> dict:
+    """SPOCs count only the leads they own now; admins count everyone's."""
+    base = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]}}
+    if current_user.get("role") == "agent":
+        base.update(owned_by(current_user["user_id"]))
+    return base
+
+
+def no_follow_up_date_query(current_user: dict) -> dict:
+    """Follow-up statuses with no follow-up date set ("No Follow-up Date" card)."""
+    return {**_scope(current_user), "status": {"$in": FOLLOW_UP_STATUSES},
+            "$and": [{"$or": [{"follow_up_date": None}, {"follow_up_date": {"$exists": False}}]}]}
+
+
+async def follow_ups_due(current_user: dict) -> Tuple[List[str], List[str]]:
+    """("Follow-ups Today" card) open leads due today, and open leads whose
+    follow-up date has passed with nothing done since (no status change,
+    remark, call or new follow-up date). Returns (due_today_ids, overdue_ids)."""
+    from app.services.activity_log import classify_lead_change, STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE
+    day_start, day_end = ist_range_utc(today_ist())
+    leads = await Lead.find({**_scope(current_user), "status": {"$nin": CLOSED_LEAD_STATUSES},
+                             "follow_up_date": {"$lt": day_end}}).to_list()
+    due = [l.lead_id for l in leads if l.follow_up_date >= day_start]
+    past = {l.lead_id: l.follow_up_date for l in leads if l.follow_up_date < day_start}
+    acted = set()
+    if past:
+        logs = await AuditLog.find({"lead_id": {"$in": list(past)},
+                                    "timestamp": {"$gte": min(past.values())}}).to_list()
+        for lg in logs:
+            if lg.timestamp >= past[lg.lead_id] and any(
+                    classify_lead_change(c.get("field") or "", c.get("new_value")) in (STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE)
+                    for c in lg.changes or []):
+                acted.add(lg.lead_id)
+    return due, [i for i in past if i not in acted]
+
+
 @router.get("/stats")
 async def get_lead_stats(
     current_user: dict = Depends(get_current_user)
@@ -212,13 +251,11 @@ async def get_lead_stats(
             "created_at": {"$gte": today_start_utc, "$lte": today_end_utc}
         })
 
-        # 3. Follow-ups today: open leads, current owner, follow-up date today (IST)
-        fu_query = {"is_deleted": False, "duplicate_status": {"$in": [None, "not_duplicate"]},
-                    "status": {"$nin": CLOSED_LEAD_STATUSES},
-                    "follow_up_date": {"$gte": today_start_utc, "$lte": today_end_utc}}
-        if is_agent:
-            fu_query.update(owned_by(user_id))
-        follow_up_today = await db.leads.count_documents(fu_query)
+        # 3. Follow-ups today = due today + overdue with no action since (open leads,
+        #    current owner for SPOCs); 3b. follow-up statuses with no date at all
+        due_ids, overdue_ids = await follow_ups_due(current_user)
+        follow_up_today = len(due_ids) + len(overdue_ids)
+        no_follow_up_date = await db.leads.count_documents(no_follow_up_date_query(current_user))
 
         # 4. Assigned today (for agents - leads assigned or reassigned to them today)
         assigned_today = 0
@@ -238,6 +275,9 @@ async def get_lead_stats(
             "total": total,
             "new_today": new_today,
             "follow_up_today": follow_up_today,
+            "follow_up_due_today": len(due_ids),
+            "follow_up_overdue": len(overdue_ids),
+            "no_follow_up_date": no_follow_up_date,
             "assigned_today": assigned_today
         }
     except Exception as e:
@@ -621,7 +661,9 @@ def build_lead_list_query(
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
     search: Optional[str] = None,
-    current_user: dict = None
+    current_user: dict = None,
+    lead_ids: Optional[List[str]] = None,
+    no_follow_up_date: Optional[bool] = None,
 ) -> dict:
     """The Leads page filters as one Mongo query (agent visibility, filters, search,
     quick filters, duplicate rule). Shared by the list and the MIS export so the
@@ -795,6 +837,13 @@ def build_lead_list_query(
             extra.append(owned_by(current_user["user_id"]))
         query = {"$and": [query, *extra]}
 
+    # Card filters: "Follow-ups Today" (ids worked out by follow_ups_due) and
+    # "No Follow-up Date"
+    if lead_ids is not None:
+        query = {"$and": [query, {"lead_id": {"$in": lead_ids}}]}
+    if no_follow_up_date:
+        query = {"$and": [query, no_follow_up_date_query(current_user)]}
+
     # Duplicate visibility: hide pending/confirmed duplicates from Leads, but keep
     # Enrolled leads visible regardless (they also live on Enrollments).
     query = {"$and": [query, {"$or": [
@@ -822,6 +871,8 @@ async def get_leads(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
+    follow_ups_due_filter: Optional[bool] = Query(None, alias="follow_ups_due"),
+    no_follow_up_date: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
@@ -846,6 +897,8 @@ async def get_leads(
         open_follow_ups=open_follow_ups,
         search=search,
         current_user=current_user,
+        lead_ids=(sum(await follow_ups_due(current_user), []) if follow_ups_due_filter else None),
+        no_follow_up_date=no_follow_up_date,
     )
 
     # Count total
@@ -882,6 +935,8 @@ async def export_leads_excel(
     next_follow_up_date: Optional[str] = None,
     assigned_today: Optional[bool] = None,
     open_follow_ups: Optional[bool] = None,
+    follow_ups_due_filter: Optional[bool] = Query(None, alias="follow_ups_due"),
+    no_follow_up_date: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
@@ -904,6 +959,8 @@ async def export_leads_excel(
         created_date_from=created_date_from or start_date, created_date_to=created_date_to or end_date,
         next_follow_up_date=next_follow_up_date, assigned_today=assigned_today,
         open_follow_ups=open_follow_ups, search=search, current_user=current_user,
+        lead_ids=(sum(await follow_ups_due(current_user), []) if follow_ups_due_filter else None),
+        no_follow_up_date=no_follow_up_date,
     )
 
     leads = await Lead.find(query).sort("-created_at").to_list()

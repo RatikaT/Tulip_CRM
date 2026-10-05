@@ -26,6 +26,8 @@ interface LeadFilters {
   next_follow_up_date?: string;
   assigned_today?: boolean;
   open_follow_ups?: boolean;
+  follow_ups_due?: boolean;
+  no_follow_up_date?: boolean;
 }
 
 interface LeadStatsResponse {
@@ -101,6 +103,8 @@ export const buildLeadParams = (filters: LeadFilters = {}): URLSearchParams => {
   if (filters.next_follow_up_date) params.append('next_follow_up_date', filters.next_follow_up_date);
   if (filters.assigned_today) params.append('assigned_today', 'true');
   if (filters.open_follow_ups) params.append('open_follow_ups', 'true');
+  if (filters.follow_ups_due) params.append('follow_ups_due', 'true');
+  if (filters.no_follow_up_date) params.append('no_follow_up_date', 'true');
   return params;
 };
 

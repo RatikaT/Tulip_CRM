@@ -70,6 +70,9 @@ interface LeadStats {
   total: number;
   new_today: number;
   follow_up_today: number;
+  follow_up_due_today?: number;
+  follow_up_overdue?: number;
+  no_follow_up_date?: number;
   assigned_today: number;
 }
 
@@ -357,8 +360,9 @@ export default function LeadsPage() {
     created_date_to: createdDateTo ? format(createdDateTo, 'yyyy-MM-dd') : undefined,
     next_follow_up_date: nextFollowUpDateFilter ? format(nextFollowUpDateFilter, 'yyyy-MM-dd') : undefined,
     assigned_today: assignedTodayFilter || undefined,
-    // Same rule as the Follow-ups Today card: open leads the user owns now
-    open_follow_ups: activeKpi === 'follow_up_today' || undefined,
+    // Card filters: due today + overdue with no action since / follow-up status with no date
+    follow_ups_due: activeKpi === 'follow_up_today' || undefined,
+    no_follow_up_date: activeKpi === 'no_follow_up_date' || undefined,
   });
 
   const fetchLeads = useCallback(async () => {
@@ -486,7 +490,8 @@ export default function LeadsPage() {
   };
 
   // KPI card acts as a quick filter on the table
-  const handleKpiClick = (kpi: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today') => {
+  type KpiKey = 'total' | 'new_today' | 'assigned_today' | 'follow_up_today' | 'no_follow_up_date';
+  const handleKpiClick = (kpi: KpiKey) => {
     if (activeKpi === kpi) {
       clearAllFilters();
       return;
@@ -499,24 +504,42 @@ export default function LeadsPage() {
       setCreatedDateTo(today);
     } else if (kpi === 'assigned_today') {
       setAssignedTodayFilter(true);
-    } else if (kpi === 'follow_up_today') {
-      setNextFollowUpDateFilter(today);
     }
+    // 'follow_up_today' and 'no_follow_up_date' filter on the server via activeKpi
     // 'total' = cleared (show all)
     setActiveKpi(kpi);
   };
 
+  // The two follow-up cards, shared by the admin and SPOC layouts
+  const followUpCards = (sm: number, md: number) => stats && (
+    <>
+      {renderKpiCard({
+        kpiKey: 'follow_up_today', sm, md, title: 'Follow-ups Today', value: stats.follow_up_today,
+        subtitle: `${stats.follow_up_due_today ?? 0} due today · ${stats.follow_up_overdue ?? 0} overdue, no action yet`,
+        iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
+        icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
+      })}
+      {renderKpiCard({
+        kpiKey: 'no_follow_up_date', sm, md, title: 'No Follow-up Date', value: stats.no_follow_up_date ?? 0,
+        subtitle: 'Follow-up status, no date set',
+        iconBg: 'linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)',
+        icon: <Typography sx={{ color: '#7b1fa2', fontSize: '1.2rem' }}>?</Typography>,
+      })}
+    </>
+  );
+
   // Clickable KPI card that doubles as a quick filter
   const renderKpiCard = (opts: {
-    kpiKey: 'total' | 'new_today' | 'assigned_today' | 'follow_up_today';
+    kpiKey: KpiKey;
     title: string;
     value: number | string;
     subtitle?: string;
     icon: React.ReactNode;
     iconBg: string;
     sm: number;
+    md?: number;
   }) => (
-    <Grid item xs={6} sm={opts.sm} sx={{ display: 'flex' }}>
+    <Grid item xs={6} sm={opts.sm} md={opts.md ?? opts.sm} sx={{ display: 'flex' }}>
       <Card
         onClick={() => handleKpiClick(opts.kpiKey)}
         sx={{
@@ -559,6 +582,27 @@ export default function LeadsPage() {
       </Card>
     </Grid>
   );
+
+  // Plain-language list of what the export will be filtered by
+  const exportFilterLabels = (): string[] => {
+    const name = (id: string) => agents.find((a) => a.id === id)?.full_name || id;
+    const d = (x: Date) => format(x, 'dd MMM yy');
+    const out: string[] = [];
+    if (activeKpi === 'follow_up_today') out.push('Follow-ups due today + overdue');
+    if (activeKpi === 'no_follow_up_date') out.push('No follow-up date');
+    if (activeKpi === 'assigned_today' || assignedTodayFilter) out.push('Assigned today');
+    if (searchTerm) out.push(`Search: "${searchTerm}"`);
+    if (statusFilter.length) out.push(`Status: ${statusFilter.join(', ')}`);
+    if (sourceFilter.length) out.push(`Source: ${sourceFilter.join(', ')}`);
+    if (serviceRequestedFilter.length) out.push(`Service: ${serviceRequestedFilter.join(', ')}`);
+    if (packageRequestedFilter.length) out.push(`Package: ${packageRequestedFilter.join(', ')}`);
+    if (uhidFilter.length) out.push(`UHID: ${uhidFilter.join(', ')}`);
+    if (assignedToFilter) out.push(`Assigned to: ${name(assignedToFilter)}`);
+    if (reassignedToFilter) out.push(`Reassigned to: ${name(reassignedToFilter)}`);
+    if (createdDateFrom || createdDateTo) out.push(`Created: ${createdDateFrom ? d(createdDateFrom) : '…'} – ${createdDateTo ? d(createdDateTo) : '…'}`);
+    if (nextFollowUpDateFilter) out.push(`Follow-up on: ${d(nextFollowUpDateFilter)}`);
+    return [...new Set(out)];
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -954,44 +998,36 @@ export default function LeadsPage() {
       ) : isAdmin && stats ? (
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
           {renderKpiCard({
-            kpiKey: 'total', sm: 4, title: 'Total Leads', value: stats.total,
+            kpiKey: 'total', sm: 6, md: 3, title: 'Total Leads', value: stats.total,
             iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
             icon: <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>,
           })}
           {renderKpiCard({
-            kpiKey: 'new_today', sm: 4, title: 'Leads Created Today', value: stats.new_today,
+            kpiKey: 'new_today', sm: 6, md: 3, title: 'Leads Created Today', value: stats.new_today,
             iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
             icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
           })}
-          {renderKpiCard({
-            kpiKey: 'follow_up_today', sm: 4, title: 'Follow-ups Today', value: stats.follow_up_today,
-            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
-          })}
+          {followUpCards(6, 3)}
         </Grid>
       ) : !isAdmin && stats && (
         // Agent Stats Cards - 4 cards showing leads assigned or reassigned to this agent
         <Grid container spacing={2} sx={{ mb: 2 }} alignItems="stretch">
           {renderKpiCard({
-            kpiKey: 'total', sm: 3, title: 'Total Leads', value: stats.total, subtitle: 'Assigned/Reassigned to you',
+            kpiKey: 'total', sm: 4, md: 2.4, title: 'Total Leads', value: stats.total, subtitle: 'Assigned/Reassigned to you',
             iconBg: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
             icon: <Typography sx={{ color: '#1976d2', fontSize: '1.2rem' }}>#</Typography>,
           })}
           {renderKpiCard({
-            kpiKey: 'new_today', sm: 3, title: 'New Leads Today', value: stats.new_today, subtitle: 'Created today for you',
+            kpiKey: 'new_today', sm: 4, md: 2.4, title: 'New Leads Today', value: stats.new_today, subtitle: 'Created today for you',
             iconBg: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
             icon: <Typography sx={{ color: '#2e7d32', fontSize: '1.2rem' }}>+</Typography>,
           })}
           {renderKpiCard({
-            kpiKey: 'assigned_today', sm: 3, title: 'Assigned Today', value: stats.assigned_today, subtitle: 'Assigned/Reassigned today',
+            kpiKey: 'assigned_today', sm: 4, md: 2.4, title: 'Assigned Today', value: stats.assigned_today, subtitle: 'Assigned/Reassigned today',
             iconBg: 'linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%)',
             icon: <PersonIcon sx={{ color: '#c2185b', fontSize: '1.2rem' }} />,
           })}
-          {renderKpiCard({
-            kpiKey: 'follow_up_today', sm: 3, title: 'Follow-ups Today', value: stats.follow_up_today, subtitle: 'Leads needing follow-up',
-            iconBg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)',
-            icon: <Typography sx={{ color: '#f57c00', fontSize: '1.2rem' }}>!</Typography>,
-          })}
+          {followUpCards(6, 2.4)}
         </Grid>
       )}
 
@@ -2023,15 +2059,27 @@ export default function LeadsPage() {
       >
         <DialogTitle sx={{ fontWeight: 700 }}>Export Leads</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 1.5 }}>
-            {hasActiveFilters || searchTerm
-              ? <>This exports the <b>{totalCount.toLocaleString('en-IN')}</b> lead{totalCount === 1 ? '' : 's'} in your current list, with the same filters{searchTerm ? ' and search' : ''}.</>
-              : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> leads you can see.</>}
-          </DialogContentText>
-          <DialogContentText variant="body2">
-            To export a smaller set (for example a date range, a source or a SPOC), close this, set the filters, and export again.
-            {colorFilter ? ' The colour filter only changes the screen and isn\'t applied to the export.' : ''}
-          </DialogContentText>
+          {exportFilterLabels().length > 0 ? (
+            <>
+              <DialogContentText sx={{ mb: 1.5 }}>
+                Downloads the <b>{totalCount.toLocaleString('en-IN')}</b> lead{totalCount === 1 ? '' : 's'} in your filtered list:
+              </DialogContentText>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {exportFilterLabels().map((l) => (
+                  <Chip key={l} label={l} size="small" color="primary" variant="outlined" />
+                ))}
+              </Box>
+            </>
+          ) : (
+            <DialogContentText>
+              No filters are applied, so this downloads <b>all {totalCount.toLocaleString('en-IN')}</b> leads you can see.
+            </DialogContentText>
+          )}
+          {colorFilter && (
+            <DialogContentText variant="body2" sx={{ mt: 1.5 }}>
+              The colour filter only changes the screen, so it isn't applied to the download.
+            </DialogContentText>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>

@@ -2053,13 +2053,14 @@ export default function EnrollmentsPage() {
         <DialogContent>
           <DialogContentText sx={{ mb: 1.5 }}>
             {hasActiveFilters || searchTerm
-              ? <>This exports the <b>{totalCount.toLocaleString('en-IN')}</b> enrollment{totalCount === 1 ? '' : 's'} in your current list, with the same filters{searchTerm ? ' and search' : ''}.</>
+              ? <>Downloads the <b>{totalCount.toLocaleString('en-IN')}</b> enrollment{totalCount === 1 ? '' : 's'} in your filtered list (same filters{searchTerm ? ' and search' : ''} as on screen).</>
               : <>No filters are applied, so this exports <b>all {totalCount.toLocaleString('en-IN')}</b> enrollments you can see.</>}
           </DialogContentText>
-          <DialogContentText variant="body2">
-            To export a smaller set (for example a date range, a service or a Nurture Buddy), close this, set the filters, and export again.
-            {colorFilter ? ' The colour filter only changes the screen and isn\'t applied to the export.' : ''}
-          </DialogContentText>
+          {colorFilter && (
+            <DialogContentText variant="body2">
+              The colour filter only changes the screen, so it isn't applied to the download.
+            </DialogContentText>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setExportDialogOpen(false)} disabled={exporting} sx={{ textTransform: 'none' }}>
