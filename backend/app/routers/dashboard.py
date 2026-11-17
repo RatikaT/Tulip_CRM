@@ -1654,3 +1654,146 @@ async def save_spoc_report(body: SpocReportRequest, current_user: dict = Depends
     )
     await s.insert()
     return {"id": str(s.id), "message": "Report saved"}
+
+
+# =============================================================================
+# Follow-up Sheet (Summaries): Overdue / Due / Future and actioned, per SPOC
+# =============================================================================
+async def _follow_up_sheet(start, end, user_id, current_user):
+    from app.services.follow_up_sheet import build_sheet
+    sd, ed, _, _ = _activity_window(start, end)
+    if current_user.get("role") not in ("admin", "super_admin"):
+        return await build_sheet(sd, ed, only_user_id=current_user["user_id"],
+                                 only_user_name=current_user.get("full_name"))
+    if user_id:
+        u = await User.get(user_id)
+        return await build_sheet(sd, ed, only_user_id=user_id, only_user_name=u.full_name if u else None)
+    return await build_sheet(sd, ed)
+
+
+@router.get("/follow-up-sheet")
+async def get_follow_up_sheet(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    return await _follow_up_sheet(start, end, user_id, current_user)
+
+
+@router.get("/follow-up-sheet/export")
+async def export_follow_up_sheet(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Excel: Summary (Leads + Enrollments tables) and one detail sheet each."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from fastapi.responses import StreamingResponse
+    from app.utils.excel_export import write_headers, write_row, finalize
+
+    rep = await _follow_up_sheet(start, end, user_id, current_user)
+    sd, ed = date.fromisoformat(rep["start"]), date.fromisoformat(rep["end"])
+    fmt = lambda d: d.strftime("%d-%b-%y")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    thin = Side(style="thin", color="999999")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bold = Font(bold=True)
+    head_fill = PatternFill("solid", fgColor="D6E0EC")
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    def cell(r, c, v, b=False, fill=None, merge_to=None):
+        x = ws.cell(row=r, column=c, value=v)
+        x.border = box
+        x.alignment = center if c > 1 or b else Alignment(vertical="center")
+        if b:
+            x.font = bold
+        if fill:
+            x.fill = fill
+        if merge_to:
+            ws.merge_cells(start_row=r, start_column=c, end_row=r, end_column=merge_to)
+            for cc in range(c, merge_to + 1):
+                ws.cell(row=r, column=cc).border = box
+        return x
+
+    cell(1, 1, "Date period" if sd != ed else "Date", b=True)
+    cell(1, 2, fmt(sd))
+    if sd != ed:
+        cell(1, 3, fmt(ed))
+    row = 3
+    for title, part, label in (("Leads (Follow up-In Process & Follow up-No Response)", rep["leads"], "SPOC Name"),
+                               ("Enrollments (active care journeys)", rep["enrollments"], "Nurture Buddy")):
+        ws.cell(row=row, column=1, value=title).font = Font(bold=True, size=12)
+        row += 1
+        cell(row, 1, label, b=True, fill=head_fill)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row + 1, end_column=1)
+        cell(row, 2, "Overdue", b=True, fill=head_fill, merge_to=3)
+        cell(row, 4, "Due", b=True, fill=head_fill, merge_to=5)
+        cell(row, 6, f"Future (1 week: {fmt(date.fromisoformat(rep['future_from']))} to {fmt(date.fromisoformat(rep['future_to']))})",
+             b=True, fill=head_fill, merge_to=7)
+        row += 1
+        for c, h in enumerate(["Total Overdue", "Actioned Overdue", "Total Due", "Actioned Due",
+                               "Total Future follow up", "Actioned Future follow up"], 2):
+            cell(row, c, h, b=True, fill=head_fill)
+        row += 1
+        for r in part["rows"]:
+            cs = r["counts"]
+            cell(row, 1, r["name"], b=True)
+            for c, v in enumerate([cs["overdue"][0], cs["overdue"][1], cs["due"][0], cs["due"][1],
+                                   cs["future"][0], cs["future"][1]], 2):
+                cell(row, c, v)
+            row += 1
+        t = part["totals"]
+        cell(row, 1, "Total", b=True)
+        for c, v in enumerate([t["overdue"][0], t["overdue"][1], t["due"][0], t["due"][1],
+                               t["future"][0], t["future"][1]], 2):
+            cell(row, c, v, b=True)
+        row += 3
+    ws.column_dimensions["A"].width = 30
+    for col in "BCDEFG":
+        ws.column_dimensions[col].width = 18
+
+    B = {"overdue": "Overdue", "due": "Due", "future": "Future"}
+    ws_l = wb.create_sheet("Leads detail")
+    write_headers(ws_l, ["SPOC", "Lead ID", "Customer", "Status at start", "Status now", "Follow-up date",
+                         "Bucket", "Actioned?", "What was done", "Done by", "When (IST)"])
+    i = 2
+    for r in rep["leads"]["rows"]:
+        for it in r["items"]:
+            last = it["actions"][-1] if it["actions"] else None
+            write_row(ws_l, i, [r["name"], it["id"], it["name"], it["status_start"], it["status_now"],
+                                it["date_label"], B[it["bucket"]], "Yes" if it["actioned"] else "No",
+                                "; ".join(a["what"] for a in it["actions"]) or None,
+                                ", ".join(dict.fromkeys(a["by"] for a in it["actions"])) or None,
+                                datetime.fromisoformat(last["at"]) if last else None], dt_cols={11})
+            i += 1
+    finalize(ws_l, cap=60)
+
+    ws_e = wb.create_sheet("Enrollments detail")
+    write_headers(ws_e, ["Nurture Buddy", "Enrollment ID", "Customer", "Service", "Why on the list",
+                         "Bucket", "Actioned?", "What was done", "Done by", "When (IST)"])
+    i = 2
+    for r in rep["enrollments"]["rows"]:
+        for it in r["items"]:
+            last = it["actions"][-1] if it["actions"] else None
+            write_row(ws_e, i, [r["name"], it["id"], it["name"], it.get("service"), it["why"],
+                                B[it["bucket"]], "Yes" if it["actioned"] else "No",
+                                "; ".join(a["what"] for a in it["actions"]) or None,
+                                ", ".join(dict.fromkeys(a["by"] for a in it["actions"])) or None,
+                                datetime.fromisoformat(last["at"]) if last else None], dt_cols={10})
+            i += 1
+    finalize(ws_e, cap=60)
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    filename = f"follow_up_sheet_{sd.strftime('%Y%m%d')}_{ed.strftime('%Y%m%d')}.xlsx"
+    return StreamingResponse(
+        out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
