@@ -11,6 +11,7 @@ import type { SpocReport, SpocReportParams } from '../types/summary.types';
 import SpocReportCard from '../components/summaries/SpocReportCard';
 import SpocScorecard from '../components/summaries/SpocScorecard';
 import SavedReports from '../components/summaries/SavedReports';
+import FollowUpSheetCard from '../components/summaries/FollowUpSheetCard';
 import RecordDrawer, { DrawerContent } from '../components/summaries/RecordDrawer';
 import { cardSx, errorDetail, periodLabel } from '../components/summaries/shared';
 
@@ -221,6 +222,7 @@ export default function SummariesPage() {
             openDrawer={setDrawer}
             onSaved={() => setSavedKey((k) => k + 1)}
           />
+          <FollowUpSheetCard params={loaded as SpocReportParams} period={period} openDrawer={setDrawer} />
           <SpocScorecard
             report={report}
             period={period}
