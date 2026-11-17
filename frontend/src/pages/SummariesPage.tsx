@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Box, Button, CircularProgress, MenuItem, Paper, TextField, Typography } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DownloadIcon from '@mui/icons-material/Download';
 import { toast } from 'react-toastify';
 import api from '../services/api';
 import { dashboardService } from '../services/dashboardService';
@@ -83,6 +84,32 @@ export default function SummariesPage() {
   const period = report ? periodLabel(report.start, report.end) : '';
   const quickBtn = { textTransform: 'none' as const, color: 'text.primary', borderColor: 'divider', fontWeight: 500 };
 
+  // Activity Log MIS (moved here from the Dashboard): every action done in the chosen dates
+  const [activityBusy, setActivityBusy] = useState(false);
+  const downloadActivityLog = async () => {
+    if (end < start) {
+      toast.error('"To" date is before "From" date');
+      return;
+    }
+    setActivityBusy(true);
+    try {
+      const res = await api.get('/dashboard/activity-log/export', { params: { start, end }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `activity_log_mis_${start}_to_${end}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download Activity Log MIS:', err);
+      toast.error('Failed to download Activity Log MIS');
+    } finally {
+      setActivityBusy(false);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ mb: 3 }}>
@@ -155,6 +182,17 @@ export default function SummariesPage() {
           >
             Load
           </Button>
+          {isAdmin && (
+            <Button
+              variant="outlined"
+              onClick={downloadActivityLog}
+              disabled={activityBusy}
+              startIcon={activityBusy ? <CircularProgress size={14} /> : <DownloadIcon />}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              Activity Log MIS
+            </Button>
+          )}
         </Box>
         {report && (
           <Typography variant="caption" color="text.secondary">

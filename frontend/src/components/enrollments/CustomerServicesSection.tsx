@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box,
-  Button,
   Typography,
   Table,
   TableHead,
@@ -13,13 +12,10 @@ import {
   Tooltip,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
-import AddIcon from '@mui/icons-material/Add';
-import { toast } from 'react-toastify';
 import { enrollmentService } from '../../services/enrollmentService';
-import { Enrollment, AddServiceRequest } from '../../types/enrollment.types';
+import { Enrollment } from '../../types/enrollment.types';
 import { formatDateIST } from '../../utils/dateUtils';
 import { brandColors } from '../../theme';
-import AddServiceModal from './AddServiceModal';
 
 interface CustomerServicesSectionProps {
   enrollmentId: string;
@@ -36,14 +32,12 @@ function journeyProgress(e: Enrollment): string {
   return `${done}/${steps.length}`;
 }
 
+// Lists every service this customer has. ("Add Service" was removed on request.)
 export default function CustomerServicesSection({
   enrollmentId,
-  currentSpoc,
-  onServiceAdded,
 }: CustomerServicesSectionProps) {
   const [services, setServices] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,33 +55,12 @@ export default function CustomerServicesSection({
     load();
   }, [load]);
 
-  const handleAdd = async (data: AddServiceRequest) => {
-    try {
-      await enrollmentService.addService(enrollmentId, data);
-      toast.success('Service added');
-      await load();
-      onServiceAdded?.();
-    } catch (error) {
-      console.error('Failed to add service:', error);
-      toast.error('Failed to add service');
-      throw error;
-    }
-  };
-
   return (
     <Box sx={{ mt: 1 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography fontWeight={600}>
           Services{services.length > 0 ? ` (${services.length})` : ''}
         </Typography>
-        <Button
-          size="small"
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setModalOpen(true)}
-        >
-          Add Service
-        </Button>
       </Box>
 
       {loading ? (
@@ -149,12 +122,6 @@ export default function CustomerServicesSection({
         </Table>
       )}
 
-      <AddServiceModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSubmit={handleAdd}
-        defaultSpoc={currentSpoc}
-      />
     </Box>
   );
 }

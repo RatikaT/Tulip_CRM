@@ -705,6 +705,35 @@ async def export_enrollments_excel(
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
 
+    # Last Activity: the latest thing anyone did on the record - a follow-up
+    # logged, any edit (audit log), a care step done / skipped / rescheduled,
+    # journey paused / stopped, or DNC set. Blank if nothing yet.
+    from app.utils.mis_helpers import parse_dt as _pdt
+    last_activity: dict = {}
+
+    def _bump(eid, when):
+        d = _pdt(when)
+        if d is not None:
+            d = d.replace(tzinfo=None) if d.tzinfo is None else d.astimezone(timezone.utc).replace(tzinfo=None)
+            if eid not in last_activity or d > last_activity[eid]:
+                last_activity[eid] = d
+
+    if enrollments:
+        ids = [e.enrollment_id for e in enrollments]
+        pipeline = [{"$match": {"enrollment_id": {"$in": ids}, "action": {"$ne": "created"}}},
+                    {"$group": {"_id": "$enrollment_id", "last": {"$max": "$timestamp"}}}]
+        async for row_ in get_database().enrollment_audit_logs.aggregate(pipeline):
+            _bump(row_["_id"], row_["last"])
+        for e in enrollments:
+            for fu in e.follow_ups or []:
+                _bump(e.enrollment_id, fu.get("created_at"))
+            for st in e.journey or []:
+                _bump(e.enrollment_id, st.get("completed_date"))
+                for lg in st.get("log") or []:
+                    _bump(e.enrollment_id, lg.get("at"))
+            for t in (e.journey_stopped_at, e.dnc_at, getattr(e, "paused_at", None)):
+                _bump(e.enrollment_id, t)
+
     def _v(x):
         return x.value if hasattr(x, "value") else x
 
@@ -776,6 +805,7 @@ async def export_enrollments_excel(
         "Last Completed On", "Care Overdue",
         "Billed Date", "Next Follow-up Due",
         "Customer Feedback", "Remarks", "Assigned To", "DOB", "Address", "Created At",
+        "Last Activity",
     ]
     write_headers(ws, headers)
     for r, e in enumerate(enrollments, 2):
@@ -791,7 +821,8 @@ async def export_enrollments_excel(
             e.billed_date, e.next_follow_up_date,
             e.customer_feedback, e.remarks, e.assigned_to_name, e.dob, e.address, e.created_at,
         ]
-        write_row(ws, r, row, dt_cols={29, 35}, date_cols={24, 26, 28, 33})
+        row.append(last_activity.get(e.enrollment_id))
+        write_row(ws, r, row, dt_cols={29, 35, 36}, date_cols={24, 26, 28, 33})
     finalize(ws)
 
     # ===== Care Journey (one row per step) =====
