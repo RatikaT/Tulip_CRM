@@ -55,8 +55,23 @@ def get_file_type(filename: str) -> str:
         ".docx": "docx",
         ".doc": "doc",
         ".csv": "csv",
+        ".xlsx": "xlsx",
+        ".xls": "xls",
+        ".txt": "txt",
+        ".pptx": "pptx",
+        ".ppt": "ppt",
+        ".png": "image",
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".gif": "image",
+        ".webp": "image",
     }
     return type_map.get(ext, "unknown")
+
+
+# Types whose text we can read for AI answers; the rest are stored as files
+# (viewable / downloadable, searchable by name and description only).
+TEXT_TYPES = {"pdf", "docx", "doc", "csv", "xlsx", "txt"}
 
 
 def extract_text_from_pdf(file_path: str) -> Tuple[str, int]:
@@ -90,10 +105,17 @@ def extract_text_from_docx(file_path: str) -> Tuple[str, int]:
 def extract_text_from_csv(file_path: str) -> Tuple[str, int]:
     """Extract text from CSV file"""
     try:
-        with open(file_path, "r", encoding="utf-8-sig") as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-            text = "\n".join([", ".join(row) for row in rows])
+        # CSVs saved from Excel are often not UTF-8 - try the common encodings
+        rows = None
+        for enc in ("utf-8-sig", "cp1252", "latin-1"):
+            try:
+                with open(file_path, "r", encoding=enc, newline="") as f:
+                    rows = list(csv.reader(f))
+                break
+            except UnicodeDecodeError:
+                continue
+        rows = rows or []
+        text = "\n".join([", ".join(row) for row in rows])
         page_count = max(1, len(rows) // 50)
         return text.strip(), page_count
     except Exception as e:
@@ -101,8 +123,32 @@ def extract_text_from_csv(file_path: str) -> Tuple[str, int]:
         raise
 
 
+def extract_text_from_xlsx(file_path: str) -> Tuple[str, int]:
+    """Every sheet, row by row (values only)."""
+    from openpyxl import load_workbook
+    wb = load_workbook(file_path, read_only=True, data_only=True)
+    parts, rows_total = [], 0
+    for ws in wb.worksheets:
+        parts.append(f"Sheet: {ws.title}")
+        for row in ws.iter_rows(values_only=True):
+            vals = [str(v) for v in row if v is not None and str(v).strip()]
+            if vals:
+                parts.append(", ".join(vals))
+                rows_total += 1
+    wb.close()
+    return "\n".join(parts).strip(), max(1, rows_total // 50)
+
+
 def extract_text(file_path: str, file_type: str) -> Tuple[str, int]:
     """Extract text from file based on type"""
+    if file_type == "xlsx":
+        return extract_text_from_xlsx(file_path)
+    if file_type == "txt":
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            t = f.read()
+        return t.strip(), max(1, len(t) // 3000)
+    if file_type not in TEXT_TYPES:
+        return "", 1  # stored as a file only
     if file_type == "pdf":
         return extract_text_from_pdf(file_path)
     elif file_type in ["docx", "doc"]:
@@ -192,17 +238,16 @@ async def process_document(document: KnowledgeDocument) -> bool:
     try:
         logger.info(f"Processing document: {document.name}")
 
-        # Extract text
-        extracted_text, page_count = extract_text(
-            document.file_path,
-            document.file_type
-        )
-
+        # Extract text. Files we can't read (images, old .doc / .xls / .ppt,
+        # scanned PDFs) are still saved and can be published; the AI then only
+        # knows their name and description.
+        try:
+            extracted_text, page_count = extract_text(document.file_path, document.file_type)
+        except Exception as e:
+            logger.warning(f"Text extraction failed for {document.name} ({document.file_type}): {e}")
+            extracted_text, page_count = "", 1
         if not extracted_text:
-            document.processing_error = "No text could be extracted"
-            document.is_processed = False
-            await document.save()
-            return False
+            extracted_text = "\n".join(x for x in (document.name, document.description or "") if x)
 
         # Update document with extracted text
         document.extracted_text = extracted_text

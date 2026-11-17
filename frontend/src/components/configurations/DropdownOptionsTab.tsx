@@ -469,8 +469,13 @@ export default function DropdownOptionsTab() {
           displayName={selectedConfig.display_name}
           isConditional={selectedConfig.is_conditional}
           parentOptions={
-            selectedConfig.is_conditional && selectedConfig.conditional_options
-              ? Object.keys(selectedConfig.conditional_options)
+            selectedConfig.is_conditional
+              ? // Every option of the parent dropdown (e.g. every Service Partner), not just
+                // the ones that already have values - so a new partner can get its first centre
+                [...new Set([
+                  ...(configs.find((c) => c.field_name === selectedConfig.parent_field)?.options || []),
+                  ...Object.keys(selectedConfig.conditional_options || {}),
+                ])]
               : undefined
           }
           existingValues={selectedConfig.options}

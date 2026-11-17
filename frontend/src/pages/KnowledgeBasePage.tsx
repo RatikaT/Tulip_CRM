@@ -355,6 +355,8 @@ export default function KnowledgeBasePage() {
       case 'doc':
         return <ArticleIcon sx={{ color: colors.doc }} />;
       case 'csv':
+      case 'xlsx':
+      case 'xls':
         return <TableChartIcon sx={{ color: colors.csv }} />;
       default:
         return <DescriptionIcon sx={{ color: colors.textSecondary }} />;

@@ -71,14 +71,14 @@ async def upload_document(
 ):
     """
     Upload a new document to the knowledge base (Admin only)
-    Supported formats: PDF, DOCX, DOC, CSV
+    Supported formats: PDF, Word, Excel, CSV, text, PowerPoint and images
     """
     # Validate file type
     file_type = kb_service.get_file_type(file.filename)
     if file_type == "unknown":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported file type. Allowed: PDF, DOCX, DOC, CSV"
+            detail="Unsupported file type. Allowed: PDF, Word, Excel, CSV, TXT, PowerPoint, images (PNG, JPG, GIF, WEBP)"
         )
 
     # Validate file size

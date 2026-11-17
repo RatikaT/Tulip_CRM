@@ -60,11 +60,11 @@ export default function DocumentUploadDialog({
   };
 
   const handleFileSelect = (selectedFile: File) => {
-    const validTypes = ['.pdf', '.docx', '.doc', '.csv'];
+    const validTypes = ['.pdf', '.docx', '.doc', '.csv', '.xlsx', '.xls', '.txt', '.pptx', '.ppt', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
     const extension = '.' + selectedFile.name.split('.').pop()?.toLowerCase();
 
     if (!validTypes.includes(extension)) {
-      setError('Invalid file type. Allowed: PDF, DOCX, DOC, CSV');
+      setError('Invalid file type. Allowed: PDF, Word, Excel, CSV, TXT, PowerPoint, images');
       return;
     }
 
@@ -182,7 +182,7 @@ export default function DocumentUploadDialog({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.doc,.csv"
+            accept=".pdf,.docx,.doc,.csv,.xlsx,.xls,.txt,.pptx,.ppt,.png,.jpg,.jpeg,.gif,.webp"
             hidden
             onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
           />
@@ -235,7 +235,7 @@ export default function DocumentUploadDialog({
                 Drag and drop a file here, or click to select
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Supported: PDF, DOCX, DOC, CSV (max 50MB)
+                Supported: PDF, Word, Excel, CSV, TXT, PowerPoint, images (max 50MB)
               </Typography>
             </>
           )}
