@@ -139,9 +139,20 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
                             CALL_ADDED: f"{f} added", REMARK: "Remark added"}[a]
                     acts[lg.lead_id].append((lg.timestamp, what, lg.user_name or "Unknown"))
 
+    def _given(l):
+        stamps = [d for d in (_d(l.reassigned_date), _d(l.assigned_date) or (l.created_at if l.assigned_to else None)) if d]
+        return max(stamps) if stamps else None
+
+    def _owner_end(l):
+        return _as_of(l.reassign_to, own_r.get(l.lead_id, []), T) or _as_of(l.assigned_to, own_a.get(l.lead_id, []), T)
+
+    # Leads given to someone in these dates count only under New, never in a follow-up column
+    new_ids = {l.lead_id for l in leads
+               if (g := _given(l)) and F <= g < T and _owner_end(l)}
+
     lead_rows: Dict[str, Dict] = {}
     for l in leads:
-        if l.created_at and l.created_at >= T:
+        if (l.created_at and l.created_at >= T) or l.lead_id in new_ids:
             continue
         st0 = _as_of(_v(l.status), st_ch.get(l.lead_id, []), F)
         if l.created_at and l.created_at >= F:
@@ -170,9 +181,8 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
     # New leads assigned (any status) and other leads worked
     listed = {(i["id"]) for r in lead_rows.values() for i in r["items"]}
     for l in leads:
-        stamps = [d for d in (_d(l.reassigned_date), _d(l.assigned_date) or (l.created_at if l.assigned_to else None)) if d]
-        given = max(stamps) if stamps else None
-        owner_end = _as_of(l.reassign_to, own_r.get(l.lead_id, []), T) or _as_of(l.assigned_to, own_a.get(l.lead_id, []), T)
+        given = _given(l)
+        owner_end = _owner_end(l)
         done = sorted(acts.get(l.lead_id, []))
         base = {"type": "lead", "id": l.lead_id, "name": l.name or "-",
                 "status_start": _as_of(_v(l.status), st_ch.get(l.lead_id, []), F) if not (l.created_at and l.created_at >= F) else "(new in period)",
@@ -180,7 +190,7 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
                 "date": (l.follow_up_date.isoformat() if l.follow_up_date else ""), "date_label": _day(l.follow_up_date),
                 "actioned": bool(done),
                 "actions": [{"at": a.isoformat(), "what": w, "by": by} for a, w, by in done]}
-        if given and F <= given < T and owner_end:
+        if l.lead_id in new_ids:
             _add(lead_rows, owner_end, uname.get(owner_end, "Unknown"), "new", {**base, "why": f"Assigned {_when(given)}"})
             continue
         if done and l.lead_id not in listed:
