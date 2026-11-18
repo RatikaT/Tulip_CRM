@@ -764,30 +764,24 @@ export default function EnrollmentDetailPage() {
                 canEdit={canEditJourney}
                 onChanged={refreshAfterAction}
                 pinnedNotes={
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={6}>
-                      <TextField
-                        fullWidth
-                        label="Customer Feedback"
-                        value={formData.customer_feedback || ''}
-                        onChange={(e) => handleInputChange('customer_feedback', e.target.value)}
-                        disabled={!canEdit('customer_feedback')}
-                        multiline
-                        minRows={2}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <TextField
-                        fullWidth
-                        label="Remarks"
-                        value={formData.remarks || ''}
-                        onChange={(e) => handleInputChange('remarks', e.target.value)}
-                        disabled={!canEdit('remarks')}
-                        multiline
-                        minRows={2}
-                      />
-                    </Grid>
-                  </Grid>
+                  <>
+                    <TextField
+                      fullWidth
+                      label="Remarks / notes"
+                      placeholder="Anything to remember about this customer"
+                      value={formData.remarks || ''}
+                      onChange={(e) => handleInputChange('remarks', e.target.value)}
+                      disabled={!canEdit('remarks')}
+                      multiline
+                      minRows={2}
+                    />
+                    {/* Older records may have text in the former Customer Feedback box */}
+                    {enrollment.customer_feedback && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+                        Earlier customer feedback: {enrollment.customer_feedback}
+                      </Typography>
+                    )}
+                  </>
                 }
               />
             </Box>

@@ -40,7 +40,7 @@ from app.utils.mis_helpers import care_rollups, parse_dt
 from collections import Counter, defaultdict
 from app.services.journey_ops import compute_care_triggers, stop_journey_steps
 from app.services.journey_state import (
-    ANTENATAL_INTEREST, STATES as JOURNEY_STATES, NEEDS_NOTE as JS_NEEDS_NOTE,
+    ANTENATAL_INTEREST, CLOSED_OTHERS, STATES as JOURNEY_STATES, NEEDS_NOTE as JS_NEEDS_NOTE,
     allowed_states, apply_state, is_closed as js_is_closed, label as js_label,
     service_key, validate as js_validate, call_summary, CONNECTED, NOT_CONNECTED,
     CALL_OUTCOMES, NOT_CONNECTED_REASONS, CALL_BACK,
@@ -195,15 +195,16 @@ def stopped_or_dnc_query(current_user: dict) -> dict:
 
 async def enrollment_follow_ups_due(current_user: dict) -> Tuple[List[str], List[str]]:
     """("Follow-ups Today" card) customers due today - Next Follow-up Due today or
-    a care step planned today - and customers overdue: Next Follow-up Due passed
-    with nothing done since, or a care step planned earlier still pending.
-    Counted once per customer (due wins). DNC excluded; stopped journeys don't
-    count their care steps. Returns (due_today_ids, overdue_ids)."""
+    a care step planned today - and customers overdue: Next Follow-up Due or a
+    pending care step dated before today. Same rule as the table and the
+    Follow-up Sheet (the date has passed). Counted once per customer (due wins).
+    Paused, stopped / closed and DNC customers are left out.
+    Returns (due_today_ids, overdue_ids)."""
     from app.utils.mis_helpers import parse_dt
     day_start, day_end = ist_range_utc(today_ist())
     await resume_due_pauses()
     enrs = await Enrollment.find({**_enr_scope(current_user), "do_not_contact": {"$ne": True},
-                                  "journey_status": {"$ne": "paused"}}).to_list()
+                                  "journey_status": "active"}).to_list()
 
     def d(x):
         """Stored value -> naive UTC datetime."""
@@ -212,38 +213,15 @@ async def enrollment_follow_ups_due(current_user: dict) -> Tuple[List[str], List
             v = v.astimezone(timezone.utc).replace(tzinfo=None)
         return v
 
-    due, overdue, fu_past = [], [], {}
+    due, overdue = [], []
     for e in enrs:
-        nfu = d(e.next_follow_up_date)
-        active = e.journey_status != "stopped"
-        pending = [d(s.get("planned_date")) for s in (e.journey or [])
-                   if active and s.get("status") == "pending" and d(s.get("planned_date"))]
-        if (nfu and day_start <= nfu < day_end) or any(day_start <= p < day_end for p in pending):
+        dates = [d(e.next_follow_up_date)] + [d(s.get("planned_date")) for s in (e.journey or [])
+                                              if s.get("status") == "pending"]
+        dates = [x for x in dates if x]
+        if any(day_start <= x < day_end for x in dates):
             due.append(e.enrollment_id)
-        elif any(p < day_start for p in pending):
+        elif any(x < day_start for x in dates):
             overdue.append(e.enrollment_id)
-        elif nfu and nfu < day_start:
-            fu_past[e.enrollment_id] = (e, nfu)
-
-    # Next Follow-up Due passed: overdue only if nothing was done since that date
-    if fu_past:
-        logs = await EnrollmentAuditLog.find({
-            "enrollment_id": {"$in": list(fu_past)},
-            "timestamp": {"$gte": min(v[1] for v in fu_past.values())},
-        }).to_list()
-        acted = {lg.enrollment_id for lg in logs if lg.timestamp >= fu_past[lg.enrollment_id][1]
-                 and any(c.get("field") in ("next_follow_up_date", "remarks", "customer_feedback")
-                         for c in lg.changes or [])}
-        for eid, (e, nfu) in fu_past.items():
-            if eid in acted:
-                continue
-            if any(d(f.get("created_at")) and d(f.get("created_at")) >= nfu for f in e.follow_ups or []):
-                continue
-            stamps = [d(s.get("completed_date")) for s in e.journey or []] + \
-                     [d(x.get("at")) for s in e.journey or [] for x in (s.get("log") or [])]
-            if any(t and t >= nfu for t in stamps):
-                continue
-            overdue.append(eid)
     return due, overdue
 
 
@@ -2459,6 +2437,9 @@ async def stop_enrollment_journey(
     enrollment.journey_stopped_at = datetime.utcnow()
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
+    # Keep the Journey Status in step (closing is normally done from there).
+    if service_key(enrollment) and not js_is_closed(enrollment.journey_state):
+        await apply_state(enrollment, CLOSED_OTHERS, body.reason or "Journey stopped", current_user)
     return enrollment_to_response(enrollment)
 
 
@@ -2573,6 +2554,8 @@ async def set_enrollment_dnc(
         enrollment.dnc_reason = None
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
+    if enrollment.do_not_contact and service_key(enrollment) and not js_is_closed(enrollment.journey_state):
+        await apply_state(enrollment, CLOSED_OTHERS, body.reason or "Do Not Contact", current_user)
     return enrollment_to_response(enrollment)
 
 

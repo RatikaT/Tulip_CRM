@@ -397,7 +397,12 @@ export default function DropdownOptionsTab() {
                   {config.is_conditional && config.conditional_options ? (
                     // Render conditional dropdown with grouped options
                     <Box>
-                      {Object.entries(config.conditional_options).map(([parentValue, options]) => (
+                      {/* Every option of the parent dropdown (e.g. every Service Partner) gets
+                          a group, so a newly added partner can get its first centre here. */}
+                      {[...new Set([
+                        ...(configs.find((c) => c.field_name === config.parent_field)?.options || []),
+                        ...Object.keys(config.conditional_options),
+                      ])].map((parentValue) => [parentValue, config.conditional_options?.[parentValue] || []] as const).map(([parentValue, options]) => (
                         <Box key={parentValue} sx={{ mb: 2 }}>
                           <Box
                             sx={{
@@ -426,7 +431,13 @@ export default function DropdownOptionsTab() {
                               Add
                             </Button>
                           </Box>
-                          {renderOptionList(config, options, parentValue)}
+                          {options.length ? (
+                            renderOptionList(config, [...options], parentValue)
+                          ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ pl: 1 }}>
+                              No centres yet. Use Add to create the first one.
+                            </Typography>
+                          )}
                         </Box>
                       ))}
                     </Box>

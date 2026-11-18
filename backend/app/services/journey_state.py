@@ -106,8 +106,6 @@ def validate(enrollment: Enrollment, state: str, note: Optional[str]) -> Optiona
         return f"'{state}' is not a Journey Status for {service_key(enrollment)}"
     if state in NEEDS_NOTE and not (note or "").strip():
         return "Describe the status for Others"
-    if not is_closed(state) and enrollment.do_not_contact:
-        return "This customer is marked Do Not Contact. Clear it before choosing an active status."
     return None
 
 
@@ -138,8 +136,13 @@ async def apply_state(enrollment: Enrollment, state: str, note: Optional[str],
         enrollment.pause_reason = enrollment.resume_on = None
     elif is_closed(state):
         enrollment.journey_stopped_reason = label(state, note)
-    elif is_closed(old_state) and enrollment.journey_status == "stopped" and not enrollment.do_not_contact:
-        # Reopen: back to active, rebuild the remaining steps (done/skipped kept).
+    elif enrollment.journey_status == "stopped" and not enrollment.converted_to_lead_id:
+        # Reopen: back to active (clearing an old Do Not Contact), rebuild the
+        # remaining steps (done/skipped kept).
+        if enrollment.do_not_contact:
+            enrollment.do_not_contact = False
+            enrollment.dnc_reason = None
+            changes.append({"field": "do_not_contact", "old_value": True, "new_value": False})
         enrollment.journey_status = "active"
         enrollment.journey_stopped_reason = enrollment.journey_stopped_by = None
         enrollment.journey_stopped_by_name = enrollment.journey_stopped_at = None
@@ -165,6 +168,29 @@ async def apply_state(enrollment: Enrollment, state: str, note: Optional[str],
         changes=changes,
     ).insert()
     return True
+
+
+async def sync_stopped_states() -> int:
+    """Journeys stopped (Stop journey / Do Not Contact) while the Journey Status
+    stayed active get Closed – Others with the stop reason, so the record shows
+    as closed everywhere (idempotent). Converted-to-Antenatal records are left as they are."""
+    n = 0
+    q = {"is_deleted": False, "converted_to_lead_id": None,
+         "$or": [{"journey_status": "stopped"}, {"do_not_contact": True}]}
+    for e in await Enrollment.find(q).to_list():
+        if not e.journey_state or is_closed(e.journey_state) or not service_key(e):
+            continue
+        note = (e.dnc_reason if e.do_not_contact else e.journey_stopped_reason) or \
+            ("Do Not Contact" if e.do_not_contact else "Journey stopped")
+        now = datetime.utcnow()
+        e.journey_state, e.journey_state_note = CLOSED_OTHERS, note
+        e.journey_state_by_name, e.journey_state_at = "Set by system", now
+        e.journey_state_history = (e.journey_state_history or []) + [{
+            "at": now, "state": CLOSED_OTHERS, "note": note, "by": None,
+            "by_name": "Set by system", "source": "preset"}]
+        await e.save()
+        n += 1
+    return n
 
 
 async def preset_missing_states() -> int:

@@ -72,7 +72,13 @@ export default function JourneyStatusControl({ enrollment, options, canEdit, onC
   };
 
   const onPick = (value: string) => {
-    if (!value || value === current && !options?.needs_note.includes(value)) return;
+    if (!value) return;
+    if (value === current && !options?.needs_note.includes(value)) {
+      // Back to the saved status: drop an unsaved "Others" choice.
+      setPendingOthers(null);
+      setOthersText('');
+      return;
+    }
     if (options?.needs_note.includes(value)) {
       setPendingOthers(value);
       setOthersText(value === current ? enrollment.journey_state_note || '' : '');

@@ -39,10 +39,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Journey migrate/seed failed (non-fatal): {e}")
     # Journey Status: one-time preset for enrollments that don't have one (idempotent).
     try:
-        from app.services.journey_state import preset_missing_states
+        from app.services.journey_state import preset_missing_states, sync_stopped_states
         n = await preset_missing_states()
         if n:
             logger.info(f"Journey Status preset on {n} enrollment(s)")
+        n = await sync_stopped_states()
+        if n:
+            logger.info(f"Journey Status set to Closed on {n} stopped enrollment(s)")
     except Exception as e:
         logger.error(f"Journey Status preset failed (non-fatal): {e}")
     logger.info("CRM API started successfully")

@@ -36,7 +36,7 @@ interface Props {
   options: JourneyStateOptions | null;
   canEdit: boolean;
   onChanged: () => void;
-  /** Customer Feedback / Remarks boxes (record-level), rendered by the page. */
+  /** The record-level Remarks / notes box, rendered by the page. */
   pinnedNotes: React.ReactNode;
 }
 
@@ -365,7 +365,7 @@ export default function CareFollowUpTab({ enrollment, options, canEdit, onChange
       {/* Pinned notes */}
       <Box>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          Pinned notes (saved with Save Changes)
+          Pinned note (saved with Save Changes)
         </Typography>
         {pinnedNotes}
       </Box>

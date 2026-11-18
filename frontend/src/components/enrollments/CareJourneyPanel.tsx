@@ -67,13 +67,9 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
 
   // Journey-level controls
   const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [showStop, setShowStop] = useState(false);
   const [showPause, setShowPause] = useState(false);
   const [resumeOn, setResumeOn] = useState<Date | null>(null);
   const [pauseReason, setPauseReason] = useState('');
-  const [stopReason, setStopReason] = useState('');
-  const [showDnc, setShowDnc] = useState(false);
-  const [dncReason, setDncReason] = useState('');
 
   useEffect(() => {
     setJourney(enrollment.journey || []);
@@ -178,21 +174,6 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
 
   const triggers = enrollment.journey_triggers || {};
 
-  const handleStopJourney = async () => {
-    setActionBusy('stop');
-    try {
-      const updated = await journeyService.stopEnrollmentJourney(enrollment.enrollment_id, stopReason.trim() || undefined);
-      applyResult(updated);
-      setShowStop(false);
-      setStopReason('');
-      toast.success('Journey stopped');
-    } catch (e) {
-      toast.error(errDetail(e, 'Failed to stop journey'));
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
   const handlePause = async () => {
     const iso = fromISTPickerToUTC(resumeOn);
     if (!iso) {
@@ -222,25 +203,6 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
       toast.success('Journey resumed; remaining steps moved forward by the pause');
     } catch (e) {
       toast.error(errDetail(e, 'Failed to resume journey'));
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
-  const handleSetDnc = async (value: boolean) => {
-    setActionBusy('dnc');
-    try {
-      const updated = await journeyService.setEnrollmentDnc(
-        enrollment.enrollment_id,
-        value,
-        value ? dncReason.trim() || undefined : undefined,
-      );
-      applyResult(updated);
-      setShowDnc(false);
-      setDncReason('');
-      toast.success(value ? 'Marked Do Not Contact' : 'Cleared Do Not Contact');
-    } catch (e) {
-      toast.error(errDetail(e, 'Failed to update Do Not Contact'));
     } finally {
       setActionBusy(null);
     }
@@ -334,26 +296,9 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
             Pause journey
           </Button>
         )}
-        {enrollment.journey_status !== 'stopped' && (
-          <Button size="small" color="warning" variant="outlined" onClick={() => setShowStop((v) => !v)}>
-            Stop journey
-          </Button>
-        )}
-        {enrollment.do_not_contact ? (
-          <Button
-            size="small"
-            color="inherit"
-            variant="outlined"
-            onClick={() => handleSetDnc(false)}
-            disabled={actionBusy === 'dnc'}
-          >
-            {actionBusy === 'dnc' ? <CircularProgress size={16} /> : 'Clear DNC'}
-          </Button>
-        ) : (
-          <Button size="small" color="error" variant="outlined" onClick={() => setShowDnc((v) => !v)}>
-            Mark Do Not Contact
-          </Button>
-        )}
+        <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
+          To close this customer, choose a Closed Journey Status at the top.
+        </Typography>
       </Stack>
 
       <Collapse in={showPause} unmountOnExit>
@@ -379,47 +324,6 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
         </Stack>
       </Collapse>
 
-      <Collapse in={showStop} unmountOnExit>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" sx={{ mt: 1 }}>
-          <TextField
-            size="small"
-            label="Reason (optional)"
-            value={stopReason}
-            onChange={(e) => setStopReason(e.target.value)}
-            sx={{ flex: 1, minWidth: 180 }}
-          />
-          <Button
-            size="small"
-            color="warning"
-            variant="contained"
-            onClick={handleStopJourney}
-            disabled={actionBusy === 'stop'}
-          >
-            {actionBusy === 'stop' ? <CircularProgress size={18} /> : 'Confirm stop'}
-          </Button>
-        </Stack>
-      </Collapse>
-
-      <Collapse in={showDnc} unmountOnExit>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" sx={{ mt: 1 }}>
-          <TextField
-            size="small"
-            label="Reason (optional)"
-            value={dncReason}
-            onChange={(e) => setDncReason(e.target.value)}
-            sx={{ flex: 1, minWidth: 180 }}
-          />
-          <Button
-            size="small"
-            color="error"
-            variant="contained"
-            onClick={() => handleSetDnc(true)}
-            disabled={actionBusy === 'dnc'}
-          >
-            {actionBusy === 'dnc' ? <CircularProgress size={18} /> : 'Confirm DNC'}
-          </Button>
-        </Stack>
-      </Collapse>
     </Box>
   );
 

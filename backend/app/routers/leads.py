@@ -190,24 +190,14 @@ def no_follow_up_date_query(current_user: dict) -> dict:
 
 async def follow_ups_due(current_user: dict) -> Tuple[List[str], List[str]]:
     """("Follow-ups Today" card) open leads due today, and open leads whose
-    follow-up date has passed with nothing done since (no status change,
-    remark, call or new follow-up date). Returns (due_today_ids, overdue_ids)."""
-    from app.services.activity_log import classify_lead_change, STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE
+    follow-up date has passed (same rule as the table's Overdue chip and the
+    Follow-up Sheet). Returns (due_today_ids, overdue_ids)."""
     day_start, day_end = ist_range_utc(today_ist())
     leads = await Lead.find({**_scope(current_user), "status": {"$nin": CLOSED_LEAD_STATUSES},
                              "follow_up_date": {"$lt": day_end}}).to_list()
     due = [l.lead_id for l in leads if l.follow_up_date >= day_start]
-    past = {l.lead_id: l.follow_up_date for l in leads if l.follow_up_date < day_start}
-    acted = set()
-    if past:
-        logs = await AuditLog.find({"lead_id": {"$in": list(past)},
-                                    "timestamp": {"$gte": min(past.values())}}).to_list()
-        for lg in logs:
-            if lg.timestamp >= past[lg.lead_id] and any(
-                    classify_lead_change(c.get("field") or "", c.get("new_value")) in (STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE)
-                    for c in lg.changes or []):
-                acted.add(lg.lead_id)
-    return due, [i for i in past if i not in acted]
+    overdue = [l.lead_id for l in leads if l.follow_up_date < day_start]
+    return due, overdue
 
 
 @router.get("/stats")
