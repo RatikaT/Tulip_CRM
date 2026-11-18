@@ -209,6 +209,14 @@ class EnrollmentResponse(BaseModel):
     journey_flag_note: Optional[str] = None
     journey_classification: Optional[str] = None
     converted_to_lead_id: Optional[str] = None
+    journey_state: Optional[str] = None
+    journey_state_note: Optional[str] = None
+    journey_state_label: Optional[str] = None
+    journey_state_closed: bool = False
+    journey_state_by_name: Optional[str] = None
+    journey_state_at: Optional[datetime] = None
+    journey_state_history: List[dict] = []
+    call_locked: bool = False
     do_not_contact: bool = False
     dnc_reason: Optional[str] = None
     journey_triggers: Optional[dict] = None

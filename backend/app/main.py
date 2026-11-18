@@ -37,6 +37,14 @@ async def lifespan(app: FastAPI):
         await migrate_and_seed_journeys()
     except Exception as e:
         logger.error(f"Journey migrate/seed failed (non-fatal): {e}")
+    # Journey Status: one-time preset for enrollments that don't have one (idempotent).
+    try:
+        from app.services.journey_state import preset_missing_states
+        n = await preset_missing_states()
+        if n:
+            logger.info(f"Journey Status preset on {n} enrollment(s)")
+    except Exception as e:
+        logger.error(f"Journey Status preset failed (non-fatal): {e}")
     logger.info("CRM API started successfully")
 
     # Paused care journeys resume by themselves on their date (checked hourly,

@@ -259,19 +259,6 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
     }
   };
 
-  const handleConvertToAntenatal = async () => {
-    setActionBusy('convert');
-    try {
-      const res = await journeyService.convertToAntenatal(enrollment.enrollment_id);
-      toast.success(res.message);
-      onChanged?.();
-    } catch (e) {
-      toast.error(errDetail(e, 'Failed to convert to Antenatal'));
-    } finally {
-      setActionBusy(null);
-    }
-  };
-
   // Banners always render (even without a journey or canEdit).
   const banners = (
     <Stack spacing={1.25}>
@@ -305,30 +292,6 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
           Antenatal with 'Not Conceived' — correct the trimester, or flag to Admin.
         </Alert>
       )}
-      {triggers.is_preconception && canEdit && (
-        <Alert
-          severity="success"
-          action={
-            enrollment.converted_to_lead_id ? (
-              <Button color="inherit" size="small" disabled>
-                Converted to lead {enrollment.converted_to_lead_id}
-              </Button>
-            ) : (
-              <Button
-                color="inherit"
-                size="small"
-                onClick={handleConvertToAntenatal}
-                disabled={actionBusy === 'convert'}
-              >
-                {actionBusy === 'convert' ? <CircularProgress size={16} /> : 'Mark conceived → create Antenatal lead'}
-              </Button>
-            )
-          }
-        >
-          Customer conceived?
-        </Alert>
-      )}
-
       {enrollment.journey_status === 'stopped' && (
         <Chip
           label={`Journey stopped — ${enrollment.journey_stopped_reason || 'stopped'}`}
@@ -482,7 +445,7 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
   return (
     <Box>
       {banners}
-      {(triggers.needs_trimester || triggers.trimester_contradiction || triggers.is_preconception ||
+      {(triggers.needs_trimester || triggers.trimester_contradiction ||
         enrollment.journey_status === 'stopped' || enrollment.do_not_contact) && <Box sx={{ mb: 1.5 }} />}
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>

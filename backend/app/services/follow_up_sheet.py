@@ -41,6 +41,7 @@ from app.services.activity_log import (
 )
 from app.utils.ist import ist_range_utc, to_ist
 from app.utils.mis_helpers import parse_dt
+from app.services.journey_state import call_summary
 
 FOLLOW_UP_STATUSES = {"Follow up-In Process", "Follow up-No Response"}
 LEAD_ACTIONS = {STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE}
@@ -215,11 +216,17 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
                 spoc_ch[lg.enrollment_id].append((lg.timestamp, ch.get("old_value")))
             elif f == "journey_status":
                 js_ch[lg.enrollment_id].append((lg.timestamp, ch.get("old_value")))
+            # Bulk Journey Status uploads are admin corrections, not the SPOC acting.
             if lg.timestamp < T and _v(lg.action) != "follow_up_added" and \
-                    f in ("next_follow_up_date", "remarks", "customer_feedback", "journey_status"):
+                    not (lg.user_name or "").endswith("(Bulk upload)") and \
+                    f in ("next_follow_up_date", "remarks", "customer_feedback", "journey_status",
+                          "journey_state", "converted_to_lead_id"):
                 what = {"next_follow_up_date": "Next follow-up changed", "remarks": "Remarks edited",
                         "customer_feedback": "Feedback edited",
-                        "journey_status": "Journey paused" if ch.get("new_value") == "paused" else "Journey resumed"}[f]
+                        "journey_status": "Journey paused" if ch.get("new_value") == "paused" else
+                        "Journey reopened" if ch.get("old_value") == "stopped" else "Journey resumed",
+                        "journey_state": f"Journey status → {ch.get('new_value')}",
+                        "converted_to_lead_id": f"Antenatal lead created · {ch.get('new_value')}"}[f]
                 eacts[lg.enrollment_id].append((lg.timestamp, what, lg.user_name or "Unknown"))
 
     enr_rows: Dict[str, Dict] = {}
@@ -231,12 +238,13 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
         for fu in e.follow_ups or []:
             at = _d(fu.get("created_at"))
             if at and F <= at < T:
-                bits = [fu.get("connect_status"), fu.get("action_taken")]
-                eacts[eid].append((at, "Follow-up logged" + "".join(f" · {b}" for b in bits if b),
+                bits = [call_summary(fu), f"step done: {fu['step_name']}" if fu.get("step_name") else None]
+                eacts[eid].append((at, ("Call logged" if fu.get("call_status") else "Follow-up logged")
+                                   + "".join(f" · {b}" for b in bits if b),
                                    fu.get("created_by_name") or "Unknown"))
         for s in e.journey or []:
             cd = _d(s.get("completed_date"))
-            if s.get("status") == "done" and cd and F <= cd < T:
+            if s.get("status") == "done" and cd and F <= cd < T and not s.get("completed_via_call"):
                 eacts[eid].append((cd, f"Care step done · {s.get('name')}", s.get("completed_by_name") or "Unknown"))
             for x in s.get("log") or []:
                 at = _d(x.get("at"))
@@ -246,7 +254,7 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
         for t, label, by in ((e.journey_stopped_at, "Journey stopped", e.journey_stopped_by_name),
                              (e.dnc_at if e.do_not_contact else None, "Do Not Contact set", uname.get(e.dnc_set_by or ""))):
             t = _d(t)
-            if t and F <= t < T:
+            if t and F <= t < T and not (by or "").endswith("(Bulk upload)"):
                 eacts[eid].append((t, label, by or "Unknown"))
 
         # active at the start?

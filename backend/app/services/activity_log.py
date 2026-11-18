@@ -22,6 +22,7 @@ from app.models.lead import Lead
 from app.models.user import User
 from app.utils.ist import to_ist
 from app.utils.mis_helpers import parse_dt
+from app.services.journey_state import call_summary
 
 # Action categories (also the columns of the dashboard summary)
 STATUS = "Status changed"
@@ -33,12 +34,15 @@ ASSIGNED = "Assigned"
 REASSIGNED = "Reassigned"
 CREATED = "Created"
 ENR_FOLLOWUP = "Follow-up logged"
+CALL_LOGGED = "Call logged"
 CARE_STEP = "Care step done"
 OUTREACH_STEP = "Outreach step done"
 JOURNEY_STOPPED = "Journey stopped"
 JOURNEY_PAUSED = "Journey paused"
 JOURNEY_RESUMED = "Journey resumed"
 DNC = "Do Not Contact set"
+JOURNEY_STATE = "Journey status"
+ANTENATAL_LEAD = "Antenatal lead created"
 SERVICE_ADDED = "Service added"
 DELETED = "Deleted"
 FIELD_UPDATED = "Field updated"
@@ -62,6 +66,9 @@ _LABELS = {
     "next_follow_up_date": "Next Follow-up Due",
     "follow_up_date": "Follow-up Date",
     "comments": "Remarks",
+    "journey_state": "Journey Status",
+    "journey_status": "Care journey",
+    "converted_to_lead_id": "Antenatal lead",
 }
 
 # "Added - Date: 2026-09-25 12:24, ..." in call audit entries: that time is UTC
@@ -137,6 +144,10 @@ def classify_enrollment_change(field: str, new_value=None) -> Optional[str]:
         return None
     if field == "journey_status":
         return JOURNEY_PAUSED if new_value == "paused" else JOURNEY_RESUMED if new_value == "active" else FIELD_UPDATED
+    if field == "journey_state":
+        return JOURNEY_STATE
+    if field == "converted_to_lead_id":
+        return ANTENATAL_LEAD
     if field == "enrollment":
         return CREATED
     if field == "service_added":
@@ -271,17 +282,20 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
             at = parse_dt(fu.get("created_at") or fu.get("date"))
             if at and start_utc <= at < end_utc:
                 detail = " | ".join(x for x in (
-                    fu.get("connect_status"), fu.get("action_taken"),
+                    call_summary(fu),
+                    f"Care step done: {fu['step_name']}" if fu.get("step_name") else None,
                     f"Feedback: {fu['feedback']}" if fu.get("feedback") else None,
                     f"Remarks: {fu['remarks']}" if fu.get("remarks") else None,
                 ) if x)
-                rows.append(enr_row(e, at, ENR_FOLLOWUP, f"Follow-up #{fu.get('follow_up_number')}",
+                rows.append(enr_row(e, at, CALL_LOGGED if fu.get("call_status") else ENR_FOLLOWUP,
+                                    f"Follow-up #{fu.get('follow_up_number')}",
                                     None, detail, fu.get("created_by_name")))
                 if fu.get("next_follow_up_date"):
                     rows.append(enr_row(e, at, FOLLOWUP_DATE, "Next Follow-up Due", None,
                                         parse_dt(fu.get("next_follow_up_date")), fu.get("created_by_name")))
         for s in (e.journey or []):
-            if s.get("status") == "done" and in_win(s.get("completed_date")):
+            # A step ticked from Log a call is part of that call's row (one action).
+            if s.get("status") == "done" and in_win(s.get("completed_date")) and not s.get("completed_via_call"):
                 rows.append(enr_row(e, parse_dt(s.get("completed_date")), CARE_STEP, s.get("name"),
                                     None, s.get("notes"), s.get("completed_by_name")))
         if in_win(e.journey_stopped_at) and not _stopped_by_dnc(e):
@@ -353,8 +367,9 @@ def _stopped_by_dnc(rec) -> bool:
 
 # Columns of the per-person summary, in display order
 SUMMARY_COLUMNS = [
-    STATUS, FOLLOWUP_DATE, CALL_ADDED, CALL_EDITED, REMARK, ENR_FOLLOWUP, CARE_STEP,
-    OUTREACH_STEP, JOURNEY_PAUSED, JOURNEY_RESUMED, JOURNEY_STOPPED, DNC, SERVICE_ADDED, ASSIGNED, REASSIGNED,
+    STATUS, FOLLOWUP_DATE, CALL_ADDED, CALL_EDITED, REMARK, ENR_FOLLOWUP, CALL_LOGGED, CARE_STEP,
+    OUTREACH_STEP, JOURNEY_STATE, ANTENATAL_LEAD, JOURNEY_PAUSED, JOURNEY_RESUMED, JOURNEY_STOPPED, DNC,
+    SERVICE_ADDED, ASSIGNED, REASSIGNED,
     CREATED, DELETED, FIELD_UPDATED,
 ]
 # Creating or deleting a record isn't "working" it

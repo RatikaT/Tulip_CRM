@@ -127,6 +127,9 @@ async def reinstantiate_care_journey(enrollment) -> list:
             s["completed_date"] = prev.get("completed_date")
             s["completed_by"] = prev.get("completed_by")
             s["completed_by_name"] = prev.get("completed_by_name")
+            for k in ("completed_via_call", "log"):
+                if prev.get(k):
+                    s[k] = prev[k]
             if prev.get("notes"):
                 s["notes"] = prev.get("notes")
     # Carry over ad-hoc steps (not part of the template).

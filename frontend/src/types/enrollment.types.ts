@@ -34,6 +34,48 @@ export interface FollowUpEntry {
   created_by: string | null;
   created_by_name: string | null;
   created_at: string | null;
+  // Log a call (new); older entries only have connect_status / action_taken.
+  call_status?: 'Connected' | 'Not connected' | null;
+  outcome?: string | null;
+  reason?: string | null;
+  other_text?: string | null;
+  next_follow_up_date?: string | null;
+  step_id?: string | null;
+  step_name?: string | null;
+}
+
+export interface JourneyStateHistoryEntry {
+  at: string;
+  state: string;
+  note?: string | null;
+  by_name?: string | null;
+  source?: 'screen' | 'bulk' | 'preset' | 'new';
+  remarks?: string | null;
+}
+
+export interface JourneyStateOptions {
+  states: Record<string, Record<string, string[]>>;
+  needs_note: string[];
+  antenatal_interest: string;
+  call_outcomes: string[];
+  not_connected_reasons: string[];
+}
+
+export interface LogCallRequest {
+  call_status: 'Connected' | 'Not connected';
+  outcome?: string;
+  reason?: string;
+  other_text?: string;
+  remarks?: string;
+  next_date?: string;
+  step_id?: string;
+}
+
+export interface JourneyStateBulkResult {
+  updated: number;
+  unchanged: number;
+  failed: { row: number; enrollment_id: string; error: string }[];
+  antenatal_pending: { enrollment_id: string; name: string | null; spoc: string | null }[];
 }
 
 export interface Enrollment {
@@ -101,6 +143,14 @@ export interface Enrollment {
   journey_flag_note?: string | null;
   journey_classification?: string | null;
   converted_to_lead_id?: string | null;
+  journey_state?: string | null;
+  journey_state_note?: string | null;
+  journey_state_label?: string | null;
+  journey_state_closed?: boolean;
+  journey_state_by_name?: string | null;
+  journey_state_at?: string | null;
+  journey_state_history?: JourneyStateHistoryEntry[];
+  call_locked?: boolean;
   do_not_contact?: boolean;
   dnc_reason?: string | null;
   journey_triggers?: JourneyTriggers;

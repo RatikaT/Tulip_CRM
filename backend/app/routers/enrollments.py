@@ -39,7 +39,13 @@ from app.utils.excel_export import (
 from app.utils.mis_helpers import care_rollups, parse_dt
 from collections import Counter, defaultdict
 from app.services.journey_ops import compute_care_triggers, stop_journey_steps
-from pydantic import BaseModel
+from app.services.journey_state import (
+    ANTENATAL_INTEREST, STATES as JOURNEY_STATES, NEEDS_NOTE as JS_NEEDS_NOTE,
+    allowed_states, apply_state, is_closed as js_is_closed, label as js_label,
+    service_key, validate as js_validate, call_summary, CONNECTED, NOT_CONNECTED,
+    CALL_OUTCOMES, NOT_CONNECTED_REASONS, CALL_BACK,
+)
+from pydantic import BaseModel, Field
 import logging
 import math
 import re
@@ -141,6 +147,16 @@ def enrollment_to_response(enrollment: Enrollment) -> dict:
         "journey_flag_note": getattr(enrollment, "journey_flag_note", None),
         "journey_classification": getattr(enrollment, "journey_classification", None),
         "converted_to_lead_id": getattr(enrollment, "converted_to_lead_id", None),
+        "journey_state": enrollment.journey_state,
+        "journey_state_note": enrollment.journey_state_note,
+        "journey_state_label": js_label(enrollment.journey_state, enrollment.journey_state_note),
+        "journey_state_closed": js_is_closed(enrollment.journey_state),
+        "journey_state_by_name": enrollment.journey_state_by_name,
+        "journey_state_at": enrollment.journey_state_at,
+        "journey_state_history": enrollment.journey_state_history or [],
+        # No calls on closed / stopped / Do Not Contact customers.
+        "call_locked": bool(js_is_closed(enrollment.journey_state) or enrollment.do_not_contact
+                            or enrollment.journey_status == "stopped"),
         "do_not_contact": bool(getattr(enrollment, "do_not_contact", False)),
         "dnc_reason": getattr(enrollment, "dnc_reason", None),
         # Agent-facing trigger hints (spec 4e).
@@ -668,6 +684,8 @@ async def export_enrollments_excel(
     my_role: Optional[str] = None,
     follow_ups_due: Optional[str] = None,
     stopped_or_dnc: Optional[bool] = None,
+    journey_state: Optional[List[str]] = Query(None),
+    antenatal_pending: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -701,6 +719,8 @@ async def export_enrollments_excel(
         current_user=current_user,
         enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
         stopped_or_dnc=stopped_or_dnc,
+        journey_state=journey_state,
+        antenatal_pending=antenatal_pending,
     )
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
@@ -770,6 +790,8 @@ async def export_enrollments_excel(
     summary_section(sm, "By Service Enrolled", sorted(by_service.items(), key=lambda x: -x[1]))
     summary_section(sm, "By HCLH SPOC (Nurture Buddy)", sorted(by_spoc.items(), key=lambda x: -x[1]))
     summary_section(sm, "By Connect Status", sorted(by_connect.items(), key=lambda x: -x[1]))
+    by_state = Counter(e.journey_state or "Not set" for e in enrollments)
+    summary_section(sm, "By Journey Status", sorted(by_state.items(), key=lambda x: -x[1]))
 
     # Agent x Service matrix (rows = SPOC, cols = the 3 standard services).
     matrix = defaultdict(lambda: {s: 0 for s in CARE_SERVICES})
@@ -805,7 +827,7 @@ async def export_enrollments_excel(
         "Last Completed On", "Care Overdue",
         "Billed Date", "Next Follow-up Due",
         "Customer Feedback", "Remarks", "Assigned To", "DOB", "Address", "Created At",
-        "Last Activity",
+        "Last Activity", "Journey Status", "Last Call Result",
     ]
     write_headers(ws, headers)
     for r, e in enumerate(enrollments, 2):
@@ -822,6 +844,8 @@ async def export_enrollments_excel(
             e.customer_feedback, e.remarks, e.assigned_to_name, e.dob, e.address, e.created_at,
         ]
         row.append(last_activity.get(e.enrollment_id))
+        row.append(js_label(e.journey_state, e.journey_state_note))
+        row.append(call_summary(e.follow_ups[-1]) if e.follow_ups else None)
         write_row(ws, r, row, dt_cols={29, 35, 36}, date_cols={24, 26, 28, 33})
     finalize(ws)
 
@@ -848,7 +872,8 @@ async def export_enrollments_excel(
     # ===== Follow-ups =====
     ws_f = wb.create_sheet("Follow-ups")
     write_headers(ws_f, ["Enrollment ID", "Subscriber Name", "Follow-up #", "Date",
-                         "Connect Status", "Action Taken", "Feedback", "Remarks", "Created By"])
+                         "Connect Status", "Action Taken", "Feedback", "Remarks", "Created By",
+                         "Call Result", "Next Date", "Care Step Completed"])
     fr = 2
     for e in enrollments:
         for fu in (e.follow_ups or []):
@@ -857,7 +882,8 @@ async def export_enrollments_excel(
                 parse_dt(fu.get("date") or fu.get("created_at")),
                 fu.get("connect_status"), fu.get("action_taken"), fu.get("feedback"),
                 fu.get("remarks"), fu.get("created_by_name"),
-            ], dt_cols={4})
+                call_summary(fu), parse_dt(fu.get("next_follow_up_date")), fu.get("step_name"),
+            ], dt_cols={4, 11})
             fr += 1
     finalize(ws_f, cap=60)
 
@@ -890,6 +916,8 @@ def build_enrollment_list_query(
     current_user: dict = None,
     enrollment_ids: Optional[List[str]] = None,
     stopped_or_dnc: Optional[bool] = None,
+    journey_state: Optional[List[str]] = None,
+    antenatal_pending: Optional[bool] = None,
 ) -> dict:
     """The Enrollments page filters as one Mongo query (agent visibility, filters,
     search, quick filters). Shared by the list and the MIS export."""
@@ -1017,6 +1045,12 @@ def build_enrollment_list_query(
         query = {"$and": [query, {"enrollment_id": {"$in": enrollment_ids}}]}
     if stopped_or_dnc:
         query = {"$and": [query, stopped_or_dnc_query(current_user)]}
+    if journey_state:
+        query = {"$and": [query, {"journey_state": {"$in": journey_state}}]}
+    # "Interested in Antenatal – lead not created"
+    if antenatal_pending:
+        query = {"$and": [query, {"journey_state": ANTENATAL_INTEREST,
+                                  "converted_to_lead_id": None}]}
     return query
 
 
@@ -1098,6 +1132,8 @@ async def get_enrollments(
     my_role: Optional[str] = None,
     follow_ups_due: Optional[str] = None,
     stopped_or_dnc: Optional[bool] = None,
+    journey_state: Optional[List[str]] = Query(None),
+    antenatal_pending: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollments with pagination and filters"""
@@ -1119,6 +1155,8 @@ async def get_enrollments(
             current_user=current_user,
             enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
             stopped_or_dnc=stopped_or_dnc,
+            journey_state=journey_state,
+            antenatal_pending=antenatal_pending,
         )
 
         total = await Enrollment.find(query).count()
@@ -1461,6 +1499,153 @@ async def get_birthdays_today(current_user: dict = Depends(get_current_user)):
     return {"date": today_ist.isoformat(), "count": len(birthdays), "birthdays": birthdays}
 
 
+# ---------------------------------------------------------------------------
+# Journey Status: options, bulk update (admin), bulk Antenatal leads
+# ---------------------------------------------------------------------------
+
+@router.get("/journey-state/options")
+async def get_journey_state_options(current_user: dict = Depends(get_current_user)):
+    """Journey Status lists per service (grouped), plus the Log a call options."""
+    return {
+        "states": JOURNEY_STATES,
+        "needs_note": sorted(JS_NEEDS_NOTE),
+        "antenatal_interest": ANTENATAL_INTEREST,
+        "call_outcomes": CALL_OUTCOMES,
+        "not_connected_reasons": NOT_CONNECTED_REASONS,
+    }
+
+
+_JS_COLS = ["Enrollment ID *", "Customer (not uploaded)", "Service (not uploaded)",
+            "Journey Status *", "Others – description", "Remarks (optional)"]
+
+
+@router.get("/journey-state/template")
+async def get_journey_state_template(current_user: dict = Depends(get_current_admin)):
+    """Excel template, pre-filled with every enrollment and its current Journey
+    Status, plus a sheet of the allowed values per service."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Journey Status"
+    write_headers(ws, _JS_COLS)
+    enrs = await Enrollment.find({"is_deleted": False}).sort("-created_at").to_list()
+    for r, e in enumerate(enrs, 2):
+        write_row(ws, r, [e.enrollment_id, e.subscriber_name or e.name, e.service_enrolled,
+                          e.journey_state, e.journey_state_note, None])
+    finalize(ws)
+    wa = wb.create_sheet("Allowed values")
+    write_headers(wa, ["Service", "Group", "Journey Status", "Needs description"])
+    r = 2
+    for svc, groups in JOURNEY_STATES.items():
+        for g, items in groups.items():
+            for it in items:
+                write_row(wa, r, [svc, "Closed (stops the journey)" if g == "Closed" else g, it,
+                                  "Yes" if it in JS_NEEDS_NOTE else ""])
+                r += 1
+    finalize(wa)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return StreamingResponse(
+        out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=journey_status_bulk_update.xlsx"})
+
+
+def _read_upload_rows(content: bytes, filename: str) -> List[dict]:
+    if (filename or "").lower().endswith(".csv"):
+        text = content.decode("utf-8-sig", errors="replace")
+        return [dict(r) for r in csv.DictReader(io.StringIO(text))]
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    ws = wb["Journey Status"] if "Journey Status" in wb.sheetnames else wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    head = [str(h or "").strip() for h in rows[0]]
+    return [{head[i]: v for i, v in enumerate(r) if i < len(head)} for r in rows[1:]]
+
+
+def _cell(row: dict, prefix: str) -> str:
+    for k, v in row.items():
+        if k and str(k).strip().lower().startswith(prefix.lower()):
+            return str(v).strip() if v is not None else ""
+    return ""
+
+
+@router.post("/journey-state/bulk-upload")
+async def bulk_update_journey_state(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_admin),
+):
+    """Update only the Journey Status of many enrollments from Excel/CSV.
+    Never creates Antenatal leads; those are listed for the SPOCs to create."""
+    rows = _read_upload_rows(await file.read(), file.filename or "")
+    updated, unchanged, failed, antenatal = 0, 0, [], []
+    norm = lambda x: re.sub(r"\s*[–-]\s*", " – ", x.strip()).lower()
+    for i, row in enumerate(rows, 2):
+        eid, state = _cell(row, "Enrollment ID"), _cell(row, "Journey Status")
+        note, remarks = _cell(row, "Others"), _cell(row, "Remarks")
+        if not eid and not state:
+            continue
+        if not eid or not state:
+            failed.append({"row": i, "enrollment_id": eid, "error": "Enrollment ID and Journey Status are required"})
+            continue
+        e = await Enrollment.find_one({"enrollment_id": eid, "is_deleted": False})
+        if not e:
+            failed.append({"row": i, "enrollment_id": eid, "error": "Enrollment ID not found"})
+            continue
+        # Accept "-" for "–" and any letter case.
+        state = next((s for s in allowed_states(e) if norm(s) == norm(state)), state)
+        err = js_validate(e, state, note)
+        if err:
+            failed.append({"row": i, "enrollment_id": eid, "error": err})
+            continue
+        if await apply_state(e, state, note, current_user, source="bulk"):
+            if remarks:
+                e.journey_state_history[-1]["remarks"] = remarks
+                await e.save()
+            updated += 1
+        else:
+            unchanged += 1
+        if state == ANTENATAL_INTEREST and not e.converted_to_lead_id:
+            antenatal.append({"enrollment_id": eid, "name": e.subscriber_name or e.name,
+                              "spoc": e.hclhc_spoc})
+    logger.info(f"Journey Status bulk upload by {current_user['email']}: "
+                f"{updated} updated, {unchanged} unchanged, {len(failed)} failed")
+    return {"updated": updated, "unchanged": unchanged, "failed": failed,
+            "antenatal_pending": antenatal}
+
+
+class BulkAntenatalRequest(BaseModel):
+    enrollment_ids: List[str]
+
+
+@router.post("/convert-to-antenatal/bulk")
+async def bulk_convert_to_antenatal(
+    body: BulkAntenatalRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create Antenatal leads for the selected enrollments (each must be
+    'Pregnant – Interested in Antenatal program' and not converted yet)."""
+    created, failed = [], []
+    for eid in body.enrollment_ids[:200]:
+        e = await Enrollment.find_one({"enrollment_id": eid, "is_deleted": False})
+        if not e:
+            failed.append({"enrollment_id": eid, "error": "Not found"})
+            continue
+        if current_user.get("role") == "agent" and not _agent_can_act(e, current_user):
+            failed.append({"enrollment_id": eid, "error": "Not your customer"})
+            continue
+        if e.journey_state != ANTENATAL_INTEREST:
+            failed.append({"enrollment_id": eid, "error": "Journey Status is not 'Interested in Antenatal'"})
+            continue
+        if e.converted_to_lead_id:
+            failed.append({"enrollment_id": eid, "error": f"Already converted to {e.converted_to_lead_id}"})
+            continue
+        lead_id = await _create_antenatal_lead(e, current_user)
+        created.append({"enrollment_id": eid, "lead_id": lead_id})
+    return {"created": created, "failed": failed}
+
+
 @router.get("/{enrollment_id}", response_model=EnrollmentResponse)
 async def get_enrollment(
     enrollment_id: str,
@@ -1777,6 +1962,145 @@ async def add_follow_up(
 
     logger.info(f"Follow-up #{follow_up_number} added to {enrollment_id} by {current_user['email']}")
 
+    return enrollment_to_response(enrollment)
+
+
+class JourneyStateRequest(BaseModel):
+    state: str
+    note: Optional[str] = None
+    create_antenatal_lead: bool = False
+
+
+@router.post("/{enrollment_id}/journey-state")
+async def set_journey_state(
+    enrollment_id: str,
+    body: JourneyStateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Set the Journey Status (SPOC/admin). Closed statuses stop the care journey;
+    an active status after a Closed one reopens it. On screen, choosing
+    "Pregnant – Interested in Antenatal program" can also create the Antenatal lead."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+    err = js_validate(enrollment, body.state, body.note)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    await apply_state(enrollment, body.state, body.note, current_user)
+    lead_id = None
+    if body.create_antenatal_lead and body.state == ANTENATAL_INTEREST and not enrollment.converted_to_lead_id:
+        lead_id = await _create_antenatal_lead(enrollment, current_user)
+    return {"lead_id": lead_id, "enrollment": enrollment_to_response(enrollment)}
+
+
+class LogCallRequest(BaseModel):
+    call_status: str                      # Connected | Not connected
+    outcome: Optional[str] = None         # when Connected
+    reason: Optional[str] = None          # when Not connected (optional)
+    other_text: Optional[str] = Field(None, max_length=500)
+    remarks: Optional[str] = Field(None, max_length=2000)
+    next_date: Optional[datetime] = None
+    step_id: Optional[str] = None         # care step this call completed
+
+
+# New call fields -> the older Connect Status / Action Taken on the record
+_OUTCOME_TO_ACTION = {
+    "Feedback taken": ActionTaken.FEEDBACK_TAKEN,
+    "Appointment booked": ActionTaken.APPOINTMENT_BOOKED,
+    "Liaised with partner team": ActionTaken.LIASONED_WITH_PARTNER,
+    "No action required": ActionTaken.NO_ACTION_REQUIRED,
+}
+
+
+@router.post("/{enrollment_id}/calls")
+async def log_call(
+    enrollment_id: str,
+    body: LogCallRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Log a call: Connected -> outcome, or Not connected -> reason + try-again
+    date. Optionally marks a care step done in the same save (one action)."""
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    if current_user.get("role") == "agent" and not _agent_can_act(enrollment, current_user):
+        raise HTTPException(status_code=403, detail="Only the assigned HCLH SPOC (Nurture Buddy) can log calls")
+    if js_is_closed(enrollment.journey_state) or enrollment.do_not_contact or enrollment.journey_status == "stopped":
+        raise HTTPException(status_code=400, detail="This customer is closed / stopped / Do Not Contact. Reopen before logging a call.")
+
+    connected = body.call_status == CONNECTED
+    if body.call_status not in (CONNECTED, NOT_CONNECTED):
+        raise HTTPException(status_code=400, detail="Choose Connected or Not connected")
+    if connected and body.outcome not in CALL_OUTCOMES:
+        raise HTTPException(status_code=400, detail="Choose the call outcome")
+    if not connected and body.reason and body.reason not in NOT_CONNECTED_REASONS:
+        raise HTTPException(status_code=400, detail="Unknown reason")
+    picked = body.outcome if connected else body.reason
+    other = (body.other_text or "").strip()
+    if picked == "Others" and not other:
+        raise HTTPException(status_code=400, detail="Describe what happened")
+    if (not connected or body.outcome == CALL_BACK) and not body.next_date:
+        raise HTTPException(status_code=400, detail="Choose when to try again" if not connected else "Choose the call-back date")
+    next_date = body.next_date
+    if next_date is not None and next_date.tzinfo is not None:
+        next_date = next_date.astimezone(timezone.utc).replace(tzinfo=None)
+    if next_date is not None and ist_date(next_date) < today_ist():
+        raise HTTPException(status_code=400, detail="The next date can't be in the past")
+
+    now = datetime.utcnow()
+    who = current_user.get("full_name", current_user["email"])
+    step = None
+    if body.step_id:
+        step = next((x for x in (enrollment.journey or []) if x.get("step_id") == body.step_id), None)
+        if not step or step.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="That care step isn't pending any more")
+
+    number = len(enrollment.follow_ups or []) + 1
+    entry = {
+        "follow_up_number": number,
+        "date": now.isoformat(),
+        "call_status": body.call_status,
+        "outcome": body.outcome if connected else None,
+        "reason": body.reason if not connected else None,
+        "other_text": other or None,
+        # Older fields kept filled so existing screens and reports read it too.
+        "connect_status": ConnectStatus.CONNECTED.value if connected else ConnectStatus.NO_RESPONSE.value,
+        "action_taken": _OUTCOME_TO_ACTION[body.outcome].value if connected and body.outcome in _OUTCOME_TO_ACTION else None,
+        "feedback": None,
+        "remarks": (body.remarks or "").strip() or None,
+        "next_follow_up_date": next_date.isoformat() if next_date else None,
+        "step_id": step.get("step_id") if step else None,
+        "step_name": step.get("name") if step else None,
+        "created_by": current_user["user_id"],
+        "created_by_name": who,
+        "created_at": now.isoformat(),
+    }
+    enrollment.follow_ups = (enrollment.follow_ups or []) + [entry]
+    enrollment.connect_status = ConnectStatus(entry["connect_status"])
+    if entry["action_taken"]:
+        enrollment.action_taken = ActionTaken(entry["action_taken"])
+    if next_date:
+        enrollment.next_follow_up_date = next_date
+    if step:
+        step["status"] = "done"
+        step["completed_date"] = now
+        step["completed_by"] = current_user["user_id"]
+        step["completed_by_name"] = who
+        step["completed_via_call"] = number
+    enrollment.updated_at = now
+    await enrollment.save()
+
+    changes = [{"field": f"Follow-up #{number}", "old_value": None, "new_value": "Added"},
+               {"field": "call_result", "old_value": None, "new_value": call_summary(entry)}]
+    if next_date:
+        changes.append({"field": "next_follow_up_date", "old_value": None, "new_value": next_date.isoformat()})
+    if step:
+        changes.append({"field": "care_step_done", "old_value": None, "new_value": step.get("name")})
+    await EnrollmentAuditLog(
+        enrollment_id=enrollment_id,
+        user_id=current_user["user_id"],
+        user_email=current_user["email"],
+        user_name=who,
+        action=EnrollmentAuditAction.FOLLOW_UP_ADDED,
+        changes=changes,
+    ).insert()
     return enrollment_to_response(enrollment)
 
 
@@ -2315,25 +2639,10 @@ async def reclassify_enrollment_journey(
     return enrollment_to_response(enrollment)
 
 
-@router.post("/{enrollment_id}/convert-to-antenatal")
-async def convert_to_antenatal(
-    enrollment_id: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    PreConception -> Antenatal happy path (SPOC/admin): spawn a new pre-filled
-    Antenatal lead (carrying contact details, linked back to this enrollment) and
-    stop the PreConception keep-in-touch loop (reason "Conceived").
-    """
-    enrollment = await _get_enrollment_or_404(enrollment_id)
-    _require_spoc_or_admin(enrollment, current_user)
-
-    if enrollment.converted_to_lead_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Already converted to lead {enrollment.converted_to_lead_id}",
-        )
-
+async def _create_antenatal_lead(enrollment: Enrollment, current_user: dict) -> str:
+    """Spawn a pre-filled Antenatal lead (contact details, same SPOC, linked back
+    to this enrollment), stop the PreConception journey (reason "Conceived") and
+    set Journey Status to "Pregnant – Interested in Antenatal program"."""
     db = get_database()
     new_lead_id = await generate_lead_id(db)
     new_lead = Lead(
@@ -2355,6 +2664,8 @@ async def convert_to_antenatal(
     )
     await new_lead.insert()
 
+    if enrollment.journey_state != ANTENATAL_INTEREST and service_key(enrollment) == "PreConception":
+        await apply_state(enrollment, ANTENATAL_INTEREST, None, current_user)
     # Stop the PreConception keep-in-touch loop, keep history.
     enrollment.journey = stop_journey_steps(enrollment.journey or [])
     enrollment.journey_status = "stopped"
@@ -2365,6 +2676,36 @@ async def convert_to_antenatal(
     enrollment.converted_to_lead_id = new_lead_id
     enrollment.updated_at = datetime.utcnow()
     await enrollment.save()
+    await EnrollmentAuditLog(
+        enrollment_id=enrollment.enrollment_id,
+        user_id=current_user["user_id"],
+        user_email=current_user["email"],
+        user_name=current_user.get("full_name", current_user["email"]),
+        action=EnrollmentAuditAction.UPDATED,
+        changes=[{"field": "converted_to_lead_id", "old_value": None, "new_value": new_lead_id}],
+    ).insert()
+    return new_lead_id
+
+
+@router.post("/{enrollment_id}/convert-to-antenatal")
+async def convert_to_antenatal(
+    enrollment_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    PreConception -> Antenatal happy path (SPOC/admin): spawn a new pre-filled
+    Antenatal lead (carrying contact details, linked back to this enrollment) and
+    stop the PreConception keep-in-touch loop (reason "Conceived").
+    """
+    enrollment = await _get_enrollment_or_404(enrollment_id)
+    _require_spoc_or_admin(enrollment, current_user)
+
+    if enrollment.converted_to_lead_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Already converted to lead {enrollment.converted_to_lead_id}",
+        )
+    new_lead_id = await _create_antenatal_lead(enrollment, current_user)
 
     return {
         "message": f"Created Antenatal lead {new_lead_id} from enrollment {enrollment_id}",

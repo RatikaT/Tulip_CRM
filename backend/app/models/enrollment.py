@@ -3,7 +3,7 @@ Enrollment Model for CRM Enrollment Management
 """
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
-from beanie import Document, Indexed
+from beanie import Document, Indexed, Insert, before_event
 from pydantic import Field, EmailStr, BaseModel
 from enum import Enum
 
@@ -139,6 +139,15 @@ class Enrollment(Document):
     # PreConception -> Antenatal conversion link.
     converted_to_lead_id: Optional[str] = None
 
+    # Journey Status (SPOC-chosen, list per service; see services/journey_state).
+    # "Closed" values stop the care journey. history: [{at, state, note, by,
+    # by_name, source: screen|bulk|preset|new}] for the timeline.
+    journey_state: Optional[str] = None
+    journey_state_note: Optional[str] = None      # text for "… – Others"
+    journey_state_by_name: Optional[str] = None
+    journey_state_at: Optional[datetime] = None
+    journey_state_history: List[Dict[str, Any]] = Field(default_factory=list)
+
     # Assignment
     assigned_to: Optional[str] = None
     assigned_to_name: Optional[str] = None
@@ -152,6 +161,17 @@ class Enrollment(Document):
     created_by_name: Optional[str] = None
     last_modified_by: Optional[str] = None
     is_deleted: bool = False
+
+    @before_event(Insert)
+    def _default_journey_state(self):
+        if self.journey_state is None:
+            from app.services.journey_state import default_state
+            self.journey_state = default_state(self)
+            if self.journey_state:
+                self.journey_state_at = datetime.utcnow()
+                self.journey_state_history = [{"at": self.journey_state_at, "state": self.journey_state,
+                                               "note": None, "by": None, "by_name": "Set by system",
+                                               "source": "new"}]
 
     class Settings:
         name = "enrollments"

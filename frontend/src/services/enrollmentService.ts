@@ -12,6 +12,9 @@ import {
   AddServiceRequest,
   CustomerServicesResponse,
   BirthdaysTodayResponse,
+  JourneyStateOptions,
+  LogCallRequest,
+  JourneyStateBulkResult,
 } from '../types/enrollment.types';
 
 export interface EnrollmentQueryParams {
@@ -32,6 +35,8 @@ export interface EnrollmentQueryParams {
   my_role?: 'following_up' | 'enrolled';
   follow_ups_due?: 'all' | 'today' | 'overdue';
   stopped_or_dnc?: boolean;
+  journey_state?: string[];
+  antenatal_pending?: boolean;
 }
 
 export const enrollmentService = {
@@ -69,6 +74,45 @@ export const enrollmentService = {
 
   addFollowUp: async (enrollmentId: string, data: FollowUpCreateRequest): Promise<Enrollment> => {
     const response = await api.post<Enrollment>(`/enrollments/${enrollmentId}/follow-ups`, data);
+    return response.data;
+  },
+
+  journeyStateOptions: async (): Promise<JourneyStateOptions> => {
+    const response = await api.get<JourneyStateOptions>('/enrollments/journey-state/options');
+    return response.data;
+  },
+
+  setJourneyState: async (
+    enrollmentId: string,
+    body: { state: string; note?: string; create_antenatal_lead?: boolean },
+  ): Promise<{ lead_id: string | null; enrollment: Enrollment }> => {
+    const response = await api.post(`/enrollments/${enrollmentId}/journey-state`, body);
+    return response.data;
+  },
+
+  logCall: async (enrollmentId: string, body: LogCallRequest): Promise<Enrollment> => {
+    const response = await api.post<Enrollment>(`/enrollments/${enrollmentId}/calls`, body);
+    return response.data;
+  },
+
+  journeyStateTemplate: async (): Promise<Blob> => {
+    const response = await api.get('/enrollments/journey-state/template', { responseType: 'blob' });
+    return response.data;
+  },
+
+  journeyStateBulkUpload: async (file: File): Promise<JourneyStateBulkResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<JourneyStateBulkResult>('/enrollments/journey-state/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  bulkCreateAntenatalLeads: async (
+    enrollmentIds: string[],
+  ): Promise<{ created: { enrollment_id: string; lead_id: string }[]; failed: { enrollment_id: string; error: string }[] }> => {
+    const response = await api.post('/enrollments/convert-to-antenatal/bulk', { enrollment_ids: enrollmentIds });
     return response.data;
   },
 

@@ -31,8 +31,9 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  ListSubheader,
 } from '@mui/material';
-import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
+import { DataGrid, GridColDef, GridRenderCellParams, GridRowSelectionModel } from '@mui/x-data-grid';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -62,11 +63,13 @@ import type { UserGroupsResponse } from '../services/leadService';
 import {
   Enrollment,
   EnrollmentStatsResponse,
+  JourneyStateOptions,
 } from '../types/enrollment.types';
 import { useDropdownOptions } from '../hooks/useDropdownOptions';
 import EnrollmentViewModal from '../components/enrollments/EnrollmentViewModal';
 import EnrollmentCreateModal from '../components/enrollments/EnrollmentCreateModal';
 import BulkUploadModal from '../components/enrollments/BulkUploadModal';
+import JourneyStatusBulkModal from '../components/enrollments/JourneyStatusBulkModal';
 import api from '../services/api';
 import { brandColors } from '../theme';
 import { loadPersistedFilters, savePersistedFilters, toDateOrNull, dateToIso } from '../utils/filterPersistence';
@@ -147,6 +150,8 @@ const ExpandableCell = ({ value }: { value: string | null }) => {
   );
 };
 
+const ANTENATAL_PENDING = '__antenatal_pending';
+
 export default function EnrollmentsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -186,6 +191,12 @@ export default function EnrollmentsPage() {
   const [uhidFilter, setUhidFilter] = useState<string[]>((savedEnrollmentFilters.uhidFilter as string[]) ?? []);
   const [hclhcSpocFilter, setHclhcSpocFilter] = useState<string>((savedEnrollmentFilters.hclhcSpocFilter as string) ?? '');
   const [myRoleFilter, setMyRoleFilter] = useState<'' | 'following_up' | 'enrolled'>((savedEnrollmentFilters.myRoleFilter as '' | 'following_up' | 'enrolled') ?? '');
+  // Journey Status filter: '' | a status | ANTENATAL_PENDING
+  const [journeyStateFilter, setJourneyStateFilter] = useState<string>((savedEnrollmentFilters.journeyStateFilter as string) ?? '');
+  const [jsOptions, setJsOptions] = useState<JourneyStateOptions | null>(null);
+  const [jsBulkOpen, setJsBulkOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<GridRowSelectionModel>([]);
+  const [creatingLeads, setCreatingLeads] = useState(false);
 
   // Debounce search input → searchTerm (350ms)
   useEffect(() => {
@@ -202,7 +213,7 @@ export default function EnrollmentsPage() {
   const [tulipUsers, setTulipUsers] = useState<UserOption[]>([]);
 
   // Check if any filter is active
-  const hasActiveFilters = connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || assignedTodayFilter || (user?.role === 'agent' && !!myRoleFilter);
+  const hasActiveFilters = !!journeyStateFilter || connectStatusFilter.length > 0 || actionTakenFilter.length > 0 || servicePartnerFilter.length > 0 || serviceEnrolledFilter.length > 0 || packageFilter || uhidFilter.length > 0 || hclhcSpocFilter || createdDateFrom || createdDateTo || nextFollowUpDateFilter || assignedTodayFilter || (user?.role === 'agent' && !!myRoleFilter);
 
   // Get total number of active filter values
   const activeFilterCount = connectStatusFilter.length + actionTakenFilter.length + servicePartnerFilter.length + serviceEnrolledFilter.length + (packageFilter ? 1 : 0) + uhidFilter.length + (hclhcSpocFilter ? 1 : 0) + (createdDateFrom || createdDateTo ? 1 : 0) + (nextFollowUpDateFilter ? 1 : 0) + (assignedTodayFilter ? 1 : 0) + (user?.role === 'agent' && myRoleFilter ? 1 : 0);
@@ -229,13 +240,13 @@ export default function EnrollmentsPage() {
   useEffect(() => {
     savePersistedFilters(ENROLLMENTS_FILTERS_KEY, {
       searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter,
-      hclhcSpocFilter, myRoleFilter,
+      hclhcSpocFilter, myRoleFilter, journeyStateFilter,
       createdDateFrom: dateToIso(createdDateFrom),
       createdDateTo: dateToIso(createdDateTo),
       nextFollowUpDateFilter: dateToIso(nextFollowUpDateFilter),
       assignedTodayFilter, activeKpi, viewMode,
     });
-  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi, viewMode]);
+  }, [searchInput, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, journeyStateFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi, viewMode]);
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
 
   // The colour filter was removed (the Follow-ups / New-Assigned cards cover it
@@ -313,6 +324,8 @@ export default function EnrollmentsPage() {
     follow_ups_due: ({ follow_up_today: 'all', follow_up_due_today: 'today', follow_up_overdue: 'overdue' } as const)[
       activeKpi as 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue'] ?? undefined,
     stopped_or_dnc: activeKpi === 'stopped_or_dnc' || undefined,
+    journey_state: journeyStateFilter && journeyStateFilter !== ANTENATAL_PENDING ? [journeyStateFilter] : undefined,
+    antenatal_pending: journeyStateFilter === ANTENATAL_PENDING || undefined,
   });
 
   const fetchEnrollments = useCallback(async () => {
@@ -338,12 +351,12 @@ export default function EnrollmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [paginationModel, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, journeyStateFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   // Reset to page 0 whenever filters/search change so user isn't stranded on a now-empty page
   useEffect(() => {
     setPaginationModel(prev => prev.page === 0 ? prev : { ...prev, page: 0 });
-  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
+  }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, journeyStateFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter]);
 
   useEffect(() => {
     fetchEnrollments();
@@ -361,11 +374,11 @@ export default function EnrollmentsPage() {
     } finally {
       setGroupsLoading(false);
     }
-  }, [viewMode, isAdmin, groupPage, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
+  }, [viewMode, isAdmin, groupPage, searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, journeyStateFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
 
   useEffect(() => { fetchUserGroups(); }, [fetchUserGroups]);
   // Back to the first page of groups whenever the filters change
-  useEffect(() => { setGroupPage(1); }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
+  useEffect(() => { setGroupPage(1); }, [searchTerm, connectStatusFilter, actionTakenFilter, servicePartnerFilter, serviceEnrolledFilter, packageFilter, uhidFilter, hclhcSpocFilter, myRoleFilter, journeyStateFilter, createdDateFrom, createdDateTo, nextFollowUpDateFilter, assignedTodayFilter, activeKpi]);
 
   // Fetch users tagged for Tulip CRM for HCLH SPOC (Nurture Buddy) dropdown
   useEffect(() => {
@@ -437,6 +450,31 @@ export default function EnrollmentsPage() {
     setDeleteTargetEnrollment(null);
   };
 
+  useEffect(() => {
+    enrollmentService.journeyStateOptions().then(setJsOptions).catch(() => setJsOptions(null));
+  }, []);
+  const antenatalPendingView = journeyStateFilter === ANTENATAL_PENDING;
+  useEffect(() => { setSelectedIds([]); }, [journeyStateFilter, paginationModel]);
+
+  const handleCreateAntenatalLeads = async () => {
+    const ids = enrollments.filter((e) => selectedIds.includes(e.id)).map((e) => e.enrollment_id);
+    if (!ids.length) return;
+    if (!window.confirm(`Create ${ids.length} Antenatal lead${ids.length === 1 ? '' : 's'}? Each copies the customer's details, is assigned to the same SPOC and closes the PreConception journey.`)) return;
+    setCreatingLeads(true);
+    try {
+      const res = await enrollmentService.bulkCreateAntenatalLeads(ids);
+      if (res.created.length) toast.success(`${res.created.length} Antenatal lead${res.created.length === 1 ? '' : 's'} created`);
+      res.failed.forEach((f) => toast.error(`${f.enrollment_id}: ${f.error}`));
+      setSelectedIds([]);
+      fetchEnrollments();
+      fetchStats();
+    } catch (e) {
+      toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create the leads');
+    } finally {
+      setCreatingLeads(false);
+    }
+  };
+
   const clearAllFilters = () => {
     setConnectStatusFilter([]);
     setActionTakenFilter([]);
@@ -446,6 +484,7 @@ export default function EnrollmentsPage() {
     setUhidFilter([]);
     setHclhcSpocFilter('');
     setMyRoleFilter('');
+    setJourneyStateFilter('');
     setCreatedDateFrom(null);
     setCreatedDateTo(null);
     setNextFollowUpDateFilter(null);
@@ -728,6 +767,24 @@ export default function EnrollmentsPage() {
       renderCell: (params: GridRenderCellParams) => <ExpandableCell value={params.value} />,
     },
     {
+      field: 'journey_state_label',
+      headerName: 'Journey Status',
+      flex: 1.3,
+      minWidth: 150,
+      renderCell: (params: GridRenderCellParams) => {
+        const e = params.row as Enrollment;
+        if (!e.journey_state) return '-';
+        const color = e.journey_state_closed ? '#6b7280'
+          : e.journey_state === jsOptions?.antenatal_interest ? '#137a4b'
+          : /No response/i.test(e.journey_state) ? '#a15c00' : '#1e4088';
+        return (
+          <Tooltip title={e.converted_to_lead_id ? `${params.value} · lead ${e.converted_to_lead_id}` : (params.value as string)}>
+            <Chip label={params.value} size="small" sx={{ ...softChipSx(color), maxWidth: '100%' }} />
+          </Tooltip>
+        );
+      },
+    },
+    {
       field: 'connect_status',
       headerName: 'Connect Status',
       flex: 1,
@@ -974,6 +1031,16 @@ export default function EnrollmentsPage() {
                 </Button>
               </span>
             </Tooltip>
+          )}
+          {isAdmin && (
+            <Button
+              variant="outlined"
+              startIcon={<UploadIcon />}
+              onClick={() => setJsBulkOpen(true)}
+              size="small"
+            >
+              Bulk update Journey Status
+            </Button>
           )}
           {isAdmin && (
             <Button
@@ -1396,6 +1463,28 @@ export default function EnrollmentsPage() {
                   isOptionEqualToValue={(option, value) => option.id === value.id}
                 />
 
+                {/* Journey Status */}
+                <TextField
+                  select
+                  size="small"
+                  label="Journey Status"
+                  value={journeyStateFilter}
+                  onChange={(e) => setJourneyStateFilter(e.target.value)}
+                  sx={{ ...compactInputSx, width: 190 }}
+                  SelectProps={{ MenuProps: { PaperProps: { sx: { maxHeight: 420 } } } }}
+                >
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value={ANTENATAL_PENDING} sx={{ fontWeight: 600, color: '#137a4b' }}>
+                    Interested in Antenatal – lead not created
+                  </MenuItem>
+                  {Object.entries(jsOptions?.states || {}).flatMap(([svc, groups]) => [
+                    <ListSubheader key={`h-${svc}`}>{svc}</ListSubheader>,
+                    ...Object.values(groups).flat().map((st) => (
+                      <MenuItem key={`${svc}-${st}`} value={st} sx={{ fontSize: '0.8rem' }}>{st}</MenuItem>
+                    )),
+                  ])}
+                </TextField>
+
                 {/* Created Date Range */}
                 <DatePicker
                   label="Created From"
@@ -1685,6 +1774,23 @@ export default function EnrollmentsPage() {
         </Paper>
       </LocalizationProvider>
 
+      {viewMode === 'all' && antenatalPendingView && (
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', bgcolor: '#e2f4ea', borderColor: '#b7e1c8' }}>
+          <Typography variant="body2" sx={{ flex: 1, minWidth: 220 }}>
+            <b>Interested in Antenatal – lead not created.</b> Tick the customers whose Antenatal lead should be created now.
+          </Typography>
+          <Button
+            variant="contained"
+            color="success"
+            size="small"
+            disabled={!selectedIds.length || creatingLeads}
+            onClick={handleCreateAntenatalLeads}
+          >
+            {creatingLeads ? 'Creating…' : `Create Antenatal leads (${selectedIds.length})`}
+          </Button>
+        </Paper>
+      )}
+
       {/* Data Grid - All Enrollments View */}
       {viewMode === 'all' && (
         <Paper
@@ -1709,6 +1815,9 @@ export default function EnrollmentsPage() {
             paginationMode="server"
             onPaginationModelChange={setPaginationModel}
             getRowId={(row) => row.id}
+            checkboxSelection={antenatalPendingView}
+            rowSelectionModel={selectedIds}
+            onRowSelectionModelChange={setSelectedIds}
             disableRowSelectionOnClick
             disableColumnMenu
             columnHeaderHeight={48}
@@ -1719,7 +1828,11 @@ export default function EnrollmentsPage() {
                 classes.push('row-even');
               }
               // Only highlight for agents (non-admins)
-              if (!isAdmin && shouldHighlightForAgent(params.row as Enrollment)) {
+              const row = params.row as Enrollment;
+              // Closed / stopped / paused / DNC: greyed out, not to be followed up
+              if (row.journey_state_closed || row.journey_status !== 'active' || row.do_not_contact) {
+                classes.push('row-closed');
+              } else if (!isAdmin && shouldHighlightForAgent(row)) {
                 classes.push('highlight-row');
               }
               return classes.join(' ');
@@ -1777,6 +1890,11 @@ export default function EnrollmentsPage() {
               },
               '& .MuiDataGrid-virtualScroller': {
                 backgroundColor: '#fff',
+              },
+              '& .MuiDataGrid-row.row-closed': {
+                backgroundColor: '#eceef2',
+                color: '#6b7280',
+                boxShadow: 'inset 4px 0 0 #9ca3af',
               },
               // Yellow highlight for agent priority rows
               '& .MuiDataGrid-row.highlight-row': {
@@ -2011,6 +2129,13 @@ export default function EnrollmentsPage() {
           onSuccess={handleUpdateSuccess}
         />
       )}
+
+      <JourneyStatusBulkModal
+        open={jsBulkOpen}
+        onClose={() => setJsBulkOpen(false)}
+        onDone={() => { fetchEnrollments(); fetchStats(); }}
+        onShowAntenatalPending={() => { setViewMode('all'); setJourneyStateFilter(ANTENATAL_PENDING); }}
+      />
 
       {/* Bulk Upload Modal */}
       {isAdmin && (

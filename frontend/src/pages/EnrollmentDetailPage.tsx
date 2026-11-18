@@ -23,26 +23,22 @@ import {
   ArrowBack as ArrowBackIcon,
   ExpandMore as ExpandMoreIcon,
   Save as SaveIcon,
-  Add as AddIcon,
 } from '@mui/icons-material';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { startOfDay } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useAuthStore } from '../stores/authStore';
-import CareJourneyPanel from '../components/enrollments/CareJourneyPanel';
+import CareFollowUpTab from '../components/enrollments/CareFollowUpTab';
+import JourneyStatusControl, { JourneyStatusBanner } from '../components/enrollments/JourneyStatusControl';
 import CustomerServicesSection from '../components/enrollments/CustomerServicesSection';
-import { toISTForPicker, fromISTPickerToUTC, formatDateIST, formatFullDateTimeIST, istDateKey, todayISTKey } from '../utils/dateUtils';
+import { formatDateIST, formatFullDateTimeIST } from '../utils/dateUtils';
 import { enrollmentService } from '../services/enrollmentService';
 import {
   Enrollment,
   EnrollmentUpdateRequest,
-  FollowUpEntry,
   EnrollmentAuditLogEntry,
-  ConnectStatus,
-  ActionTaken,
+  JourneyStateOptions,
 } from '../types/enrollment.types';
 import { PARTNER_CENTER_OPTIONS } from '../types/lead.types';
 import { useDropdownOptions } from '../hooks/useDropdownOptions';
@@ -70,13 +66,6 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
-const connectStatusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  'Connected': 'success',
-  'No Response': 'warning',
-  'Follow Up Required': 'primary',
-  'Others': 'default',
-};
-
 // Styling for disabled/read-only fields
 const disabledFieldSx = {
   '& .MuiInputBase-input.Mui-disabled': {
@@ -103,8 +92,6 @@ export default function EnrollmentDetailPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-  const { options: connectStatusOptions } = useDropdownOptions('connect_status');
-  const { options: actionTakenOptions } = useDropdownOptions('action_taken');
   const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
   const { options: trimesterOptions } = useDropdownOptions('trimester');
   const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
@@ -123,19 +110,10 @@ export default function EnrollmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const [auditTrail, setAuditTrail] = useState<EnrollmentAuditLogEntry[]>([]);
+  const [jsOptions, setJsOptions] = useState<JourneyStateOptions | null>(null);
 
   // Form state for editable fields
   const [formData, setFormData] = useState<Partial<EnrollmentUpdateRequest>>({});
-
-  // New follow-up state
-  const [addingFollowUp, setAddingFollowUp] = useState(false);
-  const [newFollowUp, setNewFollowUp] = useState<{
-    connect_status?: ConnectStatus;
-    action_taken?: ActionTaken;
-    feedback?: string;
-    remarks?: string;
-    follow_up_date?: string;
-  }>({});
 
   // Expanded accordions
   const [expandedSections, setExpandedSections] = useState<string[]>([
@@ -169,15 +147,36 @@ export default function EnrollmentDetailPage() {
     }
   }, [enrollmentId]);
 
+  useEffect(() => {
+    enrollmentService.journeyStateOptions().then(setJsOptions).catch(() => setJsOptions(null));
+  }, []);
+
   // Fetch audit trail when admin clicks on audit trail tab
   useEffect(() => {
-    if (tabValue === 2 && isAdmin && enrollmentId && auditTrail.length === 0) {
+    if (tabValue === 1 && isAdmin && enrollmentId && auditTrail.length === 0) {
       fetchAuditTrail();
     }
   }, [tabValue, isAdmin, enrollmentId]);
 
-  const fetchEnrollment = async () => {
+  // quiet: refresh after an action without the page spinner, keeping unsaved
+  // edits but taking the fields the action itself changed.
+  const fetchEnrollment = async (quiet = false) => {
     if (!enrollmentId) return;
+    if (quiet) {
+      try {
+        const data = await enrollmentService.getEnrollment(enrollmentId);
+        setEnrollment(data);
+        setFormData((prev) => ({
+          ...prev,
+          connect_status: data.connect_status || undefined,
+          action_taken: data.action_taken || undefined,
+          next_follow_up_date: data.next_follow_up_date || undefined,
+        }));
+      } catch (err) {
+        console.error('Failed to refresh enrollment:', err);
+      }
+      return;
+    }
     setLoading(true);
     try {
       const data = await enrollmentService.getEnrollment(enrollmentId);
@@ -242,7 +241,7 @@ export default function EnrollmentDetailPage() {
       // Refresh audit trail if admin
       if (isAdmin) {
         setAuditTrail([]);
-        if (tabValue === 2) {
+        if (tabValue === 1) {
           fetchAuditTrail();
         }
       }
@@ -254,47 +253,16 @@ export default function EnrollmentDetailPage() {
     }
   };
 
-  const handleAddFollowUp = async () => {
-    if (!enrollmentId) return;
-
-    // Validate next follow-up date is not in the past
-    if (newFollowUp.follow_up_date) {
-      const selectedDate = istDateKey(newFollowUp.follow_up_date);
-      if (selectedDate && selectedDate < todayISTKey()) {
-        toast.error('Cannot select a past date for follow-up');
-        return;
-      }
-    }
-
-    setAddingFollowUp(true);
-    try {
-      await enrollmentService.addFollowUp(enrollmentId, newFollowUp);
-      toast.success('Follow-up added successfully');
-      setNewFollowUp({});
-      fetchEnrollment();
-      // Refresh audit trail if admin
-      if (isAdmin) {
-        setAuditTrail([]);
-      }
-    } catch (err) {
-      console.error('Failed to add follow-up:', err);
-      toast.error('Failed to add follow-up');
-    } finally {
-      setAddingFollowUp(false);
-    }
+  // After a call / status / step change: reload, and drop the cached audit trail.
+  const refreshAfterAction = () => {
+    fetchEnrollment(true);
+    if (isAdmin) setAuditTrail([]);
   };
 
   const handleAccordionChange = (panel: string) => (_: React.SyntheticEvent, isExpanded: boolean) => {
     setExpandedSections((prev) =>
       isExpanded ? [...prev, panel] : prev.filter((p) => p !== panel)
     );
-  };
-
-  // Check if a follow-up date is in the past
-  const isFollowUpPast = (dateStr: string | null | undefined): boolean => {
-    if (!dateStr) return false;
-    const followUpDate = istDateKey(dateStr);
-    return !!followUpDate && followUpDate < todayISTKey();
   };
 
   // Permission-based field editing
@@ -391,31 +359,15 @@ export default function EnrollmentDetailPage() {
             </Grid>
             <Grid item xs={12} md={3}>
               <Typography variant="caption" color="text.secondary">
-                Connect Status
+                Journey Status
               </Typography>
               <Box>
-                {isAdmin ? (
-                  <TextField
-                    select
-                    size="small"
-                    value={formData.connect_status || ''}
-                    onChange={(e) => handleInputChange('connect_status', e.target.value as ConnectStatus)}
-                    sx={{ minWidth: 180 }}
-                  >
-                    <MenuItem value="">Select Status</MenuItem>
-                    {connectStatusOptions.map((option) => (
-                      <MenuItem key={option} value={option}>
-                        {option}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                ) : (
-                  <Chip
-                    label={enrollment.connect_status || 'Not Set'}
-                    color={connectStatusColors[enrollment.connect_status || ''] || 'default'}
-                    size="small"
-                  />
-                )}
+                <JourneyStatusControl
+                  enrollment={enrollment}
+                  options={jsOptions}
+                  canEdit={canEditJourney}
+                  onChanged={refreshAfterAction}
+                />
               </Box>
             </Grid>
             <Grid item xs={12} md={3}>
@@ -427,6 +379,12 @@ export default function EnrollmentDetailPage() {
               </Typography>
             </Grid>
           </Grid>
+          <JourneyStatusBanner
+            enrollment={enrollment}
+            options={jsOptions}
+            canEdit={canEditJourney}
+            onChanged={refreshAfterAction}
+          />
           {enrollment.linked_lead_id && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="caption" color="text.secondary">
@@ -793,276 +751,51 @@ export default function EnrollmentDetailPage() {
             onChange={(_, newValue) => setTabValue(newValue)}
             sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}
           >
-            <Tab label="Follow-ups" />
-            <Tab label="Remarks & Feedback" />
-            <Tab label={`Care Journey (${enrollment?.journey?.length || 0})`} />
+            <Tab label="Care & Follow-up" />
             {isAdmin && <Tab label="Audit Trail" />}
           </Tabs>
 
-          {/* Follow-ups Tab */}
+          {/* Care & Follow-up: next up, Log a call, pinned notes, care journey, timeline */}
           <TabPanel value={tabValue} index={0}>
             <Box sx={{ px: 2 }}>
-              {/* Add Follow-up Section */}
-              <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: '#f8f9fa' }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
-                  Add New Follow-up
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <TextField
-                      select
-                      fullWidth
-                      label="Connect Status"
-                      value={newFollowUp.connect_status || ''}
-                      onChange={(e) =>
-                        setNewFollowUp({ ...newFollowUp, connect_status: e.target.value as ConnectStatus })
-                      }
-                      size="small"
-                    >
-                      <MenuItem value="">Select Status</MenuItem>
-                      {connectStatusOptions.map((option) => (
-                        <MenuItem key={option} value={option}>
-                          {option}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+              <CareFollowUpTab
+                enrollment={enrollment}
+                options={jsOptions}
+                canEdit={canEditJourney}
+                onChanged={refreshAfterAction}
+                pinnedNotes={
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        fullWidth
+                        label="Customer Feedback"
+                        value={formData.customer_feedback || ''}
+                        onChange={(e) => handleInputChange('customer_feedback', e.target.value)}
+                        disabled={!canEdit('customer_feedback')}
+                        multiline
+                        minRows={2}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        fullWidth
+                        label="Remarks"
+                        value={formData.remarks || ''}
+                        onChange={(e) => handleInputChange('remarks', e.target.value)}
+                        disabled={!canEdit('remarks')}
+                        multiline
+                        minRows={2}
+                      />
+                    </Grid>
                   </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <TextField
-                      select
-                      fullWidth
-                      label="Action Taken"
-                      value={newFollowUp.action_taken || ''}
-                      onChange={(e) =>
-                        setNewFollowUp({ ...newFollowUp, action_taken: e.target.value as ActionTaken })
-                      }
-                      size="small"
-                    >
-                      <MenuItem value="">Select Action</MenuItem>
-                      {actionTakenOptions.map((option) => (
-                        <MenuItem key={option} value={option}>
-                          {option}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <DateTimePicker
-                      label="Next Follow-up Due (IST)"
-                      value={toISTForPicker(newFollowUp.follow_up_date)}
-                      onChange={(date) => {
-                        if (date && startOfDay(date) < startOfDay(new Date())) {
-                          toast.error('Cannot select a past date for follow-up');
-                          return;
-                        }
-                        setNewFollowUp({ ...newFollowUp, follow_up_date: fromISTPickerToUTC(date) || undefined });
-                      }}
-                      minDateTime={new Date()}
-                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={3}>
-                    <Button
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      onClick={handleAddFollowUp}
-                      disabled={addingFollowUp}
-                      sx={{ height: 40 }}
-                    >
-                      {addingFollowUp ? 'Adding...' : 'Add Follow-up'}
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Feedback"
-                      value={newFollowUp.feedback || ''}
-                      onChange={(e) => setNewFollowUp({ ...newFollowUp, feedback: e.target.value })}
-                      size="small"
-                      multiline
-                      rows={2}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Remarks"
-                      value={newFollowUp.remarks || ''}
-                      onChange={(e) => setNewFollowUp({ ...newFollowUp, remarks: e.target.value })}
-                      size="small"
-                      multiline
-                      rows={2}
-                    />
-                  </Grid>
-                </Grid>
-              </Paper>
-
-              {/* Current Status Display */}
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                  Current Status
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={6} sm={3}>
-                    <Typography variant="caption" color="text.secondary">
-                      Connect Status
-                    </Typography>
-                    <Typography>
-                      {enrollment.connect_status || '-'}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6} sm={3}>
-                    <Typography variant="caption" color="text.secondary">
-                      Action Taken
-                    </Typography>
-                    <Typography>
-                      {enrollment.action_taken || '-'}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6} sm={3}>
-                    <Typography variant="caption" color="text.secondary">
-                      Next Follow-up Due
-                    </Typography>
-                    <Typography>
-                      {formatFullDateTimeIST(enrollment.next_follow_up_date)}
-                    </Typography>
-                  </Grid>
-                </Grid>
-              </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              {/* Follow-up History */}
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
-                Follow-up History ({enrollment.follow_ups?.length || 0})
-              </Typography>
-
-              {enrollment.follow_ups && enrollment.follow_ups.length > 0 ? (
-                [...enrollment.follow_ups].reverse().map((followUp: FollowUpEntry, index: number) => {
-                  const isPast = isFollowUpPast(followUp.date);
-                  return (
-                    <Paper
-                      key={index}
-                      variant="outlined"
-                      sx={{
-                        p: 2,
-                        mb: 2,
-                        bgcolor: isPast ? '#f5f5f5' : 'inherit',
-                        opacity: isPast ? 0.7 : 1,
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                        <Typography variant="subtitle2" fontWeight={600}>
-                          Follow-up #{followUp.follow_up_number}
-                          {isPast && (
-                            <Chip label="Past" size="small" sx={{ ml: 1 }} color="default" />
-                          )}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatFullDateTimeIST(followUp.created_at)}
-                        </Typography>
-                      </Box>
-                      <Grid container spacing={2}>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="text.secondary">
-                            Connect Status
-                          </Typography>
-                          <Typography variant="body2">{followUp.connect_status || '-'}</Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="text.secondary">
-                            Action Taken
-                          </Typography>
-                          <Typography variant="body2">{followUp.action_taken || '-'}</Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="text.secondary">
-                            Date
-                          </Typography>
-                          <Typography variant="body2">
-                            {formatFullDateTimeIST(followUp.date)}
-                          </Typography>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Typography variant="caption" color="text.secondary">
-                            Created By
-                          </Typography>
-                          <Typography variant="body2">{followUp.created_by_name || '-'}</Typography>
-                        </Grid>
-                        {followUp.feedback && (
-                          <Grid item xs={12} sm={6}>
-                            <Typography variant="caption" color="text.secondary">
-                              Feedback
-                            </Typography>
-                            <Typography variant="body2">{followUp.feedback}</Typography>
-                          </Grid>
-                        )}
-                        {followUp.remarks && (
-                          <Grid item xs={12} sm={6}>
-                            <Typography variant="caption" color="text.secondary">
-                              Remarks
-                            </Typography>
-                            <Typography variant="body2">{followUp.remarks}</Typography>
-                          </Grid>
-                        )}
-                      </Grid>
-                    </Paper>
-                  );
-                })
-              ) : (
-                <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-                  No follow-ups recorded yet
-                </Typography>
-              )}
-            </Box>
-          </TabPanel>
-
-          {/* Remarks & Feedback Tab */}
-          <TabPanel value={tabValue} index={1}>
-            <Box sx={{ px: 2 }}>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Customer Feedback"
-                    value={formData.customer_feedback || ''}
-                    onChange={(e) => handleInputChange('customer_feedback', e.target.value)}
-                    disabled={!canEdit('customer_feedback')}
-                    multiline
-                    rows={4}
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Remarks"
-                    value={formData.remarks || ''}
-                    onChange={(e) => handleInputChange('remarks', e.target.value)}
-                    disabled={!canEdit('remarks')}
-                    multiline
-                    rows={4}
-                  />
-                </Grid>
-              </Grid>
-            </Box>
-          </TabPanel>
-
-          {/* Care Journey Tab */}
-          <TabPanel value={tabValue} index={2}>
-            <Box sx={{ px: 2 }}>
-              {enrollment && (
-                <CareJourneyPanel
-                  enrollment={enrollment}
-                  canEdit={canEditJourney}
-                  onChanged={fetchEnrollment}
-                />
-              )}
+                }
+              />
             </Box>
           </TabPanel>
 
           {/* Audit Trail Tab (Admin only) */}
           {isAdmin && (
-            <TabPanel value={tabValue} index={3}>
+            <TabPanel value={tabValue} index={1}>
               <Box sx={{ px: 2 }}>
                 {auditTrail.length > 0 ? (
                   auditTrail.map((log, index) => (
