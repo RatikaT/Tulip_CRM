@@ -1726,8 +1726,8 @@ async def export_follow_up_sheet(
     if sd != ed:
         cell(1, 3, fmt(ed))
     row = 3
-    for title, part, label in (("Leads (Follow up-In Process & Follow up-No Response)", rep["leads"], "SPOC Name"),
-                               ("Enrollments (active care journeys)", rep["enrollments"], "Nurture Buddy")):
+    for title, part, label, is_lead in (("Leads (follow-ups: Follow up-In Process & Follow up-No Response)", rep["leads"], "SPOC Name", True),
+                                        ("Enrollments (active care journeys)", rep["enrollments"], "Nurture Buddy", False)):
         ws.cell(row=row, column=1, value=title).font = Font(bold=True, size=12)
         row += 1
         cell(row, 1, label, b=True, fill=head_fill)
@@ -1736,41 +1736,51 @@ async def export_follow_up_sheet(
         cell(row, 4, "Due", b=True, fill=head_fill, merge_to=5)
         cell(row, 6, f"Future (1 week: {fmt(date.fromisoformat(rep['future_from']))} to {fmt(date.fromisoformat(rep['future_to']))})",
              b=True, fill=head_fill, merge_to=7)
+        extra_fill = PatternFill("solid", fgColor="E2F4EA")
+        if is_lead:
+            cell(row, 8, "New leads assigned", b=True, fill=extra_fill, merge_to=9)
+            cell(row, 10, "Other leads worked", b=True, fill=extra_fill)
+        else:
+            cell(row, 8, "Other customers worked", b=True, fill=extra_fill)
         row += 1
-        for c, h in enumerate(["Total Overdue", "Actioned Overdue", "Total Due", "Actioned Due",
-                               "Total Future follow up", "Actioned Future follow up"], 2):
-            cell(row, c, h, b=True, fill=head_fill)
+        subs = ["Total Overdue", "Actioned Overdue", "Total Due", "Actioned Due",
+                "Total Future follow up", "Actioned Future follow up"]
+        subs += ["Total New", "Actioned New", "Worked on, not due"] if is_lead else ["Worked on, not due"]
+        for c, h in enumerate(subs, 2):
+            cell(row, c, h, b=True, fill=head_fill if c <= 7 else extra_fill)
         row += 1
+
+        def vals(cs):
+            v = [cs["overdue"][0], cs["overdue"][1], cs["due"][0], cs["due"][1], cs["future"][0], cs["future"][1]]
+            return v + ([cs["new"][0], cs["new"][1], cs["other"][0]] if is_lead else [cs["other"][0]])
         for r in part["rows"]:
-            cs = r["counts"]
             cell(row, 1, r["name"], b=True)
-            for c, v in enumerate([cs["overdue"][0], cs["overdue"][1], cs["due"][0], cs["due"][1],
-                                   cs["future"][0], cs["future"][1]], 2):
+            for c, v in enumerate(vals(r["counts"]), 2):
                 cell(row, c, v)
             row += 1
-        t = part["totals"]
         cell(row, 1, "Total", b=True)
-        for c, v in enumerate([t["overdue"][0], t["overdue"][1], t["due"][0], t["due"][1],
-                               t["future"][0], t["future"][1]], 2):
+        for c, v in enumerate(vals(part["totals"]), 2):
             cell(row, c, v, b=True)
         row += 3
     ws.column_dimensions["A"].width = 30
-    for col in "BCDEFG":
+    for col in "BCDEFGHIJ":
         ws.column_dimensions[col].width = 18
 
-    B = {"overdue": "Overdue", "due": "Due", "future": "Future"}
+    B = {"overdue": "Overdue", "due": "Due", "future": "Future", "new": "New lead assigned",
+         "other": "Other worked (not due)"}
     ws_l = wb.create_sheet("Leads detail")
     write_headers(ws_l, ["SPOC", "Lead ID", "Customer", "Status at start", "Status now", "Follow-up date",
-                         "Bucket", "Actioned?", "What was done", "Done by", "When (IST)"])
+                         "Bucket", "Why on the list", "Actioned?", "What was done", "Done by", "When (IST)"])
     i = 2
     for r in rep["leads"]["rows"]:
         for it in r["items"]:
             last = it["actions"][-1] if it["actions"] else None
             write_row(ws_l, i, [r["name"], it["id"], it["name"], it["status_start"], it["status_now"],
-                                it["date_label"], B[it["bucket"]], "Yes" if it["actioned"] else "No",
+                                it["date_label"], B[it["bucket"]], it.get("why") or {"overdue": "Follow-up date before the dates", "due": "Follow-up date within the dates", "future": "Follow-up date in the next 7 days"}.get(it["bucket"]),
+                                "Yes" if it["actioned"] else "No",
                                 "; ".join(a["what"] for a in it["actions"]) or None,
                                 ", ".join(dict.fromkeys(a["by"] for a in it["actions"])) or None,
-                                datetime.fromisoformat(last["at"]) if last else None], dt_cols={11})
+                                datetime.fromisoformat(last["at"]) if last else None], dt_cols={12})
             i += 1
     finalize(ws_l, cap=60)
 

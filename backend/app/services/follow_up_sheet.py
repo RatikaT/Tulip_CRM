@@ -20,6 +20,12 @@ Enrollments - customers whose journey was active at the start, per Nurture
   Actioned = call / follow-up logged, care step done / skipped / rescheduled,
   next follow-up date / remarks / feedback changed, journey paused / stopped,
   DNC - within the dates.
+Extra columns (combined Follow-up & SPOC sheet, 2026-11-18):
+  New leads assigned = leads that reached the SPOC within the dates (created
+    for them, assigned or reassigned), any status; actioned as above.
+  Other leads / customers worked = records someone acted on within the dates
+    that are not in any column above (e.g. old Enquiry Leads, leads with no
+    follow-up date). Always "actioned".
 """
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -39,6 +45,7 @@ from app.utils.mis_helpers import parse_dt
 FOLLOW_UP_STATUSES = {"Follow up-In Process", "Follow up-No Response"}
 LEAD_ACTIONS = {STATUS, REMARK, CALL_ADDED, FOLLOWUP_DATE}
 BUCKETS = ("overdue", "due", "future")
+ALL_BUCKETS = ("new", "overdue", "due", "future", "other")
 
 
 def _d(x) -> Optional[datetime]:
@@ -79,7 +86,7 @@ def _bucket(d, F, T, W):
 
 
 def _empty(name):
-    return {"name": name, "counts": {b: [0, 0] for b in BUCKETS}, "items": []}
+    return {"name": name, "counts": {b: [0, 0] for b in ALL_BUCKETS}, "items": []}
 
 
 def _add(rows, key, name, bucket, item):
@@ -159,6 +166,27 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
             "actioned": bool(done),
             "actions": [{"at": a.isoformat(), "what": w, "by": by} for a, w, by in done],
         })
+
+    # New leads assigned (any status) and other leads worked
+    listed = {(i["id"]) for r in lead_rows.values() for i in r["items"]}
+    for l in leads:
+        stamps = [d for d in (_d(l.reassigned_date), _d(l.assigned_date) or (l.created_at if l.assigned_to else None)) if d]
+        given = max(stamps) if stamps else None
+        owner_end = _as_of(l.reassign_to, own_r.get(l.lead_id, []), T) or _as_of(l.assigned_to, own_a.get(l.lead_id, []), T)
+        done = sorted(acts.get(l.lead_id, []))
+        base = {"type": "lead", "id": l.lead_id, "name": l.name or "-",
+                "status_start": _as_of(_v(l.status), st_ch.get(l.lead_id, []), F) if not (l.created_at and l.created_at >= F) else "(new in period)",
+                "status_now": _v(l.status),
+                "date": (l.follow_up_date.isoformat() if l.follow_up_date else ""), "date_label": _day(l.follow_up_date),
+                "actioned": bool(done),
+                "actions": [{"at": a.isoformat(), "what": w, "by": by} for a, w, by in done]}
+        if given and F <= given < T and owner_end:
+            _add(lead_rows, owner_end, uname.get(owner_end, "Unknown"), "new", {**base, "why": f"Assigned {_when(given)}"})
+            continue
+        if done and l.lead_id not in listed:
+            owner = _as_of(l.reassign_to, own_r.get(l.lead_id, []), F) or _as_of(l.assigned_to, own_a.get(l.lead_id, []), F) or owner_end
+            if owner:
+                _add(lead_rows, owner, uname.get(owner, "Unknown"), "other", {**base, "why": "Worked on, not due in these dates"})
 
     # ========================== ENROLLMENTS ==========================
     enrs = await Enrollment.find({"is_deleted": False}).to_list()
@@ -244,7 +272,7 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
         buckets = {b: [d for d in dates if _bucket(d, F, T, W) == b] for b in BUCKETS}
         b = next((x for x in BUCKETS if buckets[x]), None)
         if not b:
-            continue
+            continue  # acted-on but not due -> "other", added below
         key_date = min(buckets[b])
         spoc = (_as_of(e.hclhc_spoc, spoc_ch.get(eid, []), F) or "").strip()
         key = by_name.get(spoc.lower()) or ("name:" + (spoc or "(No Nurture Buddy)"))
@@ -257,15 +285,30 @@ async def build_sheet(start_day, end_day, only_user_id: Optional[str] = None,
             "actions": [{"at": a.isoformat(), "what": w, "by": by} for a, w, by in done],
         })
 
+    listed_e = {i["id"] for r in enr_rows.values() for i in r["items"]}
+    for eid, lst in eacts.items():
+        e = enr_by_id.get(eid)
+        done = sorted(x for x in lst if F <= x[0] < T)
+        if not e or not done or eid in listed_e:
+            continue
+        spoc = (_as_of(e.hclhc_spoc, spoc_ch.get(eid, []), F) or "").strip()
+        key = by_name.get(spoc.lower()) or ("name:" + (spoc or "(No Nurture Buddy)"))
+        _add(enr_rows, key, uname.get(key) or spoc or "(No Nurture Buddy)", "other", {
+            "type": "enrollment", "id": eid, "name": e.subscriber_name or e.name or "-",
+            "service": e.service_enrolled, "why": "Worked on, not due in these dates",
+            "date": "", "date_label": "-", "actioned": True,
+            "actions": [{"at": a.isoformat(), "what": w, "by": by} for a, w, by in done],
+        })
+
     def finish(rows):
         out = list(rows.values())
         if only_user_id or only_user_name:
             out = [r for k, r in rows.items()
                    if k == only_user_id or r["name"].strip().lower() == (only_user_name or "").strip().lower()]
         for r in out:
-            r["items"].sort(key=lambda i: (BUCKETS.index(i["bucket"]), i["date"]))
+            r["items"].sort(key=lambda i: (ALL_BUCKETS.index(i["bucket"]), i["date"]))
         out.sort(key=lambda r: r["name"])
-        totals = {b: [sum(r["counts"][b][0] for r in out), sum(r["counts"][b][1] for r in out)] for b in BUCKETS}
+        totals = {b: [sum(r["counts"][b][0] for r in out), sum(r["counts"][b][1] for r in out)] for b in ALL_BUCKETS}
         return {"rows": out, "totals": totals}
 
     return {

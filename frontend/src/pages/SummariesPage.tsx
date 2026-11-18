@@ -4,16 +4,12 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import { toast } from 'react-toastify';
 import api from '../services/api';
-import { dashboardService } from '../services/dashboardService';
 import { todayISTKey } from '../utils/dateUtils';
 import { useAuthStore } from '../stores/authStore';
-import type { SpocReport, SpocReportParams } from '../types/summary.types';
-import SpocReportCard from '../components/summaries/SpocReportCard';
-import SpocScorecard from '../components/summaries/SpocScorecard';
-import SavedReports from '../components/summaries/SavedReports';
+import type { SpocReportParams } from '../types/summary.types';
 import FollowUpSheetCard from '../components/summaries/FollowUpSheetCard';
 import RecordDrawer, { DrawerContent } from '../components/summaries/RecordDrawer';
-import { cardSx, errorDetail, periodLabel } from '../components/summaries/shared';
+import { cardSx, periodLabel } from '../components/summaries/shared';
 
 interface UserOption {
   id: string;
@@ -29,33 +25,18 @@ export default function SummariesPage() {
   const [spoc, setSpoc] = useState('');
   const [users, setUsers] = useState<UserOption[]>([]);
 
-  const [report, setReport] = useState<SpocReport | null>(null);
-  // Params the current report was loaded with (download / AI note / save reuse them).
+  // Dates (and SPOC) the sheet below was loaded with; the sheet fetches its own data.
   const [loaded, setLoaded] = useState<SpocReportParams | null>(null);
-  const [loading, setLoading] = useState(false);
+  const loading = false;
   const [drawer, setDrawer] = useState<DrawerContent | null>(null);
-  const [savedKey, setSavedKey] = useState(0);
 
-  const load = useCallback(
-    async (p: SpocReportParams) => {
-      if (p.end < p.start) {
-        toast.error('"To" date is before "From" date');
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await dashboardService.getSpocReport(p);
-        setReport(data);
-        setLoaded(p);
-      } catch (err) {
-        console.error('Failed to load SPOC report:', err);
-        toast.error(errorDetail(err, 'Failed to load SPOC report'));
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const load = useCallback((p: SpocReportParams) => {
+    if (p.end < p.start) {
+      toast.error('"To" date is before "From" date');
+      return;
+    }
+    setLoaded({ ...p });
+  }, []);
 
   useEffect(() => {
     load({ start: todayISTKey(), end: todayISTKey() });
@@ -82,7 +63,7 @@ export default function SummariesPage() {
     }
   };
 
-  const period = report ? periodLabel(report.start, report.end) : '';
+  const period = loaded ? periodLabel(loaded.start, loaded.end) : '';
   const quickBtn = { textTransform: 'none' as const, color: 'text.primary', borderColor: 'divider', fontWeight: 500 };
 
   // Activity Log MIS (moved here from the Dashboard): every action done in the chosen dates
@@ -118,8 +99,8 @@ export default function SummariesPage() {
           Summaries
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '70ch' }}>
-          Pick the dates once at the top, and every section uses them. Click any number to see the leads or customers
-          behind it. Click a SPOC's row to see their day.
+          Pick the dates once at the top. The Follow-up &amp; SPOC Sheet shows what each SPOC had to follow up and what they
+          actioned on those dates; the Activity Log MIS lists everything anyone did on those dates.
         </Typography>
       </Box>
 
@@ -195,45 +176,14 @@ export default function SummariesPage() {
             </Button>
           )}
         </Box>
-        {report && (
+        {loaded && (
           <Typography variant="caption" color="text.secondary">
             Showing {period} (IST).
           </Typography>
         )}
       </Paper>
 
-      {!report ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          {loading ? (
-            <CircularProgress />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Couldn't load the report. Press Load to try again.
-            </Typography>
-          )}
-        </Box>
-      ) : (
-        <Box sx={{ opacity: loading ? 0.6 : 1, transition: 'opacity .15s' }}>
-          <SpocReportCard
-            report={report}
-            params={loaded as SpocReportParams}
-            period={period}
-            isAdmin={isAdmin}
-            openDrawer={setDrawer}
-            onSaved={() => setSavedKey((k) => k + 1)}
-          />
-          <FollowUpSheetCard params={loaded as SpocReportParams} period={period} openDrawer={setDrawer} />
-          <SpocScorecard
-            report={report}
-            period={period}
-            isAdmin={isAdmin}
-            preferredKey={loaded?.user_id}
-            openDrawer={setDrawer}
-          />
-        </Box>
-      )}
-
-      <SavedReports isAdmin={isAdmin} refreshKey={savedKey} />
+      {loaded && <FollowUpSheetCard params={loaded} period={period} openDrawer={setDrawer} />}
 
       <RecordDrawer content={drawer} onClose={() => setDrawer(null)} />
     </Box>

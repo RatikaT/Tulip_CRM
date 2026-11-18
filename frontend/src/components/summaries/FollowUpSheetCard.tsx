@@ -9,7 +9,7 @@ import type { SpocItem, SpocReportParams } from '../../types/summary.types';
 import type { DrawerContent } from './RecordDrawer';
 import { C, SectionCard, errorDetail, monoSx } from './shared';
 
-type Bucket = 'overdue' | 'due' | 'future';
+type Bucket = 'overdue' | 'due' | 'future' | 'new' | 'other';
 interface SheetItem {
   type: 'lead' | 'enrollment';
   id: string;
@@ -30,7 +30,7 @@ interface FollowUpSheet {
   leads: SheetPart; enrollments: SheetPart;
 }
 
-const BUCKET_LABEL: Record<Bucket, string> = { overdue: 'Overdue', due: 'Due', future: 'Future (1 week)' };
+const BUCKET_LABEL: Record<Bucket, string> = { overdue: 'Overdue', due: 'Due', future: 'Future (1 week)', new: 'New leads assigned', other: 'Worked on, not due' };
 const d = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
 /** Sheet rows -> the drawer's item list (same look as the Daily SPOC Report). */
@@ -39,11 +39,12 @@ function toSpocItems(items: SheetItem[]): SpocItem[] {
     type: i.type,
     id: i.id,
     name: i.name,
-    bucket: i.type === 'lead'
-      ? (i.bucket === 'overdue' ? 'over' : i.bucket === 'due' ? 'due' : '')
-      : (i.bucket === 'overdue' ? 'enrOver' : i.bucket === 'due' ? 'enrDue' : ''),
+    bucket: i.bucket === 'new' ? 'newL'
+      : i.type === 'lead'
+        ? (i.bucket === 'overdue' ? 'over' : i.bucket === 'due' ? 'due' : '')
+        : (i.bucket === 'overdue' ? 'enrOver' : i.bucket === 'due' ? 'enrDue' : ''),
     why: i.type === 'lead'
-      ? `Follow-up ${i.date_label} · status then: ${i.status_start} · now: ${i.status_now}`
+      ? `${i.why ? `${i.why} · ` : `Follow-up ${i.date_label} · `}status then: ${i.status_start} · now: ${i.status_now}`
       : `${i.why || ''}${i.service ? ` · ${i.service}` : ''}`,
     acted: i.actioned,
     actions: i.actions,
@@ -116,25 +117,30 @@ export default function FollowUpSheetCard({
   );
 
   const head = { fontWeight: 700, fontSize: '0.75rem', bgcolor: C.sunk, textAlign: 'center' as const, whiteSpace: 'nowrap' as const };
-  const table = (part: SheetPart, kind: string, whoLabel: string) => (
+  const table = (part: SheetPart, kind: string, whoLabel: string, isLead: boolean) => (
     <Box sx={{ overflowX: 'auto', border: `1px solid ${C.line}`, borderRadius: 2.5 }}>
-      <Table size="small" sx={{ minWidth: 760 }}>
+      <Table size="small" sx={{ minWidth: isLead ? 1000 : 860 }}>
         <TableHead>
           <TableRow>
             <TableCell rowSpan={2} sx={{ ...head, textAlign: 'left' }}>{whoLabel}</TableCell>
             <TableCell colSpan={2} sx={head}>Overdue</TableCell>
             <TableCell colSpan={2} sx={head}>Due</TableCell>
             <TableCell colSpan={2} sx={head}>Future (1 week: {sheet && `${d(sheet.future_from)}–${d(sheet.future_to)}`})</TableCell>
+            {isLead && <TableCell colSpan={2} sx={{ ...head, bgcolor: C.okSoft }}>New leads assigned</TableCell>}
+            <TableCell sx={{ ...head, bgcolor: C.okSoft }}>{isLead ? 'Other leads worked' : 'Other customers worked'}</TableCell>
           </TableRow>
           <TableRow>
             {['Total Overdue', 'Actioned Overdue', 'Total Due', 'Actioned Due', 'Total Future', 'Actioned Future'].map((h) => (
               <TableCell key={h} sx={head}>{h}</TableCell>
             ))}
+            {isLead && <TableCell sx={{ ...head, bgcolor: C.okSoft }}>Total New</TableCell>}
+            {isLead && <TableCell sx={{ ...head, bgcolor: C.okSoft }}>Actioned New</TableCell>}
+            <TableCell sx={{ ...head, bgcolor: C.okSoft }}>Worked on, not due</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {part.rows.length === 0 ? (
-            <TableRow><TableCell colSpan={7} sx={{ color: 'text.secondary', textAlign: 'center' }}>Nothing in these dates.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={isLead ? 10 : 8} sx={{ color: 'text.secondary', textAlign: 'center' }}>Nothing in these dates.</TableCell></TableRow>
           ) : part.rows.map((r) => (
             <TableRow key={r.name} hover>
               <TableCell sx={{ fontWeight: 600 }}>{r.name}</TableCell>
@@ -142,6 +148,9 @@ export default function FollowUpSheetCard({
                 <TableCell key={`${b}t`} align="center">{num(r.counts[b][0], () => open(r.name, r.items, b, null, kind))}</TableCell>,
                 <TableCell key={`${b}a`} align="center">{num(r.counts[b][1], () => open(r.name, r.items, b, true, kind), C.ok)}</TableCell>,
               ])}
+              {isLead && <TableCell align="center">{num(r.counts.new[0], () => open(r.name, r.items, 'new', null, kind))}</TableCell>}
+              {isLead && <TableCell align="center">{num(r.counts.new[1], () => open(r.name, r.items, 'new', true, kind), C.ok)}</TableCell>}
+              <TableCell align="center">{num(r.counts.other[0], () => open(r.name, r.items, 'other', null, kind))}</TableCell>
             </TableRow>
           ))}
           {part.rows.length > 1 && (
@@ -151,6 +160,9 @@ export default function FollowUpSheetCard({
                 <TableCell key={`${b}t`} align="center" sx={monoSx}>{part.totals[b][0]}</TableCell>,
                 <TableCell key={`${b}a`} align="center" sx={monoSx}>{part.totals[b][1]}</TableCell>,
               ])}
+              {isLead && <TableCell align="center" sx={monoSx}>{part.totals.new[0]}</TableCell>}
+              {isLead && <TableCell align="center" sx={monoSx}>{part.totals.new[1]}</TableCell>}
+              <TableCell align="center" sx={monoSx}>{part.totals.other[0]}</TableCell>
             </TableRow>
           )}
         </TableBody>
@@ -160,7 +172,7 @@ export default function FollowUpSheetCard({
 
   return (
     <SectionCard
-      title="Follow-up Sheet"
+      title="Follow-up & SPOC Sheet"
       action={
         <Button
           variant="outlined"
@@ -184,8 +196,9 @@ export default function FollowUpSheetCard({
             <Typography variant="caption" color="text.secondary">
               Only leads in Follow up-In Process or Follow up-No Response. Overdue = follow-up date before the start date; Due = within the dates;
               Future = the 7 days after. Actioned = status changed, call added, remark added or follow-up date changed within the dates.
+              New leads assigned = leads given to the SPOC within the dates (any status). Worked on, not due = other leads someone acted on within the dates.
             </Typography>
-            {table(sheet.leads, 'Leads', 'SPOC Name')}
+            {table(sheet.leads, 'Leads', 'SPOC Name', true)}
           </Box>
           <Box sx={{ display: 'grid', gap: 1 }}>
             <Typography sx={{ fontWeight: 700 }}>Enrollments</Typography>
@@ -193,7 +206,7 @@ export default function FollowUpSheetCard({
               Customers with an active care journey, counted once each in their most urgent bucket, using the Next Follow-up Due date and care steps.
               Actioned = call / follow-up logged, care step done / skipped / rescheduled, next date or remarks changed, journey paused / stopped, or DNC within the dates.
             </Typography>
-            {table(sheet.enrollments, 'Enrollments', 'Nurture Buddy')}
+            {table(sheet.enrollments, 'Enrollments', 'Nurture Buddy', false)}
           </Box>
         </Box>
       )}
