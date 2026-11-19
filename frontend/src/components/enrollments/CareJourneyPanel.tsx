@@ -335,7 +335,12 @@ export default function CareJourneyPanel({ enrollment, canEdit, onChanged }: Car
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             No care journey on this enrollment yet.
           </Typography>
-          {canEdit && (
+          {canEdit && !enrollment.service_enrolled && (
+            <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
+              Choose Service Enrolled (Service Details) and click Save Changes; the care journey is then created automatically.
+            </Typography>
+          )}
+          {canEdit && enrollment.service_enrolled && (
             <Button variant="outlined" onClick={handleInstantiate} disabled={instantiating} startIcon={instantiating ? <CircularProgress size={16} /> : undefined}>
               Create from {enrollment.service_enrolled || 'service'} template
             </Button>

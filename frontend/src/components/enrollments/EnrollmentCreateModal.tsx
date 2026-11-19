@@ -26,9 +26,8 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { enrollmentService } from '../../services/enrollmentService';
 import api from '../../services/api';
-import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
 import { useFieldConfig } from '../../hooks/useFieldConfig';
-import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../../hooks/useDropdownOptions';
 
 interface UserOption {
   id: string;
@@ -95,6 +94,7 @@ export default function EnrollmentCreateModal({ open, onClose, onSuccess }: Enro
   const [selectedSpoc, setSelectedSpoc] = useState<UserOption | null>(null);
   const fc = useFieldConfig('enrollment');
   const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
+  const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { options: connectStatusOptions } = useDropdownOptions('connect_status');
   const { options: actionTakenOptions } = useDropdownOptions('action_taken');
   const { options: servicePartnerOptions } = useDropdownOptions('service_partner');

@@ -40,8 +40,7 @@ import {
   EnrollmentAuditLogEntry,
   JourneyStateOptions,
 } from '../types/enrollment.types';
-import { PARTNER_CENTER_OPTIONS } from '../types/lead.types';
-import { useDropdownOptions } from '../hooks/useDropdownOptions';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../hooks/useDropdownOptions';
 import { brandColors } from '../theme';
 import api from '../services/api';
 
@@ -93,6 +92,7 @@ export default function EnrollmentDetailPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { options: trimesterOptions } = useDropdownOptions('trimester');
   const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
   const { options: packageOptions } = useDropdownOptions('package_options');

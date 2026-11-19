@@ -24,8 +24,8 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { Lead } from '../../types/lead.types';
-import { PARTNER_CENTER_OPTIONS, LeadUpdateRequest } from '../../types/lead.types';
-import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { LeadUpdateRequest } from '../../types/lead.types';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../../hooks/useDropdownOptions';
 import api from '../../services/api';
 
 interface UserOption {
@@ -86,6 +86,7 @@ export default function EnrollmentConfirmModal({
   const { options: connectStatusOptions } = useDropdownOptions('connect_status');
   const { options: actionTakenOptions } = useDropdownOptions('action_taken');
   const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
+  const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { options: trimesterOptions } = useDropdownOptions('trimester');
   const { options: serviceEnrolledOptions } = useDropdownOptions('service_enrolled');
   const { options: packageOptions } = useDropdownOptions('package_options');

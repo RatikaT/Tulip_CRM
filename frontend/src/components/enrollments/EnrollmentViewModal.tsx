@@ -43,8 +43,7 @@ import {
   Enrollment,
   FollowUpEntry,
 } from '../../types/enrollment.types';
-import { PARTNER_CENTER_OPTIONS } from '../../types/lead.types';
-import { useDropdownOptions } from '../../hooks/useDropdownOptions';
+import { useDropdownOptions, useConditionalDropdownOptions } from '../../hooks/useDropdownOptions';
 
 interface UserOption {
   id: string;
@@ -87,6 +86,7 @@ export default function EnrollmentViewModal({ open, enrollment, onClose, onSucce
   const canEdit = isAdmin || isFollowUpSpoc;
 
   const { options: connectStatusOptions } = useDropdownOptions('connect_status');
+  const { allOptions: PARTNER_CENTER_OPTIONS } = useConditionalDropdownOptions('partner_center');
   const { options: actionTakenOptions } = useDropdownOptions('action_taken');
   const { options: servicePartnerOptions } = useDropdownOptions('service_partner');
   const { options: trimesterOptions } = useDropdownOptions('trimester');

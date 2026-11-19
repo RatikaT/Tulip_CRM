@@ -97,9 +97,16 @@ export default function JourneyStatusControl({ enrollment, options, canEdit, onC
 
   if (!groups) {
     return (
-      <Typography variant="body2" color="text.secondary">
-        {enrollment.journey_state_label || 'Not set'}
-      </Typography>
+      <Box>
+        <Typography variant="body2" color="text.secondary">
+          {enrollment.journey_state_label || 'Not set'}
+        </Typography>
+        {!enrollment.service_enrolled && (
+          <Typography variant="caption" color="warning.main" display="block">
+            Choose Service Enrolled (Service Details) and click Save Changes to set it.
+          </Typography>
+        )}
+      </Box>
     );
   }
 

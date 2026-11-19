@@ -1757,12 +1757,27 @@ async def update_enrollment(
     # a real trimester) re-instantiates the journey so the loop materializes.
     # Preserves completed-step attribution + ad-hoc steps. Skips stopped journeys.
     trimester_changed = any(c["field"] == "trimester" for c in changes)
+    service_changed = any(c["field"] == "service_enrolled" for c in changes)
+    # A service set or changed: its care journey is built (or rebuilt) too.
+    if service_changed or (trimester_changed and not enrollment.journey):
+        trimester_changed = True
     if trimester_changed and enrollment.journey_status == "active" and not enrollment.do_not_contact:
         try:
             enrollment.journey = await reinstantiate_care_journey(enrollment)
             await enrollment.save()
         except Exception as e:
             logger.error(f"Failed to re-instantiate journey for {enrollment_id}: {e}")
+
+    # Journey Status follows the service: set the default when there is none,
+    # or when the current one isn't in the new service's list (a Closed one
+    # stays closed as "Closed – Others").
+    if service_key(enrollment) and enrollment.journey_state not in allowed_states(enrollment):
+        old_state = js_label(enrollment.journey_state, enrollment.journey_state_note)
+        if js_is_closed(enrollment.journey_state):
+            await apply_state(enrollment, CLOSED_OTHERS, old_state, current_user)
+        else:
+            from app.services.journey_state import default_state
+            await apply_state(enrollment, default_state(enrollment), None, current_user)
 
     # Create audit log only if there were changes
     if changes:
