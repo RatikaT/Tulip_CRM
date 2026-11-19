@@ -100,8 +100,9 @@ def service_match_pattern(value) -> str:
 def make_outreach_key(status, service) -> str:
     """Build an outreach trigger_key: '<status>::<service>' or '<status>::GENERIC'."""
     st = _enum_value(status).strip()
+    from app.services.journey_state import services  # configured services (lazy: avoids a cycle)
     svc = normalize_service(service)
-    if svc not in CARE_SERVICES:
+    if svc not in services():
         svc = GENERIC_SERVICE
     return f"{st}::{svc}"
 

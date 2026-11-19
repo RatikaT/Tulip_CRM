@@ -775,7 +775,7 @@ export default function EnrollmentsPage() {
         const e = params.row as Enrollment;
         if (!e.journey_state) return '-';
         const color = e.journey_state_closed ? '#6b7280'
-          : e.journey_state === jsOptions?.antenatal_interest ? '#137a4b'
+          : jsOptions?.converts?.includes(e.journey_state) ? '#137a4b'
           : /No response/i.test(e.journey_state) ? '#a15c00' : '#1e4088';
         return (
           <Tooltip title={e.converted_to_lead_id ? `${params.value} · lead ${e.converted_to_lead_id}` : (params.value as string)}>

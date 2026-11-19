@@ -118,7 +118,7 @@ export default function LeadDetailPage() {
   const { options: LEAD_SOURCE_OPTIONS } = useDropdownOptions('lead_source');
   const { options: TRIMESTER_OPTIONS } = useDropdownOptions('trimester');
   const { options: LOOKING_FOR_OPTIONS } = useDropdownOptions('looking_for');
-  const { options: SERVICE_REQUESTED_OPTIONS } = useDropdownOptions('service_requested');
+  const { options: SERVICE_REQUESTED_OPTIONS } = useDropdownOptions('service_enrolled')  // one shared Services list (Configurations);
   const { options: SERVICE_PARTNER_OPTIONS } = useDropdownOptions('service_partner');
   const { options: REASON_FOR_NO_SALE_OPTIONS } = useDropdownOptions('reason_for_no_sale');
   const { options: PACKAGE_OPTIONS } = useDropdownOptions('package_options');

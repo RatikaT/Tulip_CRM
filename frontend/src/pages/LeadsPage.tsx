@@ -158,7 +158,7 @@ export default function LeadsPage() {
   // Dropdown filter options — live from admin-managed config (fallback to constants).
   const { options: leadSourceOptions } = useDropdownOptions('lead_source');
   const { options: leadStatusOptions } = useDropdownOptions('lead_status');
-  const { options: serviceRequestedOptions } = useDropdownOptions('service_requested');
+  const { options: serviceRequestedOptions } = useDropdownOptions('service_enrolled')  // one shared Services list (Configurations);
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const [leads, setLeads] = useState<Lead[]>([]);

@@ -6,8 +6,10 @@ journey's own run state (`journey_status`: active | paused | stopped):
 - A "Closed" Journey Status stops the care journey (pending steps dropped,
   history kept), the same as Stop journey.
 - Moving from a Closed status back to an active one reopens the journey.
-- "Pregnant – Interested in Antenatal program" is where the Antenatal lead is
-  created from (on screen, or later from the Enrollments list for bulk uploads).
+- A "Converts" status ("Pregnant – Interested in Antenatal program") is where
+  the Antenatal lead is created from (on screen, or from the Enrollments list).
+- The lists are edited by the Super Admin (Configurations -> Services &
+  Journey Status) and cached here; see load_config.
 
 Every change is appended to `journey_state_history` on the record (for the
 timeline) and written to the enrollment audit log (for reports).
@@ -25,8 +27,12 @@ ANTENATAL_INTEREST = "Pregnant – Interested in Antenatal program"
 FOLLOW_UP_ONGOING = "Follow-up ongoing"
 STILL_PLANNING = "Active – Still planning"
 
-# Grouped as shown in the dropdown. "Closed" group stops the care journey.
-STATES: Dict[str, Dict[str, List[str]]] = {
+GROUPS = ("active", "converts", "closed")
+GROUP_TITLES = {"active": "Active", "converts": "Converts", "closed": "Closed"}
+
+# Starting lists (seeded once into journey_status_configs; the Super Admin
+# edits them from Configurations). Grouped as shown in the dropdown.
+DEFAULT_STATES: Dict[str, Dict[str, List[str]]] = {
     "PreConception": {
         "Active": [STILL_PLANNING, "Active – No response", ACTIVE_OTHERS],
         "Converts": [ANTENATAL_INTEREST],
@@ -55,21 +61,74 @@ STATES: Dict[str, Dict[str, List[str]]] = {
         "Closed": [CLOSED_OTHERS],
     },
 }
+# A service added later starts with this list.
+NEW_SERVICE_STATES = {"Active": [FOLLOW_UP_ONGOING, ACTIVE_OTHERS], "Closed": [CLOSED_OTHERS]}
+DEFAULT_SERVICES = list(DEFAULT_STATES)
 
+# In-memory copies of the configured lists (refreshed by load_config after
+# every edit and every few minutes). Mutated in place so imports stay valid.
+STATES: Dict[str, Dict[str, List[str]]] = {k: {g: list(v) for g, v in d.items()} for k, d in DEFAULT_STATES.items()}
 NEEDS_NOTE = {ACTIVE_OTHERS, CLOSED_OTHERS}
+CONVERTS = {ANTENATAL_INTEREST}
+SERVICES: List[str] = list(DEFAULT_SERVICES)
+
+
+def _norm(x: Optional[str]) -> str:
+    return (x or "").lower().replace(" ", "").replace("-", "")
+
+
+async def load_config() -> None:
+    """Load Services (the shared Service dropdown) and each service's Journey
+    Status list; seed any missing list. Safe to call any time."""
+    from app.models.dropdown_config import DropdownConfig
+    from app.models.journey_status_config import JourneyStatusConfig, JourneyStatusItem
+
+    cfg = await DropdownConfig.find_one({"field_name": "service_enrolled"})
+    services = [s for s in (cfg.options if cfg else []) if s and s.strip()] or list(DEFAULT_SERVICES)
+    rows = {r.service: r for r in await JourneyStatusConfig.find_all().to_list()}
+    for svc in services:
+        if svc in rows:
+            continue
+        groups = DEFAULT_STATES.get(svc) or NEW_SERVICE_STATES
+        items = [JourneyStatusItem(label=x, group=g.lower(), needs_note=x in (ACTIVE_OTHERS, CLOSED_OTHERS))
+                 for g, xs in groups.items() for x in xs]
+        rows[svc] = JourneyStatusConfig(service=svc, items=items)
+        await rows[svc].insert()
+
+    states, notes, converts = {}, set(), set()
+    for svc in services:
+        grouped: Dict[str, List[str]] = {}
+        for it in rows[svc].items:
+            grouped.setdefault(GROUP_TITLES.get(it.group, "Active"), []).append(it.label)
+            if it.needs_note:
+                notes.add(it.label)
+            if it.group == "converts":
+                converts.add(it.label)
+        states[svc] = {t: grouped[t] for t in GROUP_TITLES.values() if t in grouped}
+    STATES.clear(); STATES.update(states)
+    NEEDS_NOTE.clear(); NEEDS_NOTE.update(notes)
+    CONVERTS.clear(); CONVERTS.update(converts)
+    SERVICES[:] = services
+
+
+def services() -> List[str]:
+    return list(SERVICES)
 
 
 def service_key(enrollment_or_service) -> Optional[str]:
-    """The STATES key for an enrollment's service (legacy names like
-    "Tulip Antenatal" match too)."""
+    """The configured service for an enrollment's service value. Exact match
+    first; older names like "Tulip Antenatal" map to the standard three."""
     s = enrollment_or_service
     if not isinstance(s, (str, type(None))):
         s = getattr(s, "journey_classification", None) or getattr(s, "service_enrolled", None)
-    low = (s or "").lower().replace(" ", "")
-    for key in STATES:
-        if key.lower() in low:
-            return key
-    return None
+    if not s:
+        return None
+    exact = next((k for k in STATES if _norm(k) == _norm(s)), None)
+    if exact:
+        return exact
+    from app.models.journey_template import normalize_service
+    std = normalize_service(s)
+    return next((k for k in STATES if _norm(k) == _norm(std)), None)
 
 
 def allowed_states(service) -> List[str]:
@@ -83,11 +142,17 @@ def is_closed(state: Optional[str]) -> bool:
     return any(state in STATES[k].get("Closed", []) for k in STATES)
 
 
+def is_converts(state: Optional[str]) -> bool:
+    return bool(state) and state in CONVERTS
+
+
 def default_state(enrollment: Enrollment) -> Optional[str]:
+    """The first Active status of the enrollment's service."""
     key = service_key(enrollment)
     if not key:
         return None
-    return STILL_PLANNING if key == "PreConception" else FOLLOW_UP_ONGOING
+    active = STATES[key].get("Active") or allowed_states(key)
+    return active[0] if active else None
 
 
 def label(state: Optional[str], note: Optional[str]) -> str:
@@ -204,8 +269,9 @@ async def preset_missing_states() -> int:
         key = service_key(e)
         if not key:
             continue
-        if e.converted_to_lead_id and key == "PreConception" and not e.do_not_contact:
-            state, note = ANTENATAL_INTEREST, None
+        conv = STATES[key].get("Converts") or []
+        if e.converted_to_lead_id and conv and not e.do_not_contact:
+            state, note = conv[0], None
         elif e.do_not_contact or e.journey_status == "stopped":
             note = e.dnc_reason if e.do_not_contact else e.journey_stopped_reason
             note = note or ("Do Not Contact" if e.do_not_contact else "Journey stopped")

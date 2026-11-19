@@ -15,6 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 
+from app.services.journey_state import services
 from app.models.journey_template import (
     JourneyTemplate,
     JourneyStepDef,
@@ -31,7 +32,7 @@ from datetime import datetime as _datetime
 
 router = APIRouter()
 
-ALLOWED_SERVICES = CARE_SERVICES  # backward-compat alias
+ALLOWED_SERVICES = CARE_SERVICES  # backward-compat alias (the live list is journey_state.services())
 
 
 class StepInput(BaseModel):
@@ -131,15 +132,15 @@ async def _upsert(context: str, trigger_key: str, step_inputs: List[StepInput], 
 @router.get("/catalogue")
 async def get_catalogue(current_user: dict = Depends(get_current_user)):
     """Enumerate every (context, trigger_key) the config UI can edit."""
-    care = [{"context": "care", "trigger_key": s, "label": s} for s in CARE_SERVICES]
+    care = [{"context": "care", "trigger_key": s, "label": s} for s in services()]
     outreach = []
     for st in OUTREACH_STATUSES:
-        for svc in CARE_SERVICES:
+        for svc in services():
             key = make_outreach_key(st, svc)
             outreach.append({"context": "outreach", "trigger_key": key, "label": f"{st} · {svc}"})
         gkey = make_outreach_key(st, None)
         outreach.append({"context": "outreach", "trigger_key": gkey, "label": f"{st} · Generic"})
-    return {"care": care, "outreach": outreach, "statuses": OUTREACH_STATUSES, "services": CARE_SERVICES}
+    return {"care": care, "outreach": outreach, "statuses": OUTREACH_STATUSES, "services": services()}
 
 
 @router.get("/report/summary")
@@ -250,10 +251,10 @@ async def list_templates(current_user: dict = Depends(get_current_user)):
     existing = await JourneyTemplate.find({"context": JourneyContext.CARE.value}).to_list()
     by_key = {t.trigger_key.lower(): t for t in existing}
     out = []
-    for svc in CARE_SERVICES:
+    for svc in services():
         t = by_key.get(svc.lower())
         out.append(_template_to_response(t) if t else _empty_response(JourneyContext.CARE.value, svc))
-    return {"templates": out, "services": CARE_SERVICES}
+    return {"templates": out, "services": services()}
 
 
 @router.get("/{service}")
@@ -270,10 +271,10 @@ async def upsert_template(
     body: TemplateUpdateRequest,
     current_user: dict = Depends(get_current_super_admin),
 ):
-    match = next((s for s in CARE_SERVICES if s.lower() == service.strip().lower()), None)
+    match = next((s for s in services() if s.lower() == service.strip().lower()), None)
     if not match:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Service must be one of: {', '.join(CARE_SERVICES)}",
+            detail=f"Service must be one of: {', '.join(services())}",
         )
     return await _upsert(JourneyContext.CARE.value, match, body.steps, current_user)

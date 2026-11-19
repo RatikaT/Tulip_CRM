@@ -56,6 +56,7 @@ import UserEditModal from '../components/users/UserEditModal';
 import DropdownOptionsTab from '../components/configurations/DropdownOptionsTab';
 import CareJourneysTab from '../components/configurations/CareJourneysTab';
 import FieldSettingsTab from '../components/configurations/FieldSettingsTab';
+import ServicesJourneyStatusTab from '../components/configurations/ServicesJourneyStatusTab';
 import { useAuthStore } from '../stores/authStore';
 import { brandColors } from '../theme';
 
@@ -512,6 +513,15 @@ export default function ConfigurationsPage() {
                 aria-controls="config-tabpanel-4"
               />
             )}
+            {isSuperAdmin && (
+              <Tab
+                icon={<ListIcon />}
+                iconPosition="start"
+                label="Services & Journey Status"
+                id="config-tab-5"
+                aria-controls="config-tabpanel-5"
+              />
+            )}
           </Tabs>
         </Box>
 
@@ -781,6 +791,13 @@ export default function ConfigurationsPage() {
         {isSuperAdmin && (
           <TabPanel value={tabValue} index={4}>
             <FieldSettingsTab />
+          </TabPanel>
+        )}
+
+        {/* Services & Journey Status (super admin) */}
+        {isSuperAdmin && (
+          <TabPanel value={tabValue} index={5}>
+            <ServicesJourneyStatusTab />
           </TabPanel>
         )}
       </Paper>

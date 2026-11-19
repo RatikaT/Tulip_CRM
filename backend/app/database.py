@@ -35,6 +35,7 @@ async def connect_to_database():
         from app.models.enrollment import Enrollment
         from app.models.enrollment_audit_log import EnrollmentAuditLog
         from app.models.dropdown_config import DropdownConfig
+        from app.models.journey_status_config import JourneyStatusConfig
         from app.models.journey_template import JourneyTemplate
         from app.models.field_config import FieldConfig
 
@@ -54,7 +55,8 @@ async def connect_to_database():
                 EnrollmentAuditLog,
                 DropdownConfig,
                 JourneyTemplate,
-                FieldConfig
+                FieldConfig,
+                JourneyStatusConfig,
             ]
         )
 

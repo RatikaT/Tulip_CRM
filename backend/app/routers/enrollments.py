@@ -40,10 +40,10 @@ from app.utils.mis_helpers import care_rollups, parse_dt
 from collections import Counter, defaultdict
 from app.services.journey_ops import compute_care_triggers, stop_journey_steps
 from app.services.journey_state import (
-    ANTENATAL_INTEREST, CLOSED_OTHERS, STATES as JOURNEY_STATES, NEEDS_NOTE as JS_NEEDS_NOTE,
+    ANTENATAL_INTEREST, CLOSED_OTHERS, CONVERTS, STATES as JOURNEY_STATES, is_converts, services as care_services, NEEDS_NOTE as JS_NEEDS_NOTE,
     allowed_states, apply_state, is_closed as js_is_closed, label as js_label,
     service_key, validate as js_validate, call_summary, CONNECTED, NOT_CONNECTED,
-    CALL_OUTCOMES, NOT_CONNECTED_REASONS, CALL_BACK,
+    CALL_OUTCOMES, NOT_CONNECTED_REASONS, CALL_BACK, DEFAULT_SERVICES,
 )
 from pydantic import BaseModel, Field
 import logging
@@ -772,10 +772,11 @@ async def export_enrollments_excel(
     summary_section(sm, "By Journey Status", sorted(by_state.items(), key=lambda x: -x[1]))
 
     # Agent x Service matrix (rows = SPOC, cols = the 3 standard services).
-    matrix = defaultdict(lambda: {s: 0 for s in CARE_SERVICES})
+    svc_cols = care_services()
+    matrix = defaultdict(lambda: {s: 0 for s in svc_cols})
     for e in enrollments:
-        svc = normalize_service(e.service_enrolled)
-        if svc in CARE_SERVICES:
+        svc = service_key(e.service_enrolled)
+        if svc in svc_cols:
             matrix[e.hclhc_spoc or "Unassigned"][svc] += 1
     mr = getattr(sm, "_next", 3) + 1
     hc = sm.cell(row=mr, column=1, value="Agent x Service matrix")
@@ -783,12 +784,12 @@ async def export_enrollments_excel(
     hc.font = _HF; hc.fill = _HFill
     mr += 1
     sm.cell(row=mr, column=1, value="HCLH SPOC (Nurture Buddy)").font = _LF
-    for ci, svc in enumerate(CARE_SERVICES, 2):
+    for ci, svc in enumerate(svc_cols, 2):
         sm.cell(row=mr, column=ci, value=svc).font = _LF
     mr += 1
     for spoc in sorted(matrix.keys()):
         sm.cell(row=mr, column=1, value=spoc)
-        for ci, svc in enumerate(CARE_SERVICES, 2):
+        for ci, svc in enumerate(svc_cols, 2):
             sm.cell(row=mr, column=ci, value=matrix[spoc][svc])
         mr += 1
     finalize(sm, cap=44)
@@ -1027,7 +1028,7 @@ def build_enrollment_list_query(
         query = {"$and": [query, {"journey_state": {"$in": journey_state}}]}
     # "Interested in Antenatal – lead not created"
     if antenatal_pending:
-        query = {"$and": [query, {"journey_state": ANTENATAL_INTEREST,
+        query = {"$and": [query, {"journey_state": {"$in": sorted(CONVERTS)},
                                   "converted_to_lead_id": None}]}
     return query
 
@@ -1488,9 +1489,238 @@ async def get_journey_state_options(current_user: dict = Depends(get_current_use
         "states": JOURNEY_STATES,
         "needs_note": sorted(JS_NEEDS_NOTE),
         "antenatal_interest": ANTENATAL_INTEREST,
+        "converts": sorted(CONVERTS),
+        "services": care_services(),
         "call_outcomes": CALL_OUTCOMES,
         "not_connected_reasons": NOT_CONNECTED_REASONS,
     }
+
+
+# ---------------------------------------------------------------------------
+# Services & Journey Status lists (Super Admin, Configurations)
+# ---------------------------------------------------------------------------
+
+async def _service_usage() -> dict:
+    """{configured service: (leads, enrollments)} counted through service_key,
+    so older names like "Tulip Antenatal" count under Antenatal."""
+    db = get_database()
+    use = defaultdict(lambda: [0, 0])
+    for i, (coll, field) in enumerate((("leads", "service_requested"), ("enrollments", "service_enrolled"))):
+        async for row in db[coll].aggregate([{"$match": {"is_deleted": {"$ne": True}}},
+                                             {"$group": {"_id": f"${field}", "n": {"$sum": 1}}}]):
+            key = service_key(row["_id"]) if row["_id"] else None
+            if key:
+                use[key][i] += row["n"]
+    return use
+
+
+async def _state_usage(service: str) -> Counter:
+    """Customers of this service per Journey Status."""
+    c = Counter()
+    for e in await Enrollment.find({"is_deleted": False, "journey_state": {"$ne": None}}).to_list():
+        if service_key(e) == service:
+            c[e.journey_state] += 1
+    return c
+
+
+@router.get("/journey-state/config")
+async def get_journey_state_config(current_user: dict = Depends(get_current_super_admin)):
+    from app.models.journey_status_config import JourneyStatusConfig
+    from app.services.journey_state import load_config
+    await load_config()
+    use = await _service_usage()
+    rows = {r.service: r for r in await JourneyStatusConfig.find_all().to_list()}
+    out = []
+    for svc in care_services():
+        st_use = await _state_usage(svc)
+        out.append({
+            "service": svc, "leads": use[svc][0], "enrollments": use[svc][1],
+            "items": [{**it.model_dump(), "in_use": st_use.get(it.label, 0)} for it in rows[svc].items],
+        })
+    return {"services": out, "locked": [CLOSED_OTHERS], "built_in": DEFAULT_SERVICES}
+
+
+class JsItemIn(BaseModel):
+    label: str
+    group: str = "active"
+    needs_note: bool = False
+    was: Optional[str] = None      # previous label when renamed
+
+
+class JsListIn(BaseModel):
+    items: List[JsItemIn]
+
+
+@router.put("/journey-state/config/{service}")
+async def save_journey_state_list(
+    service: str,
+    body: JsListIn,
+    current_user: dict = Depends(get_current_super_admin),
+):
+    """Replace one service's Journey Status list. Renames update the customers
+    who have that status; a status in use can't be removed or change group."""
+    from app.models.journey_status_config import JourneyStatusConfig, JourneyStatusItem
+    from app.services.journey_state import load_config, GROUPS
+    await load_config()
+    row = await JourneyStatusConfig.find_one({"service": service})
+    if not row:
+        raise HTTPException(status_code=404, detail="Unknown service")
+    old = {it.label: it for it in row.items}
+    items = [JsItemIn(label=re.sub(r"\s+", " ", i.label).strip(), group=i.group, needs_note=i.needs_note,
+                      was=i.was) for i in body.items]
+    labels = [i.label for i in items]
+    if any(not x for x in labels):
+        raise HTTPException(status_code=400, detail="A status can't be blank")
+    if len(set(x.lower() for x in labels)) != len(labels):
+        raise HTTPException(status_code=400, detail="Each status must be different")
+    if any(i.group not in GROUPS for i in items):
+        raise HTTPException(status_code=400, detail="Group must be Active, Converts or Closed")
+    if not any(i.group == "active" for i in items):
+        raise HTTPException(status_code=400, detail="Keep at least one Active status")
+    if not any(i.label == CLOSED_OTHERS and i.group == "closed" for i in items):
+        raise HTTPException(status_code=400, detail=f'"{CLOSED_OTHERS}" is used by the system and must stay in the Closed group')
+    # One label means the same thing everywhere (Active vs Closed is checked by label).
+    for other in await JourneyStatusConfig.find({"service": {"$ne": service}}).to_list():
+        og = {it.label: it.group for it in other.items}
+        for i in items:
+            if i.label in og and og[i.label] != i.group:
+                raise HTTPException(status_code=400, detail=f'"{i.label}" is {og[i.label]} in {other.service}; use the same group or a different name')
+    use = await _state_usage(service)
+    renames = {}
+    for i in items:
+        prev = i.was if i.was in old else (i.label if i.label in old else None)
+        if prev and use.get(prev) and old[prev].group != i.group:
+            raise HTTPException(status_code=400, detail=f'"{prev}" is used by {use[prev]} customer(s), so it can\'t move to another group')
+        if prev and prev != i.label:
+            renames[prev] = i.label
+    kept = set(renames) | {i.label for i in items}
+    for lbl, n in use.items():
+        if lbl in old and lbl not in kept and n:
+            raise HTTPException(status_code=400, detail=f'"{lbl}" is used by {n} customer(s). Rename it instead, or move those customers to another status first')
+    row.items = [JourneyStatusItem(label=i.label, group=i.group, needs_note=i.needs_note) for i in items]
+    row.updated_at = datetime.utcnow()
+    row.updated_by_name = current_user.get("full_name") or current_user.get("email")
+    await row.save()
+    moved = 0
+    for prev, new in renames.items():
+        for e in await Enrollment.find({"is_deleted": False, "journey_state": prev}).to_list():
+            if service_key(e) != service:
+                continue
+            e.journey_state = new
+            if e.journey_stopped_reason and e.journey_stopped_reason.startswith(prev):
+                e.journey_stopped_reason = new + e.journey_stopped_reason[len(prev):]
+            await e.save()
+            moved += 1
+    await load_config()
+    logger.info(f"Journey Status list for {service} saved by {current_user['email']} ({len(renames)} renamed, {moved} customers updated)")
+    return {"renamed": len(renames), "customers_updated": moved}
+
+
+class ServiceIn(BaseModel):
+    name: str
+
+
+class ServiceRenameIn(BaseModel):
+    old: str
+    new: str
+
+
+class ServiceOrderIn(BaseModel):
+    services: List[str]
+
+
+async def _service_dropdown():
+    from app.models.dropdown_config import DropdownConfig
+    cfg = await DropdownConfig.find_one({"field_name": "service_enrolled"})
+    if not cfg:
+        cfg = DropdownConfig(field_name="service_enrolled", display_name="Services (Leads & Enrollments)",
+                             category="common", options=care_services())
+        await cfg.insert()
+    return cfg
+
+
+@router.post("/journey-state/services")
+async def add_service(body: ServiceIn, current_user: dict = Depends(get_current_super_admin)):
+    from app.services.journey_state import load_config
+    name = re.sub(r"\s+", " ", body.name).strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Enter the service name")
+    cfg = await _service_dropdown()
+    if any(o.lower() == name.lower() for o in cfg.options):
+        raise HTTPException(status_code=400, detail="That service already exists")
+    cfg.options = cfg.options + [name]
+    cfg.updated_at = datetime.utcnow()
+    await cfg.save()
+    await load_config()      # seeds its Journey Status list
+    return {"services": care_services()}
+
+
+@router.put("/journey-state/services/order")
+async def reorder_services(body: ServiceOrderIn, current_user: dict = Depends(get_current_super_admin)):
+    from app.services.journey_state import load_config
+    cfg = await _service_dropdown()
+    if sorted(body.services) != sorted(cfg.options):
+        raise HTTPException(status_code=400, detail="The list changed; refresh and try again")
+    cfg.options = body.services
+    await cfg.save()
+    await load_config()
+    return {"services": care_services()}
+
+
+@router.put("/journey-state/services/rename")
+async def rename_service(body: ServiceRenameIn, current_user: dict = Depends(get_current_super_admin)):
+    """Rename a service everywhere: the dropdown, leads, enrollments, care /
+    outreach journey templates and its Journey Status list."""
+    from app.models.journey_status_config import JourneyStatusConfig
+    from app.models.journey_template import JourneyTemplate
+    from app.services.journey_state import load_config
+    old, new = body.old, re.sub(r"\s+", " ", body.new).strip()
+    if old in DEFAULT_SERVICES:
+        raise HTTPException(status_code=400, detail=f"{old} is a built-in service (trimester scheduling and the Antenatal conversion rely on its name), so it can't be renamed")
+    cfg = await _service_dropdown()
+    if old not in cfg.options:
+        raise HTTPException(status_code=404, detail="Unknown service")
+    if not new or any(o.lower() == new.lower() for o in cfg.options if o != old):
+        raise HTTPException(status_code=400, detail="Enter a new, different name")
+    cfg.options = [new if o == old else o for o in cfg.options]
+    await cfg.save()
+    db = get_database()
+    leads = await db.leads.update_many({"service_requested": old}, {"$set": {"service_requested": new}})
+    enrs = await db.enrollments.update_many({"service_enrolled": old}, {"$set": {"service_enrolled": new}})
+    await db.enrollments.update_many({"journey_classification": old}, {"$set": {"journey_classification": new}})
+    await db.journey_templates.update_many({"context": "care", "trigger_key": old}, {"$set": {"trigger_key": new}})
+    for t in await JourneyTemplate.find({"context": "outreach", "trigger_key": {"$regex": f"::{re.escape(old)}$"}}).to_list():
+        t.trigger_key = t.trigger_key[: -len(old)] + new
+        await t.save()
+    row = await JourneyStatusConfig.find_one({"service": old})
+    if row:
+        row.service = new
+        await row.save()
+    await load_config()
+    logger.info(f"Service {old!r} renamed to {new!r} by {current_user['email']}")
+    return {"services": care_services(), "leads_updated": leads.modified_count,
+            "enrollments_updated": enrs.modified_count}
+
+
+@router.delete("/journey-state/services/{name}")
+async def remove_service(name: str, current_user: dict = Depends(get_current_super_admin)):
+    from app.models.journey_status_config import JourneyStatusConfig
+    from app.services.journey_state import load_config
+    if name in DEFAULT_SERVICES:
+        raise HTTPException(status_code=400, detail=f"{name} is a built-in service and can't be removed")
+    cfg = await _service_dropdown()
+    if name not in cfg.options:
+        raise HTTPException(status_code=404, detail="Unknown service")
+    if len(cfg.options) == 1:
+        raise HTTPException(status_code=400, detail="Keep at least one service")
+    n_leads, n_enrs = (await _service_usage())[name]
+    if n_leads or n_enrs:
+        raise HTTPException(status_code=400, detail=f"{name} is used by {n_leads} lead(s) and {n_enrs} enrollment(s), so it can't be removed. You can rename it instead.")
+    cfg.options = [o for o in cfg.options if o != name]
+    await cfg.save()
+    await JourneyStatusConfig.find({"service": name}).delete()
+    await load_config()
+    return {"services": care_services()}
 
 
 _JS_COLS = ["Enrollment ID *", "Customer (not uploaded)", "Service (not uploaded)",
@@ -1584,7 +1814,7 @@ async def bulk_update_journey_state(
             updated += 1
         else:
             unchanged += 1
-        if state == ANTENATAL_INTEREST and not e.converted_to_lead_id:
+        if is_converts(state) and not e.converted_to_lead_id:
             antenatal.append({"enrollment_id": eid, "name": e.subscriber_name or e.name,
                               "spoc": e.hclhc_spoc})
     logger.info(f"Journey Status bulk upload by {current_user['email']}: "
@@ -1613,7 +1843,7 @@ async def bulk_convert_to_antenatal(
         if current_user.get("role") == "agent" and not _agent_can_act(e, current_user):
             failed.append({"enrollment_id": eid, "error": "Not your customer"})
             continue
-        if e.journey_state != ANTENATAL_INTEREST:
+        if not is_converts(e.journey_state):
             failed.append({"enrollment_id": eid, "error": "Journey Status is not 'Interested in Antenatal'"})
             continue
         if e.converted_to_lead_id:
@@ -1980,7 +2210,7 @@ async def set_journey_state(
         raise HTTPException(status_code=400, detail=err)
     await apply_state(enrollment, body.state, body.note, current_user)
     lead_id = None
-    if body.create_antenatal_lead and body.state == ANTENATAL_INTEREST and not enrollment.converted_to_lead_id:
+    if body.create_antenatal_lead and is_converts(body.state) and not enrollment.converted_to_lead_id:
         lead_id = await _create_antenatal_lead(enrollment, current_user)
     return {"lead_id": lead_id, "enrollment": enrollment_to_response(enrollment)}
 
@@ -2662,8 +2892,9 @@ async def _create_antenatal_lead(enrollment: Enrollment, current_user: dict) -> 
     )
     await new_lead.insert()
 
-    if enrollment.journey_state != ANTENATAL_INTEREST and service_key(enrollment) == "PreConception":
-        await apply_state(enrollment, ANTENATAL_INTEREST, None, current_user)
+    conv = (JOURNEY_STATES.get(service_key(enrollment) or "") or {}).get("Converts") or []
+    if not is_converts(enrollment.journey_state) and conv:
+        await apply_state(enrollment, conv[0], None, current_user)
     # Stop the PreConception keep-in-touch loop, keep history.
     enrollment.journey = stop_journey_steps(enrollment.journey or [])
     enrollment.journey_status = "stopped"

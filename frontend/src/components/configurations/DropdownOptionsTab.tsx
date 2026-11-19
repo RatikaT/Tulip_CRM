@@ -78,7 +78,8 @@ export default function DropdownOptionsTab() {
     setError(null);
     try {
       const response = await dropdownService.getDropdownConfigs();
-      setConfigs(response.configs);
+      // Services are managed in Configurations -> Services & Journey Status
+      setConfigs(response.configs.filter((c) => c.field_name !== 'service_enrolled'));
     } catch (err) {
       console.error('Failed to fetch dropdown configs:', err);
       setError('Failed to load dropdown configurations');

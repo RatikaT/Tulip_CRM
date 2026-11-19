@@ -39,7 +39,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"Journey migrate/seed failed (non-fatal): {e}")
     # Journey Status: one-time preset for enrollments that don't have one (idempotent).
     try:
-        from app.services.journey_state import preset_missing_states, sync_stopped_states
+        from app.services.journey_state import preset_missing_states, sync_stopped_states, load_config
+        await load_config()
         n = await preset_missing_states()
         if n:
             logger.info(f"Journey Status preset on {n} enrollment(s)")
@@ -65,11 +66,23 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Auto-resume failed: {e}")
             await asyncio.sleep(3600)
 
+    async def _config_refresh_loop():
+        # Services / Journey Status lists: picked up by every server process
+        from app.services.journey_state import load_config
+        while True:
+            await asyncio.sleep(300)
+            try:
+                await load_config()
+            except Exception as e:
+                logger.error(f"Journey Status config refresh failed: {e}")
+
     resume_task = asyncio.create_task(_auto_resume_loop())
+    config_task = asyncio.create_task(_config_refresh_loop())
 
     yield
 
     resume_task.cancel()
+    config_task.cancel()
 
     # Shutdown
     logger.info("Shutting down Tulip CRM API...")

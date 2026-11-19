@@ -57,6 +57,8 @@ export interface JourneyStateOptions {
   states: Record<string, Record<string, string[]>>;
   needs_note: string[];
   antenatal_interest: string;
+  converts: string[];
+  services: string[];
   call_outcomes: string[];
   not_connected_reasons: string[];
 }

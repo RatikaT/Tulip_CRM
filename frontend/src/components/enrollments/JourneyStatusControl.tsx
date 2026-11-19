@@ -44,7 +44,7 @@ export default function JourneyStatusControl({ enrollment, options, canEdit, onC
   const groups = key ? options!.states[key] : null;
   const current = enrollment.journey_state || '';
   const closed = !!enrollment.journey_state_closed;
-  const interest = options?.antenatal_interest;
+  const isConverts = (s: string) => !!options?.converts?.includes(s);
 
   const save = async (state: string, note?: string, createLead = false) => {
     setBusy(createLead ? 'lead' : 'save');
@@ -85,7 +85,7 @@ export default function JourneyStatusControl({ enrollment, options, canEdit, onC
       return;
     }
     setPendingOthers(null);
-    if (value === interest && !enrollment.converted_to_lead_id) {
+    if (isConverts(value) && !enrollment.converted_to_lead_id) {
       // On screen this also creates the Antenatal lead (bulk uploads never do).
       if (window.confirm('This also creates an Antenatal lead for this customer and stops the PreConception journey. Continue?')) {
         save(value, undefined, true);
@@ -229,7 +229,7 @@ export function JourneyStatusBanner({ enrollment, options, canEdit, onChanged }:
     );
   }
 
-  if (enrollment.journey_state && enrollment.journey_state === options?.antenatal_interest) {
+  if (enrollment.journey_state && options?.converts?.includes(enrollment.journey_state)) {
     return (
       <Alert
         severity="success"
