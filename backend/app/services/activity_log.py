@@ -163,9 +163,12 @@ def classify_enrollment_change(field: str, new_value=None) -> Optional[str]:
     return FIELD_UPDATED
 
 
-def _phantom_reassign_filter(logs: List[AuditLog], leads: Optional[Dict] = None) -> set:
+def _phantom_reassign_filter(logs: List[AuditLog], leads: Optional[Dict] = None,
+                             prev_owner: Optional[Dict] = None) -> set:
     """(log id, change index) pairs for reassignment rows that were never real:
-    the old edit form re-sent 'reassign to = current owner' on every save."""
+    the old edit form re-sent 'reassign to = current owner' on every save.
+    If `prev_owner` is given, it is filled with (log id, change index) -> who
+    held the lead just before each real reassignment."""
     phantom = set()
     by_lead = defaultdict(list)
     for lg in logs:
@@ -188,6 +191,8 @@ def _phantom_reassign_filter(logs: List[AuditLog], leads: Optional[Dict] = None)
                     if not new or new == owner or new == ch.get("old_value"):
                         phantom.add((str(lg.id), i))
                     else:
+                        if prev_owner is not None:
+                            prev_owner[(str(lg.id), i)] = owner
                         owner = new
     return phantom
 
@@ -204,7 +209,8 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
     lead_ids = list({lg.lead_id for lg in win_logs})
     all_logs = await AuditLog.find({"lead_id": {"$in": lead_ids}}).to_list() if lead_ids else []
     leads = {l.lead_id: l for l in await Lead.find({"lead_id": {"$in": lead_ids}}).to_list()} if lead_ids else {}
-    phantom = _phantom_reassign_filter(all_logs, leads)
+    prev_owner: Dict = {}
+    phantom = _phantom_reassign_filter(all_logs, leads, prev_owner)
 
     for lg in win_logs:
         lead = leads.get(lg.lead_id)
@@ -221,7 +227,9 @@ async def collect_activity(start_utc: datetime, end_utc: datetime) -> List[Dict]
                 "owner": (lead.reassign_to_name or lead.assigned_to_name) if lead else None,
                 "action": action,
                 "field": "" if action in (CREATED, DELETED, REMARK) else _label(field),
-                "from": ch.get("old_value"), "to": ch.get("new_value"),
+                # First reassignment: "Reassigned To" was empty, so show who had it
+                "from": ch.get("old_value") or (prev_owner.get((str(lg.id), i)) if action == REASSIGNED else None),
+                "to": ch.get("new_value"),
                 "details": "",
                 "by": lg.user_name,
             })

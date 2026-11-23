@@ -37,6 +37,7 @@ export interface EnrollmentQueryParams {
   stopped_or_dnc?: boolean;
   journey_state?: string[];
   antenatal_pending?: boolean;
+  no_service?: boolean;
 }
 
 export const enrollmentService = {

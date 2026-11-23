@@ -151,6 +151,7 @@ const ExpandableCell = ({ value }: { value: string | null }) => {
 };
 
 const ANTENATAL_PENDING = '__antenatal_pending';
+const NO_SERVICE = '__no_service';
 
 export default function EnrollmentsPage() {
   const navigate = useNavigate();
@@ -324,9 +325,18 @@ export default function EnrollmentsPage() {
     follow_ups_due: ({ follow_up_today: 'all', follow_up_due_today: 'today', follow_up_overdue: 'overdue' } as const)[
       activeKpi as 'follow_up_today' | 'follow_up_due_today' | 'follow_up_overdue'] ?? undefined,
     stopped_or_dnc: activeKpi === 'stopped_or_dnc' || undefined,
-    journey_state: journeyStateFilter && journeyStateFilter !== ANTENATAL_PENDING ? [journeyStateFilter] : undefined,
+    journey_state: journeyStateFilter && ![ANTENATAL_PENDING, NO_SERVICE].includes(journeyStateFilter) ? [journeyStateFilter] : undefined,
     antenatal_pending: journeyStateFilter === ANTENATAL_PENDING || undefined,
+    no_service: journeyStateFilter === NO_SERVICE || undefined,
   });
+
+  // Active customers with no service have no care journey, so they never fall due
+  const [noServiceCount, setNoServiceCount] = useState(0);
+  useEffect(() => {
+    enrollmentService.getEnrollments({ page: 1, per_page: 1, no_service: true })
+      .then((r) => setNoServiceCount(r.total))
+      .catch(() => setNoServiceCount(0));
+  }, [enrollments]);
 
   const fetchEnrollments = useCallback(async () => {
     setLoading(true);
@@ -1477,6 +1487,9 @@ export default function EnrollmentsPage() {
                   <MenuItem value={ANTENATAL_PENDING} sx={{ fontWeight: 600, color: '#137a4b' }}>
                     Interested in Antenatal – lead not created
                   </MenuItem>
+                  <MenuItem value={NO_SERVICE} sx={{ fontWeight: 600, color: '#b54708' }}>
+                    No service – no care journey
+                  </MenuItem>
                   {Object.entries(jsOptions?.states || {}).flatMap(([svc, groups]) => [
                     <ListSubheader key={`h-${svc}`}>{svc}</ListSubheader>,
                     ...Object.values(groups).flat().map((st) => (
@@ -1773,6 +1786,18 @@ export default function EnrollmentsPage() {
           </Collapse>
         </Paper>
       </LocalizationProvider>
+
+      {noServiceCount > 0 && journeyStateFilter !== NO_SERVICE && (
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', bgcolor: '#fef6e7', borderColor: '#f5d9a8' }}>
+          <Typography variant="body2" sx={{ flex: 1, minWidth: 220 }}>
+            <b>{noServiceCount} active enrollment{noServiceCount === 1 ? ' has' : 's have'} no service.</b> No care journey
+            is built for them, so they never show as due. Set the Service Enrolled to start their journey.
+          </Typography>
+          <Button variant="outlined" color="warning" size="small" onClick={() => setJourneyStateFilter(NO_SERVICE)}>
+            Show them
+          </Button>
+        </Paper>
+      )}
 
       {viewMode === 'all' && antenatalPendingView && (
         <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', bgcolor: '#e2f4ea', borderColor: '#b7e1c8' }}>

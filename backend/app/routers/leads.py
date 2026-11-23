@@ -2352,9 +2352,10 @@ async def get_lead_audit_trail(
     # typed actions, plain field names, IST values, no fake reassignments.
     from app.services.activity_log import (
         classify_lead_change, _label, _display, _phantom_reassign_filter, _fold_into_status,
-        CREATED, DELETED, REMARK,
+        CREATED, DELETED, REMARK, REASSIGNED,
     )
-    phantom = _phantom_reassign_filter(audit_logs, {lead_id: lead})
+    prev_owner: dict = {}
+    phantom = _phantom_reassign_filter(audit_logs, {lead_id: lead}, prev_owner)
     trail = []
     for log in audit_logs:
         rows = []
@@ -2365,7 +2366,9 @@ async def get_lead_audit_trail(
                 continue
             rows.append({"action": action,
                          "field": "" if action in (CREATED, DELETED, REMARK) else _label(field),
-                         "from": _display(ch.get("old_value")), "to": _display(ch.get("new_value")),
+                         "from": _display(ch.get("old_value") or (
+                             prev_owner.get((str(log.id), i)) if action == REASSIGNED else None)),
+                         "to": _display(ch.get("new_value")),
                          "details": ""})
         rows = _fold_into_status(rows)
         if not rows:

@@ -664,6 +664,7 @@ async def export_enrollments_excel(
     stopped_or_dnc: Optional[bool] = None,
     journey_state: Optional[List[str]] = Query(None),
     antenatal_pending: Optional[bool] = None,
+    no_service: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -699,6 +700,7 @@ async def export_enrollments_excel(
         stopped_or_dnc=stopped_or_dnc,
         journey_state=journey_state,
         antenatal_pending=antenatal_pending,
+        no_service=no_service,
     )
 
     enrollments = await Enrollment.find(query).sort("-created_at").to_list()
@@ -897,6 +899,7 @@ def build_enrollment_list_query(
     stopped_or_dnc: Optional[bool] = None,
     journey_state: Optional[List[str]] = None,
     antenatal_pending: Optional[bool] = None,
+    no_service: Optional[bool] = None,
 ) -> dict:
     """The Enrollments page filters as one Mongo query (agent visibility, filters,
     search, quick filters). Shared by the list and the MIS export."""
@@ -1030,6 +1033,10 @@ def build_enrollment_list_query(
     if antenatal_pending:
         query = {"$and": [query, {"journey_state": {"$in": sorted(CONVERTS)},
                                   "converted_to_lead_id": None}]}
+    # Active customers with no service: no care journey, so nothing ever falls due
+    if no_service:
+        query = {"$and": [query, {"journey_status": {"$ne": "stopped"},
+                                  "service_enrolled": {"$in": [None, ""]}}]}
     return query
 
 
@@ -1052,6 +1059,9 @@ async def get_enrollments_user_groups(
     my_role: Optional[str] = None,
     follow_ups_due: Optional[str] = None,
     stopped_or_dnc: Optional[bool] = None,
+    journey_state: Optional[List[str]] = Query(None),
+    antenatal_pending: Optional[bool] = None,
+    no_service: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """User Level view: the filtered list grouped by customer (UHID) across ALL
@@ -1074,6 +1084,9 @@ async def get_enrollments_user_groups(
         current_user=current_user,
         enrollment_ids=await _enr_due_ids(follow_ups_due, current_user),
         stopped_or_dnc=stopped_or_dnc,
+        journey_state=journey_state,
+        antenatal_pending=antenatal_pending,
+        no_service=no_service,
     )
     db = get_database()
     g = await group_by_uhid(db.enrollments, query, page, per_page, ist_range_utc(today_ist()))
@@ -1113,6 +1126,7 @@ async def get_enrollments(
     stopped_or_dnc: Optional[bool] = None,
     journey_state: Optional[List[str]] = Query(None),
     antenatal_pending: Optional[bool] = None,
+    no_service: Optional[bool] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get enrollments with pagination and filters"""
@@ -1136,6 +1150,7 @@ async def get_enrollments(
             stopped_or_dnc=stopped_or_dnc,
             journey_state=journey_state,
             antenatal_pending=antenatal_pending,
+            no_service=no_service,
         )
 
         total = await Enrollment.find(query).count()
